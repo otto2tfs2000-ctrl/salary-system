@@ -254,10 +254,21 @@ function loadFirebaseSales() {
         if (r.voided || r.pending) return;
         const teacherName = matchStaff(r.staff || '');
         if (!teacherName) return;
-        const mKey = teacherName + '_' + r.month;
+        // 判斷分店：2F、4F 屬旗艦店；國圖 屬國圖店
+        const dept = r.dept || '';
+        const storeKey = (dept === '國圖') ? 'guotu' : 'flagship';
+        // 月合計（含分店）
+        const mKey = teacherName + '_' + r.month + '_' + storeKey;
         fbSalesData[mKey] = (fbSalesData[mKey] || 0) + (r.amount || 0);
-        const dKey = teacherName + '_' + r.month + '_' + r.day;
+        // 月合計（不分店，供整體統計）
+        const mKeyAll = teacherName + '_' + r.month;
+        fbSalesData[mKeyAll] = (fbSalesData[mKeyAll] || 0) + (r.amount || 0);
+        // 日合計（含分店）
+        const dKey = teacherName + '_' + r.month + '_' + r.day + '_' + storeKey;
         fbSalesData[dKey] = (fbSalesData[dKey] || 0) + (r.amount || 0);
+        // 日合計（不分店）
+        const dKeyAll = teacherName + '_' + r.month + '_' + r.day;
+        fbSalesData[dKeyAll] = (fbSalesData[dKeyAll] || 0) + (r.amount || 0);
       });
       fbLoaded = true;
       renderAll();
@@ -265,17 +276,21 @@ function loadFirebaseSales() {
     .catch(e => console.error('[FB] 讀取失敗:', e));
 }
 
-// Get sales amount from Firebase for a teacher and month
-function getFBSales(teacherName, month) {
+// Get sales amount from Firebase for a teacher, month, and store
+function getFBSales(teacherName, month, store) {
   if (!fbLoaded) return 0;
-  const key = teacherName + '_' + parseInt(month);
+  const key = store
+    ? teacherName + '_' + parseInt(month) + '_' + store
+    : teacherName + '_' + parseInt(month);
   return fbSalesData[key] || 0;
 }
 
-// Get sales amount from Firebase for a teacher, month and specific day
-function getFBSalesByDay(teacherName, month, day) {
+// Get sales amount from Firebase for a teacher, month, day, and store
+function getFBSalesByDay(teacherName, month, day, store) {
   if (!fbLoaded) return 0;
-  const key = teacherName + '_' + parseInt(month) + '_' + parseInt(day);
+  const key = store
+    ? teacherName + '_' + parseInt(month) + '_' + parseInt(day) + '_' + store
+    : teacherName + '_' + parseInt(month) + '_' + parseInt(day);
   return fbSalesData[key] || 0;
 }
 
@@ -526,7 +541,7 @@ function renderDayForm() {
   let tRows = '';
   var selM_daily = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
-    var fbAmt = getFBSalesByDay(t.name, selM_daily, day);
+    var fbAmt = getFBSalesByDay(t.name, selM_daily, day, store);
     var salesCell;
     if (fbAmt > 0) {
       salesCell = '<td>' +
@@ -680,7 +695,7 @@ function submitEntry(store, mKey, day) {
     var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
     var n = document.getElementById('inp_n_' + t.id)?.value || '';
-    var s = getFBSalesByDay(t.name, selM_submit, day);
+    var s = getFBSalesByDay(t.name, selM_submit, day, store);
     if (c||o||m||a||j) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s}; }
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
@@ -739,7 +754,7 @@ function renderMonthly() {
     tCount   += tt.count;
     tOutside += tt.outsideCount;
     tLec     += tt.master*2000 + tt.assist*1500 + tt.junior*1000;
-    var fbAmt = getFBSales(t.name, selM_monthly);
+    var fbAmt = getFBSales(t.name, selM_monthly, store);
     tSales   += fbAmt > 0 ? fbAmt : (tt.sales||0);
   });
 
@@ -766,7 +781,7 @@ function renderMonthly() {
       '<td>' + (tt.junior||'—') + '</td>' +
       '<td class="' + (lec?'auto-val':'zero-val') + '">' + (lec?'$'+lec.toLocaleString():'—') + '</td>' +
       (function(){
-        var fbAmt2 = getFBSales(t.name, selM_monthly);
+        var fbAmt2 = getFBSales(t.name, selM_monthly, store);
         var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
         var fbTag = fbAmt2 > 0 ? ' <span style="font-size:10px;color:var(--green)">●FB</span>' : '';
         return '<td class="' + (dispAmt?'auto-val':'zero-val') + '">' + (dispAmt?'$'+dispAmt.toLocaleString()+fbTag:'—') + '</td>';
@@ -930,7 +945,7 @@ function calcSalary(t, store, mKey) {
   var lectureFee = (tt.master||0)*2000 + (tt.assist||0)*1500 + (tt.junior||0)*1000;
   // Use Firebase sales data if loaded, otherwise use manually entered data
   var selM = parseInt(document.getElementById('selMonth').value);
-  var fbAmt = getFBSales(t.name, selM);
+  var fbAmt = getFBSales(t.name, selM, store);
   var salesAmt = fbAmt > 0 ? fbAmt : (tt.sales||0);
   var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
   var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
