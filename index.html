@@ -638,6 +638,7 @@ function renderDayForm() {
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
+      '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0"></td>' +
       salesCell +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
       '</tr>';
@@ -708,6 +709,7 @@ function renderDayForm() {
     '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
     '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
     '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
+    '<th>外派培訓費<br><span style="font-size:10px;color:var(--text3)">記錄用</span></th>' +
     '<th>當日業績<br><span style="font-size:10px;color:var(--green)">自動帶入</span></th>' +
     '<th>備註</th>' +
     '</tr></thead>' +
@@ -775,7 +777,8 @@ function submitEntry(store, mKey, day) {
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
     var n = document.getElementById('inp_n_' + t.id)?.value || '';
     var s = getFBSalesByDay(t.name, selM_submit, day, store);
-    if (c||o||m||a||j) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s}; }
+    var tf = parseInt(document.getElementById('inp_tf_' + t.id)?.value) || 0;
+    if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf}; }
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
   addEntry(store, mKey, day, entry);
@@ -790,7 +793,7 @@ function aggregateMonth(store, mKey) {
   var teachers = getTeachers(store);
   var totals = { newCust:0, oldCust:0, teachers:{} };
   teachers.forEach(function(t) {
-    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0 };
+    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0 };
   });
   for (var d=1; d<=days; d++) {
     var agg = getDayAgg(store, mKey, d);
@@ -804,6 +807,7 @@ function aggregateMonth(store, mKey) {
       totals.teachers[t.id].assist       += td.assist       || 0;
       totals.teachers[t.id].junior       += td.junior       || 0;
       totals.teachers[t.id].sales        += td.sales        || 0;
+      totals.teachers[t.id].trainingFee  += td.trainingFee  || 0;
     });
     // Mixue support hours stored at day level
     var mixue = teachers.find(function(t){ return t.name==='米雪'; });
@@ -861,6 +865,7 @@ function renderMonthly() {
       '<td>' + (tt.assist||'—') + '</td>' +
       '<td>' + (tt.junior||'—') + '</td>' +
       '<td class="' + (lec?'auto-val':'zero-val') + '">' + (lec?'$'+lec.toLocaleString():'—') + '</td>' +
+      '<td class="' + (tt.trainingFee?'auto-val':'zero-val') + '">' + (tt.trainingFee?'$'+tt.trainingFee.toLocaleString():'—') + '</td>' +
       (function(){
         var fbAmt2 = getFBSales(t.name, selM_monthly, store);
         var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
@@ -876,6 +881,7 @@ function renderMonthly() {
     '<td>' + (tOutside||'—') + '</td>' +
     '<td>—</td><td>—</td><td>—</td>' +
     '<td>$' + tLec.toLocaleString() + '</td>' +
+    '<td>' + (teachers.reduce(function(s,t){return s+(totals.teachers[t.id]?.trainingFee||0);},0)?'$'+teachers.reduce(function(s,t){return s+(totals.teachers[t.id]?.trainingFee||0);},0).toLocaleString():'—') + '</td>' +
     '<td>$' + tSales.toLocaleString() + '</td>' +
     (store==='flagship'?'<td>—</td>':'') +
     '</tr>';
@@ -915,7 +921,8 @@ function renderMonthly() {
     teachers.forEach(function(t) {
       var td = agg2.teachers[t.id]||{};
       dc += td.count||0; do2 += td.outsideCount||0;
-      dl += (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+      var dLecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
+      dl += Math.round(((td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000) * dLecRate);
       ds += td.sales||0;
     });
     dNewSum+=agg2.newCust; dOldSum+=agg2.oldCust;
@@ -925,7 +932,8 @@ function renderMonthly() {
     var detHtml = '';
     teachers.forEach(function(t) {
       var td = agg2.teachers[t.id]||{};
-      var tl = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+      var dLecRate2 = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
+      var tl = Math.round(((td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000) * dLecRate2);
       if (td.count||td.outsideCount||tl||td.sales) {
         detHtml += '<tr style="background:rgba(255,255,255,0.015)">' +
           '<td style="padding-left:28px;color:var(--text2);font-size:12px">└ ' + t.name + '</td>' +
@@ -974,7 +982,7 @@ function renderMonthly() {
     '<div style="overflow-x:auto"><table><thead><tr>' +
     '<th>老師</th><th>職位</th><th>一般人次</th><th>外派人次</th>' +
     '<th>外派主教</th><th>外派助教</th><th>小老師場</th>' +
-    '<th>講師費</th><th>業績金額</th>' +
+    '<th>講師費</th><th>外派培訓費</th><th>業績金額</th>' +
     (store==='flagship'?'<th>米雪支援時數</th>':'') +
     '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
 
