@@ -522,8 +522,8 @@ function openEditEntry(store, mKey, day, idx) {
     '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th></tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="display:flex;gap:10px;margin-top:16px">' +
-    '<button class="btn btn-gold" onclick="saveEditEntry('' + store + '','' + mKey + '',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
-    '<button class="btn btn-outline" onclick="document.getElementById('edit-entry-modal').remove()">取消</button>' +
+    '<button class="btn btn-gold" onclick="saveEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
+    '<button class="btn btn-outline" onclick="document.getElementById(\'edit-entry-modal\').remove()">取消</button>' +
     '</div></div>';
   document.body.appendChild(modal);
 }
