@@ -113,6 +113,7 @@ tr[draggable]{cursor:grab}
     <div class="logo-sub">旗艦店 + 國圖店 · 每月結算</div>
   </div>
   <div style="display:flex;align-items:center;gap:20px">
+    <a href="https://otto2tfs2000-ctrl.github.io/sales-system/" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0;padding:6px 14px;border-radius:7px;font-size:12px;text-decoration:none;font-weight:500">📊 業績系統 ↗</a>
     <div class="sync-wrap"><span class="dot" id="sync-dot"></span><span id="sync-text" style="color:var(--text3)">連線中...</span></div>
     <div class="month-nav">
       <span style="font-size:12px;color:var(--text3)">月份</span>
@@ -517,7 +518,6 @@ function renderDaily() {
 
   el.innerHTML = '<div class="card"><div class="card-title" style="justify-content:space-between">'+
     '<span>📅 選擇日期</span>' +
-    '<a href="https://otto2tfs2000-ctrl.github.io/sales-system/" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0;padding:6px 14px;border-radius:7px;font-size:12px;text-decoration:none;font-weight:500">📊 前往業績系統 ↗</a>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px">' +
     '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:14px;outline:none;font-family:inherit">' + opts + '</select>' +
