@@ -103,6 +103,7 @@ tr[draggable]{cursor:grab}
     <input class="lock-input" type="password" id="lock-pwd" placeholder="輸入密碼" onkeydown="if(event.key==='Enter')doUnlock()">
     <div style="color:var(--red);font-size:12px;margin-bottom:10px;min-height:16px" id="lock-err"></div>
     <button class="btn btn-gold" style="width:100%" onclick="doUnlock()">確認</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="document.getElementById('lock-overlay').style.display='none';document.getElementById('lock-pwd').value='';document.getElementById('lock-err').textContent=''">取消</button>
   </div>
 </div>
 
