@@ -163,7 +163,6 @@ tr[draggable]{cursor:grab}
         <select id="f-store">
           <option value="flagship">旗艦店</option>
           <option value="guotu">國圖店</option>
-          <option value="both">兩店皆有</option>
           <option value="flagship_cross">旗艦跨部門</option>
         </select>
       </div>
@@ -189,6 +188,7 @@ tr[draggable]{cursor:grab}
       <div class="fg"><label>基礎人次門檻</label><input id="f-threshold" type="number" placeholder="例：20"></div>
       <div class="fg"><label>行政績效—旗艦（元）</label><input id="f-adminF" type="number" placeholder="0"></div>
       <div class="fg"><label>行政績效—國圖（元）</label><input id="f-adminG" type="number" placeholder="0"></div>
+      <div class="fg"><label>講師費倍率</label><input id="f-lecRate" type="number" placeholder="預設1，減半填0.5" step="0.1" min="0" max="1"></div>
       <div class="fg"><label>備註</label><input id="f-note" placeholder="選填"></div>
     </div>
     <button class="btn btn-gold" onclick="addTeacher()">+ 新增老師</button>
@@ -752,9 +752,10 @@ function renderMonthly() {
   var selM_monthly = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
     var tt = totals.teachers[t.id];
+    var tLecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
     tCount   += tt.count;
     tOutside += tt.outsideCount;
-    tLec     += tt.master*2000 + tt.assist*1500 + tt.junior*1000;
+    tLec     += Math.round((tt.master*2000 + tt.assist*1500 + tt.junior*1000) * tLecRate);
     var fbAmt = getFBSales(t.name, selM_monthly, store);
     tSales   += fbAmt > 0 ? fbAmt : (tt.sales||0);
   });
@@ -771,7 +772,8 @@ function renderMonthly() {
   var tRows = '';
   teachers.forEach(function(t) {
     var tt = totals.teachers[t.id];
-    var lec = tt.master*2000 + tt.assist*1500 + tt.junior*1000;
+    var tLecRate2 = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
+    var lec = Math.round((tt.master*2000 + tt.assist*1500 + tt.junior*1000) * tLecRate2);
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
       '<td><span class="badge ' + (t.role==='sales'?'b-purple':t.role==='admin'?'b-blue':'b-gray') + '">' + ROLE_NAME[t.role||'teacher'] + '</span></td>' +
@@ -943,7 +945,8 @@ function calcSalary(t, store, mKey) {
     countBonus = (tt.count||0) * 50;
   }
 
-  var lectureFee = (tt.master||0)*2000 + (tt.assist||0)*1500 + (tt.junior||0)*1000;
+  var lecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
+  var lectureFee = Math.round(((tt.master||0)*2000 + (tt.assist||0)*1500 + (tt.junior||0)*1000) * lecRate);
   // Use Firebase sales data if loaded, otherwise use manually entered data
   var selM = parseInt(document.getElementById('selMonth').value);
   var fbAmt = getFBSales(t.name, selM, store);
@@ -1049,10 +1052,11 @@ function addTeacher() {
     threshold: parseInt(document.getElementById('f-threshold').value)||0,
     adminF: parseInt(document.getElementById('f-adminF').value)||0,
     adminG: parseInt(document.getElementById('f-adminG').value)||0,
+    lecRate: parseFloat(document.getElementById('f-lecRate').value)||1,
     note: document.getElementById('f-note').value.trim(),
   });
   save();
-  ['f-name','f-base','f-note','f-threshold','f-adminF','f-adminG'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['f-name','f-base','f-note','f-threshold','f-adminF','f-adminG','f-lecRate'].forEach(function(id){ document.getElementById(id).value=''; });
   renderTeacherList();
 }
 
@@ -1085,6 +1089,7 @@ function saveTeacher(id) {
   t.threshold = parseInt(document.getElementById('eth_' + id).value)||0;
   t.adminF    = parseInt(document.getElementById('eaf_' + id).value)||0;
   t.adminG    = parseInt(document.getElementById('eag_' + id).value)||0;
+  t.lecRate   = parseFloat(document.getElementById('elr_' + id).value)||1;
   t.note      = document.getElementById('eno_' + id).value.trim();
   save(); renderTeacherList();
 }
@@ -1137,8 +1142,7 @@ function renderTeacherList() {
       '<div class="fg"><label>分店</label><select id="es_' + t.id + '">' +
         '<option value="flagship"' + (t.store==='flagship'?' selected':'') + '>旗艦店</option>' +
         '<option value="guotu"' + (t.store==='guotu'?' selected':'') + '>國圖店</option>' +
-        '<option value="both"' + (t.store==='both'?' selected':'') + '>兩店皆有</option>' +
-        '<option value="flagship_cross"' + (t.store==='flagship_cross'?' selected':'') + '>旗艦跨部門</option>' +
+                '<option value="flagship_cross"' + (t.store==='flagship_cross'?' selected':'') + '>旗艦跨部門</option>' +
       '</select></div>' +
       '<div class="fg"><label>職別</label><select id="et_' + t.id + '">' +
         '<option value="full"' + (t.type==='full'?' selected':'') + '>正職</option>' +
@@ -1159,6 +1163,7 @@ function renderTeacherList() {
       '<div class="fg"><label>門檻</label><input type="number" id="eth_' + t.id + '" value="' + (t.threshold||'') + '"></div>' +
       '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '"></div>' +
       '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '"></div>' +
+      '<div class="fg"><label>講師費倍率</label><input type="number" step="0.1" min="0" max="1" id="elr_' + t.id + '" value="' + (t.lecRate!==undefined?t.lecRate:1) + '"></div>' +
       '<div class="fg"><label>備註</label><input id="eno_' + t.id + '" value="' + (t.note||'') + '"></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
