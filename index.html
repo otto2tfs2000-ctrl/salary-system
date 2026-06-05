@@ -6,6 +6,8 @@
 <title>Otto2 ARTCLUB 薪資系統</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -196,13 +198,24 @@ tr[draggable]{cursor:grab}
 </div>
 
 <script>
-const BIN_ID  = '6a213222da38895dfe853013';
-const API_KEY = '$2a$10$j9sPXTx5rGpYrXCrJE851ePL5Ln2bPrWb8Han0IYfWIx//D5ArkCe';
-const BIN_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
 const BOSS_PWD = 'Otto212707656';
-const FB_DB_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app';
 const SALES_YEAR = 2026;
 
+// ── Firebase SDK 初始化 ──────────────────────────────────
+const FB_CONFIG = {
+  apiKey: 'AIzaSyCQYP21uHGAeSj_i6ANMexMvp3_bciHvTw',
+  databaseURL: 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'otto2-2026',
+  appId: '1:108328085665:web:071a45a7d7c5af6b6468e0'
+};
+let fbApp2 = null;
+let fbDb2 = null;
+(function initFB() {
+  try {
+    fbApp2 = firebase.initializeApp(FB_CONFIG, 'salaryApp_' + Date.now());
+    fbDb2 = fbApp2.database();
+  } catch(e) { console.error('FB init error:', e); }
+})();
 
 const SALES_STAFF_MAP = {
   'Ethan': ['吳忠懋-Ethan', 'Ethan'],
@@ -229,36 +242,27 @@ let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
 
 function loadFirebaseSales() {
-  const url = FB_DB_URL + '/salesData/records.json';
-  fetch(url)
-    .then(r => r.json())
-    .then(records => {
+  if (!fbDb2) { console.warn('[FB] fbDb2 未初始化'); return; }
+  fbDb2.ref('salesData').once('value')
+    .then(snapshot => {
+      const data = snapshot.val();
+      if (!data) return;
+      const records = Array.isArray(data) ? data : (data.records || null);
       if (!records || !Array.isArray(records)) return;
       fbSalesData = {};
       records.forEach(r => {
         if (r.voided || r.pending) return;
         const teacherName = matchStaff(r.staff || '');
         if (!teacherName) return;
-        // Monthly total
         const mKey = teacherName + '_' + r.month;
         fbSalesData[mKey] = (fbSalesData[mKey] || 0) + (r.amount || 0);
-        // Daily total
         const dKey = teacherName + '_' + r.month + '_' + r.day;
         fbSalesData[dKey] = (fbSalesData[dKey] || 0) + (r.amount || 0);
       });
       fbLoaded = true;
-      // Re-render pages that use FB sales data
-      if (document.getElementById('tab-salary').classList.contains('active')) {
-        renderSalary();
-      }
-      if (document.getElementById('tab-daily').classList.contains('active')) {
-        renderDayForm();
-      }
-      if (document.getElementById('tab-monthly').classList.contains('active')) {
-        renderMonthly();
-      }
+      renderAll();
     })
-    .catch(e => console.log('Firebase load failed:', e));
+    .catch(e => console.error('[FB] 讀取失敗:', e));
 }
 
 // Get sales amount from Firebase for a teacher and month
@@ -295,14 +299,23 @@ function setSync(status, text) {
 }
 
 async function loadData() {
+  if (!fbDb2) {
+    setSync('err','Firebase 未初始化');
+    document.getElementById('loading-overlay').style.display = 'none';
+    renderAll();
+    return;
+  }
   try {
-    const res = await fetch(BIN_URL + '/latest', { headers:{'X-Master-Key':API_KEY} });
-    const json = await res.json();
-    if (json.record && typeof json.record === 'object') {
-      S = Object.assign({ teachers:[], daily:{}, salaryBase:{} }, json.record);
+    setSync('saving','連線中...');
+    const snap = await fbDb2.ref('salaryData').once('value');
+    const data = snap.val();
+    if (data && typeof data === 'object') {
+      S = Object.assign({ teachers:[], daily:{}, salaryBase:{} }, data);
     }
+    localStorage.setItem('otto2_v7', JSON.stringify(S));
     setSync('ok','已同步');
   } catch(e) {
+    console.error('loadData error:', e);
     setSync('err','使用本機資料');
     try { const d = localStorage.getItem('otto2_v7'); if(d) S = JSON.parse(d); } catch(e2) {}
   }
@@ -314,14 +327,14 @@ async function loadData() {
 async function doSave() {
   setSync('saving','儲存中...');
   localStorage.setItem('otto2_v7', JSON.stringify(S));
+  if (!fbDb2) { setSync('err','Firebase 未初始化'); return; }
   try {
-    await fetch(BIN_URL, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json','X-Master-Key':API_KEY},
-      body: JSON.stringify(S)
-    });
+    await fbDb2.ref('salaryData').set(S);
     setSync('ok','已儲存');
-  } catch(e) { setSync('err','儲存失敗（本機備份）'); }
+  } catch(e) {
+    console.error('doSave error:', e);
+    setSync('err','儲存失敗（本機備份）');
+  }
 }
 
 function save() {
@@ -720,12 +733,14 @@ function renderMonthly() {
 
   var totals = aggregateMonth(store, mKey);
   var tCount=0, tOutside=0, tLec=0, tSales=0;
+  var selM_monthly = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
     var tt = totals.teachers[t.id];
     tCount   += tt.count;
     tOutside += tt.outsideCount;
     tLec     += tt.master*2000 + tt.assist*1500 + tt.junior*1000;
-    tSales   += tt.sales;
+    var fbAmt = getFBSales(t.name, selM_monthly);
+    tSales   += fbAmt > 0 ? fbAmt : (tt.sales||0);
   });
 
   var statHtml = '<div class="stat-grid">' +
@@ -751,8 +766,7 @@ function renderMonthly() {
       '<td>' + (tt.junior||'—') + '</td>' +
       '<td class="' + (lec?'auto-val':'zero-val') + '">' + (lec?'$'+lec.toLocaleString():'—') + '</td>' +
       (function(){
-        var selM2 = parseInt(document.getElementById('selMonth').value);
-        var fbAmt2 = getFBSales(t.name, selM2);
+        var fbAmt2 = getFBSales(t.name, selM_monthly);
         var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
         var fbTag = fbAmt2 > 0 ? ' <span style="font-size:10px;color:var(--green)">●FB</span>' : '';
         return '<td class="' + (dispAmt?'auto-val':'zero-val') + '">' + (dispAmt?'$'+dispAmt.toLocaleString()+fbTag:'—') + '</td>';
@@ -857,6 +871,7 @@ function renderMonthly() {
   var summaryTable = '<div class="card">' +
     '<div class="card-title" style="justify-content:space-between"><span>📊 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</span>' +
     '<div style="display:flex;gap:8px">' +
+    '<button class="btn btn-outline btn-sm" onclick="renderMonthly()" style="border-color:var(--green);color:var(--green)">↺ 重新整理業績</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button>' +
     '</div></div>' +
