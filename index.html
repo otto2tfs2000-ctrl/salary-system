@@ -483,6 +483,83 @@ function delEntry(store, mKey, day, idx) {
   }
 }
 
+function openEditEntry(store, mKey, day, idx) {
+  var entries = getDayEntries(store, mKey, day);
+  var entry = entries[idx];
+  var teachers = getTeachers(store);
+  if (!entry) return;
+
+  // 建立編輯彈窗
+  var existing = document.getElementById('edit-entry-modal');
+  if (existing) existing.remove();
+
+  var tRows = '';
+  teachers.forEach(function(t) {
+    var td = entry.teachers?.[t.id] || {};
+    var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+    tRows += '<tr>' +
+      '<td><strong>' + t.name + '</strong></td>' +
+      '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0"></td>' +
+      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:12px;outline:none;font-family:inherit" id="ee_n_' + t.id + '" value="' + (td.note||'') + '"></td>' +
+      '</tr>';
+  });
+
+  var modal = document.createElement('div');
+  modal.id = 'edit-entry-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:900px;width:100%;max-height:85vh;overflow-y:auto">' +
+    '<div style="font-size:15px;font-weight:600;color:var(--gold2);margin-bottom:16px">✏️ 編輯紀錄 — ' + day + ' 日 ' + (entry.time||'') + '</div>' +
+    '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
+    '<div class="day-meta-item"><label>新客</label><input type="number" class="in-num md" id="ee_nc" value="' + (entry.newCust||0) + '" min="0"></div>' +
+    '<div class="day-meta-item"><label>舊客</label><input type="number" class="in-num md" id="ee_oc" value="' + (entry.oldCust||0) + '" min="0"></div>' +
+    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
+    '</div>' +
+    '<div style="overflow-x:auto"><table>' +
+    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th></tr></thead>' +
+    '<tbody>' + tRows + '</tbody></table></div>' +
+    '<div style="display:flex;gap:10px;margin-top:16px">' +
+    '<button class="btn btn-gold" onclick="saveEditEntry('' + store + '','' + mKey + '',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
+    '<button class="btn btn-outline" onclick="document.getElementById('edit-entry-modal').remove()">取消</button>' +
+    '</div></div>';
+  document.body.appendChild(modal);
+}
+
+function saveEditEntry(store, mKey, day, idx) {
+  var entries = getDayEntries(store, mKey, day);
+  var entry = entries[idx];
+  var teachers = getTeachers(store);
+  if (!entry) return;
+
+  var selM_edit = parseInt(document.getElementById('selMonth').value);
+  entry.newCust = parseInt(document.getElementById('ee_nc')?.value) || 0;
+  entry.oldCust = parseInt(document.getElementById('ee_oc')?.value) || 0;
+  entry.note = document.getElementById('ee_note')?.value || '';
+  entry.teachers = {};
+
+  teachers.forEach(function(t) {
+    var c = parseInt(document.getElementById('ee_c_' + t.id)?.value) || 0;
+    var o = parseInt(document.getElementById('ee_o_' + t.id)?.value) || 0;
+    var m = parseInt(document.getElementById('ee_m_' + t.id)?.value) || 0;
+    var a = parseInt(document.getElementById('ee_a_' + t.id)?.value) || 0;
+    var j = parseInt(document.getElementById('ee_j_' + t.id)?.value) || 0;
+    var n = document.getElementById('ee_n_' + t.id)?.value || '';
+    var s = getFBSalesByDay(t.name, selM_edit, day, store);
+    if (c||o||m||a||j) {
+      entry.teachers[t.id] = {count:c, outsideCount:o, master:m, assist:a, junior:j, note:n, sales:s};
+    }
+  });
+
+  var k = dayKey(store, mKey, day);
+  S.daily[k].entries[idx] = entry;
+  save();
+  document.getElementById('edit-entry-modal').remove();
+  renderDayForm();
+}
+
 function setSupHours(store, mKey, day, field, val) {
   const k = dayKey(store, mKey, day);
   if (!S.daily[k]) S.daily[k] = { entries:[] };
@@ -561,7 +638,6 @@ function renderDayForm() {
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
-      '<td><span id="fee_' + t.id + '" class="zero-val">—</span></td>' +
       salesCell +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
       '</tr>';
@@ -592,7 +668,10 @@ function renderDayForm() {
         '<td style="font-size:12px">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
         '<td style="font-size:12px">' + (summary.join(' ｜ ')||'—') + '</td>' +
         '<td style="font-size:12px;color:var(--text3)">' + (entry.note||'') + '</td>' +
-        '<td><button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button></td>' +
+        '<td style="display:flex;gap:6px">' +
+        '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">編輯</button>' +
+        '<button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button>' +
+        '</td>' +
         '</tr>';
     });
   }
@@ -629,7 +708,6 @@ function renderDayForm() {
     '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
     '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
     '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
-    '<th>講師費（自動）</th>' +
     '<th>當日業績<br><span style="font-size:10px;color:var(--green)">自動帶入</span></th>' +
     '<th>備註</th>' +
     '</tr></thead>' +
