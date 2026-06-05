@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Otto2 ARTCLUB 薪資系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#141414;--bg2:#1e1e1e;--bg3:#282828;
+  --gold:#c9a84c;--gold2:#e2c068;--gold3:#f0d898;
+  --text:#ede9e0;--text2:#a8a49c;--text3:#686460;
+  --border:#333;--border2:#444;
+  --green:#4caf7d;--red:#e05555;
+}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.topbar{background:#0d0d0d;border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.logo{font-size:17px;font-weight:600;color:var(--gold)}
+.logo-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.sync-wrap{display:flex;align-items:center;gap:7px;font-size:12px}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;background:var(--text3)}
+.dot.ok{background:var(--green)}.dot.saving{background:var(--gold);animation:pulse 1s infinite}.dot.err{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.month-nav{display:flex;align-items:center;gap:8px}
+.month-nav select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit}
+.tabs{display:flex;background:#0d0d0d;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto}
+.tab{padding:12px 18px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
+.tab:hover{color:var(--text)}.tab.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:500}
+.page{display:none;padding:24px;max-width:1300px;margin:0 auto}.page.active{display:block}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;color:var(--gold2);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.fg label{display:block;font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
+.fg input,.fg select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;border-radius:7px;font-size:13px;outline:none;transition:border-color 0.15s;font-family:inherit}
+.fg input:focus,.fg select:focus{border-color:var(--gold)}
+.btn{padding:8px 18px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.15s;font-family:inherit}
+.btn-gold{background:var(--gold);color:#111}.btn-gold:hover{background:var(--gold2)}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2)}.btn-outline:hover{border-color:var(--gold);color:var(--gold)}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:5px}
+.btn-del{background:transparent;border:1px solid #553;color:#a88}.btn-del:hover{background:#2a1a1a;border-color:var(--red);color:var(--red)}
+.btn-dl{background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0}.btn-dl:hover{background:rgba(91,155,213,0.22)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--bg3);color:var(--text3);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02)}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.b-gold{background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)}
+.b-blue{background:rgba(91,155,213,0.12);color:#80c0f0;border:1px solid rgba(91,155,213,0.25)}
+.b-purple{background:rgba(155,114,207,0.12);color:#c0a0f0;border:1px solid rgba(155,114,207,0.25)}
+.b-green{background:rgba(76,175,125,0.12);color:#70e0a8;border:1px solid rgba(76,175,125,0.25)}
+.b-gray{background:rgba(160,156,150,0.08);color:var(--text2);border:1px solid var(--border)}
+.in-num{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;width:70px;font-size:13px;text-align:center;outline:none;font-family:inherit;transition:border-color 0.15s}
+.in-num:focus{border-color:var(--gold)}
+.in-num.md{width:90px}.in-num.lg{width:110px}
+.in-num.salary{background:rgba(201,168,76,0.06);border-color:rgba(201,168,76,0.2)}.in-num.salary:focus{border-color:var(--gold)}
+.total-row td{background:rgba(201,168,76,0.06)!important;font-weight:600;color:var(--gold2);border-top:1px solid rgba(201,168,76,0.2)}
+.store-tabs{display:flex;gap:8px;margin-bottom:18px}
+.store-btn{padding:6px 16px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:13px;transition:all 0.15s;font-family:inherit}
+.store-btn:hover{border-color:var(--gold);color:var(--gold)}
+.store-btn.active{background:var(--gold);border-color:var(--gold);color:#111;font-weight:600}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--bg3);border-radius:10px;padding:14px 16px;border:1px solid var(--border)}
+.stat-card .lbl{font-size:11px;color:var(--text3);margin-bottom:5px}
+.stat-card .val{font-size:22px;font-weight:600;color:var(--gold2)}
+.info-box{background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.15);border-radius:8px;padding:11px 14px;font-size:13px;color:var(--gold3);margin-bottom:16px;line-height:1.6}
+.empty{text-align:center;padding:40px;color:var(--text3);font-size:13px}
+.muted{color:var(--text3);font-size:12px}
+.auto-val{color:var(--gold2);font-weight:500}
+.zero-val{color:var(--text3)}
+.loading-overlay{position:fixed;inset:0;background:rgba(14,14,14,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:14px}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lock-overlay{position:fixed;inset:0;background:rgba(10,10,10,0.96);display:flex;align-items:center;justify-content:center;z-index:500}
+.lock-box{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:36px 40px;text-align:center;max-width:320px;width:90%}
+.lock-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:8px;font-size:14px;outline:none;text-align:center;font-family:inherit;letter-spacing:2px;margin-bottom:14px}
+.lock-input:focus{border-color:var(--gold)}
+.day-meta{display:flex;gap:16px;flex-wrap:wrap}
+.day-meta-item{display:flex;align-items:center;gap:8px;font-size:13px}
+.day-meta-item label{color:var(--text3);font-size:12px}
+.entry-log{background:var(--bg3);border-radius:8px;padding:12px 16px;margin-bottom:14px}
+tr.dragging{opacity:0.4}
+tr.drag-over td{border-top:2px solid var(--gold)!important}
+tr[draggable]{cursor:grab}
+</style>
+</head>
+<body>
+
+<div id="loading-overlay" class="loading-overlay">
+  <div class="spinner"></div>
+  <div style="color:var(--text2);font-size:14px">載入資料中...</div>
+</div>
+
+<div id="lock-overlay" class="lock-overlay" style="display:none">
+  <div class="lock-box">
+    <div style="font-size:40px;margin-bottom:12px">🔐</div>
+    <div style="font-size:16px;font-weight:600;color:var(--gold2);margin-bottom:6px">店長專區</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:20px">請輸入店長密碼</div>
+    <input class="lock-input" type="password" id="lock-pwd" placeholder="輸入密碼" onkeydown="if(event.key==='Enter')doUnlock()">
+    <div style="color:var(--red);font-size:12px;margin-bottom:10px;min-height:16px" id="lock-err"></div>
+    <button class="btn btn-gold" style="width:100%" onclick="doUnlock()">確認</button>
+  </div>
+</div>
+
+<div class="topbar">
+  <div>
+    <div class="logo">Otto2 ARTCLUB &nbsp;|&nbsp; 薪資系統</div>
+    <div class="logo-sub">旗艦店 + 國圖店 · 每月結算</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:20px">
+    <div class="sync-wrap"><span class="dot" id="sync-dot"></span><span id="sync-text" style="color:var(--text3)">連線中...</span></div>
+    <div class="month-nav">
+      <span style="font-size:12px;color:var(--text3)">月份</span>
+      <select id="selYear"></select>
+      <select id="selMonth"></select>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('daily')">📅 每日填寫</div>
+  <div class="tab" onclick="switchTab('monthly')">📊 月報總覽</div>
+  <div class="tab" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
+  <div class="tab" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
+</div>
+
+<div id="tab-daily" class="page active">
+  <div class="store-tabs">
+    <button class="store-btn active" onclick="switchStore('daily','flagship',this)">旗艦店</button>
+    <button class="store-btn" onclick="switchStore('daily','guotu',this)">國圖店</button>
+  </div>
+  <div id="daily-content"></div>
+</div>
+
+<div id="tab-monthly" class="page">
+  <div class="store-tabs">
+    <button class="store-btn active" onclick="switchStore('monthly','flagship',this)">旗艦店</button>
+    <button class="store-btn" onclick="switchStore('monthly','guotu',this)">國圖店</button>
+  </div>
+  <div id="monthly-content"></div>
+</div>
+
+<div id="tab-salary" class="page">
+  <div class="store-tabs">
+    <button class="store-btn active" onclick="switchStore('salary','flagship',this)">旗艦店</button>
+    <button class="store-btn" onclick="switchStore('salary','guotu',this)">國圖店</button>
+  </div>
+  <div id="salary-content"></div>
+</div>
+
+<div id="tab-settings" class="page">
+  <div class="card">
+    <div class="card-title">新增老師</div>
+    <div class="form-grid">
+      <div class="fg"><label>姓名／暱稱</label><input id="f-name" placeholder="例：蓁蓁"></div>
+      <div class="fg"><label>所屬分店</label>
+        <select id="f-store">
+          <option value="flagship">旗艦店</option>
+          <option value="guotu">國圖店</option>
+          <option value="both">兩店皆有</option>
+          <option value="flagship_cross">旗艦跨部門</option>
+        </select>
+      </div>
+      <div class="fg"><label>職別</label>
+        <select id="f-type"><option value="full">正職</option><option value="part">兼職</option></select>
+      </div>
+      <div class="fg"><label>職位</label>
+        <select id="f-role">
+          <option value="teacher">老師</option>
+          <option value="admin">行政</option>
+          <option value="sales">業務</option>
+        </select>
+      </div>
+      <div class="fg"><label>底薪／時薪（元）</label><input id="f-base" type="number" placeholder="正職底薪，兼職時薪"></div>
+      <div class="fg"><label>人次計算方式</label>
+        <select id="f-mode">
+          <option value="full">完整（每人次×50）</option>
+          <option value="over">超過門檻才計算</option>
+          <option value="half">個人人次÷2（大熊用）</option>
+          <option value="minni">兼職特殊公式（米妮用）</option>
+        </select>
+      </div>
+      <div class="fg"><label>基礎人次門檻</label><input id="f-threshold" type="number" placeholder="例：20"></div>
+      <div class="fg"><label>行政績效—旗艦（元）</label><input id="f-adminF" type="number" placeholder="0"></div>
+      <div class="fg"><label>行政績效—國圖（元）</label><input id="f-adminG" type="number" placeholder="0"></div>
+      <div class="fg"><label>備註</label><input id="f-note" placeholder="選填"></div>
+    </div>
+    <button class="btn btn-gold" onclick="addTeacher()">+ 新增老師</button>
+  </div>
+  <div class="card">
+    <div class="card-title">目前老師列表</div>
+    <div id="teacher-list"></div>
+  </div>
+</div>
+
+<script>
+const BIN_ID  = '6a213222da38895dfe853013';
+const API_KEY = '$2a$10$j9sPXTx5rGpYrXCrJE851ePL5Ln2bPrWb8Han0IYfWIx//D5ArkCe';
+const BIN_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
+const BOSS_PWD = 'Otto212707656';
+const FB_DB_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app';
+const SALES_YEAR = 2026;
+
+
+const SALES_STAFF_MAP = {
+  'Ethan': ['吳忠懋-Ethan', 'Ethan'],
+  '大熊': ['邱宗洲-大熊', '大熊'],
+  '羊羊': ['劉映秀-羊羊', '羊羊'],
+  '77': ['林亭媛-七七', '七七', '77'],
+  '蓁蓁': ['莊宜蓁-蓁蓁', '蓁蓁', '莊宜蓁'],
+  '米雪': ['劉芷喬-米雪', '米雪', '劉芷喬'],
+  '米妮': ['陳尚潔-米妮', '米妮', '陳尚潔'],
+};
+
+// Returns teacher name from salary system given a sales staff string
+function matchStaff(salesStaff) {
+  for (const [teacherName, aliases] of Object.entries(SALES_STAFF_MAP)) {
+    if (aliases.some(a => salesStaff.includes(a) || a.includes(salesStaff))) {
+      return teacherName;
+    }
+  }
+  return null;
+}
+
+// Firebase sales data cache
+let fbSalesData = {}; // { 'teacherName_month': amount }
+let fbLoaded = false;
+
+function loadFirebaseSales() {
+  const url = FB_DB_URL + '/salesData/records.json';
+  fetch(url)
+    .then(r => r.json())
+    .then(records => {
+      if (!records || !Array.isArray(records)) return;
+      fbSalesData = {};
+      records.forEach(r => {
+        if (r.voided || r.pending) return;
+        const teacherName = matchStaff(r.staff || '');
+        if (!teacherName) return;
+        // Monthly total
+        const mKey = teacherName + '_' + r.month;
+        fbSalesData[mKey] = (fbSalesData[mKey] || 0) + (r.amount || 0);
+        // Daily total
+        const dKey = teacherName + '_' + r.month + '_' + r.day;
+        fbSalesData[dKey] = (fbSalesData[dKey] || 0) + (r.amount || 0);
+      });
+      fbLoaded = true;
+      // Re-render pages that use FB sales data
+      if (document.getElementById('tab-salary').classList.contains('active')) {
+        renderSalary();
+      }
+      if (document.getElementById('tab-daily').classList.contains('active')) {
+        renderDayForm();
+      }
+      if (document.getElementById('tab-monthly').classList.contains('active')) {
+        renderMonthly();
+      }
+    })
+    .catch(e => console.log('Firebase load failed:', e));
+}
+
+// Get sales amount from Firebase for a teacher and month
+function getFBSales(teacherName, month) {
+  if (!fbLoaded) return 0;
+  const key = teacherName + '_' + parseInt(month);
+  return fbSalesData[key] || 0;
+}
+
+// Get sales amount from Firebase for a teacher, month and specific day
+function getFBSalesByDay(teacherName, month, day) {
+  if (!fbLoaded) return 0;
+  const key = teacherName + '_' + parseInt(month) + '_' + parseInt(day);
+  return fbSalesData[key] || 0;
+}
+
+let S = { teachers:[], daily:{}, salaryBase:{} };
+let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship' };
+let tabUnlocked = { salary:false, settings:false };
+let pendingTab = null;
+let saveTimer = null;
+
+const STORE_NAME = { flagship:'旗艦店', guotu:'國圖店', both:'兩店皆有', flagship_cross:'旗艦跨部門' };
+const TYPE_NAME  = { full:'正職', part:'兼職' };
+const MODE_NAME  = { full:'完整計算', over:'超過門檻', half:'個人÷2', minni:'兼職特殊公式' };
+const ROLE_NAME  = { teacher:'老師', admin:'行政', sales:'業務' };
+
+// ── Sync ──────────────────────────────────────────────
+function setSync(status, text) {
+  document.getElementById('sync-dot').className = 'dot ' + status;
+  const el = document.getElementById('sync-text');
+  el.textContent = text;
+  el.style.color = status==='ok'?'var(--green)':status==='saving'?'var(--gold)':status==='err'?'var(--red)':'var(--text3)';
+}
+
+async function loadData() {
+  try {
+    const res = await fetch(BIN_URL + '/latest', { headers:{'X-Master-Key':API_KEY} });
+    const json = await res.json();
+    if (json.record && typeof json.record === 'object') {
+      S = Object.assign({ teachers:[], daily:{}, salaryBase:{} }, json.record);
+    }
+    setSync('ok','已同步');
+  } catch(e) {
+    setSync('err','使用本機資料');
+    try { const d = localStorage.getItem('otto2_v7'); if(d) S = JSON.parse(d); } catch(e2) {}
+  }
+  document.getElementById('loading-overlay').style.display = 'none';
+  loadFirebaseSales();
+  renderAll();
+}
+
+async function doSave() {
+  setSync('saving','儲存中...');
+  localStorage.setItem('otto2_v7', JSON.stringify(S));
+  try {
+    await fetch(BIN_URL, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Master-Key':API_KEY},
+      body: JSON.stringify(S)
+    });
+    setSync('ok','已儲存');
+  } catch(e) { setSync('err','儲存失敗（本機備份）'); }
+}
+
+function save() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 800);
+}
+
+// ── Month ──────────────────────────────────────────────
+function getMonthKey() {
+  return document.getElementById('selYear').value + '-' + document.getElementById('selMonth').value;
+}
+
+function getDaysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+
+function initMonth() {
+  const yEl = document.getElementById('selYear');
+  const mEl = document.getElementById('selMonth');
+  const now = new Date();
+  for (let y=2024;y<=2030;y++) {
+    const o = document.createElement('option');
+    o.value = y; o.text = y + ' 年';
+    if (y===now.getFullYear()) o.selected = true;
+    yEl.appendChild(o);
+  }
+  ['01','02','03','04','05','06','07','08','09','10','11','12'].forEach((m,i) => {
+    const o = document.createElement('option');
+    o.value = m; o.text = (i+1) + ' 月';
+    if (i===now.getMonth()) o.selected = true;
+    mEl.appendChild(o);
+  });
+  yEl.onchange = mEl.onchange = renderAll;
+}
+
+// ── Lock ───────────────────────────────────────────────
+function doUnlock() {
+  const pwd = document.getElementById('lock-pwd').value;
+  if (pwd === BOSS_PWD) {
+    tabUnlocked[pendingTab] = true;
+    document.getElementById('lock-overlay').style.display = 'none';
+    document.getElementById('lock-pwd').value = '';
+    document.getElementById('lock-err').textContent = '';
+    doSwitchTab(pendingTab);
+  } else {
+    document.getElementById('lock-err').textContent = '密碼錯誤';
+  }
+}
+
+// ── Tab ────────────────────────────────────────────────
+function switchTab(tab) {
+  const PROTECTED = ['salary','settings'];
+  if (PROTECTED.includes(tab) && !tabUnlocked[tab]) {
+    pendingTab = tab;
+    document.getElementById('lock-overlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('lock-pwd').focus(), 100);
+    return;
+  }
+  doSwitchTab(tab);
+}
+
+function doSwitchTab(tab) {
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    el.classList.toggle('active', ['daily','monthly','salary','settings'][i] === tab);
+  });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab==='daily') renderDaily();
+  if (tab==='monthly') renderMonthly();
+  if (tab==='salary') renderSalary();
+  if (tab==='settings') renderTeacherList();
+}
+
+function switchStore(tab, store, el) {
+  curStore[tab] = store;
+  const container = document.getElementById('tab-' + tab);
+  container.querySelectorAll('.store-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='daily') renderDaily();
+  if (tab==='monthly') renderMonthly();
+  if (tab==='salary') renderSalary();
+}
+
+function getTeachers(store) {
+  return S.teachers.filter(t => t.store===store || t.store==='both' || (store==='flagship' && t.store==='flagship_cross'));
+}
+
+// ── Daily Data ─────────────────────────────────────────
+function dayKey(store, mKey, day) {
+  return mKey + '_' + store + '_' + String(day).padStart(2,'0');
+}
+
+function getDayEntries(store, mKey, day) {
+  return S.daily[dayKey(store,mKey,day)]?.entries || [];
+}
+
+function getDayAgg(store, mKey, day) {
+  const entries = getDayEntries(store, mKey, day);
+  const r = { newCust:0, oldCust:0, teachers:{} };
+  entries.forEach(e => {
+    r.newCust += e.newCust || 0;
+    r.oldCust += e.oldCust || 0;
+    Object.keys(e.teachers||{}).forEach(tid => {
+      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0 };
+      const td = e.teachers[tid];
+      r.teachers[tid].count        += td.count        || 0;
+      r.teachers[tid].outsideCount += td.outsideCount || 0;
+      r.teachers[tid].master       += td.master       || 0;
+      r.teachers[tid].assist       += td.assist       || 0;
+      r.teachers[tid].junior       += td.junior       || 0;
+      r.teachers[tid].sales        += td.sales        || 0;
+    });
+  });
+  return r;
+}
+
+function addEntry(store, mKey, day, entry) {
+  const k = dayKey(store, mKey, day);
+  if (!S.daily[k]) S.daily[k] = { entries:[] };
+  if (!S.daily[k].entries) S.daily[k].entries = [];
+  S.daily[k].entries.push(entry);
+  save();
+}
+
+function delEntry(store, mKey, day, idx) {
+  const k = dayKey(store, mKey, day);
+  if (S.daily[k]?.entries) {
+    S.daily[k].entries.splice(idx, 1);
+    save();
+    renderDaily();
+  }
+}
+
+function setSupHours(store, mKey, day, field, val) {
+  const k = dayKey(store, mKey, day);
+  if (!S.daily[k]) S.daily[k] = { entries:[] };
+  S.daily[k][field] = val;
+  save();
+}
+
+// ── Render Daily ───────────────────────────────────────
+function renderDaily() {
+  const mKey = getMonthKey();
+  const store = curStore.daily;
+  const teachers = getTeachers(store);
+  const el = document.getElementById('daily-content');
+  const now = new Date();
+  const selY = parseInt(document.getElementById('selYear').value);
+  const selM = parseInt(document.getElementById('selMonth').value);
+  const days = getDaysInMonth(selY, selM);
+  const todayDay = (selY===now.getFullYear() && selM===now.getMonth()+1) ? now.getDate() : 1;
+
+  if (!teachers.length) {
+    el.innerHTML = '<div class="card"><div class="empty">此分店尚無老師，請店長至「老師設定」新增。</div></div>';
+    return;
+  }
+
+  let opts = '';
+  for (let d=1;d<=days;d++) {
+    const dd = new Date(selY,selM-1,d);
+    const wd = ['日','一','二','三','四','五','六'][dd.getDay()];
+    const entries = getDayEntries(store, mKey, d);
+    const hasMark = entries.length > 0 ? ' ✓' : '';
+    opts += '<option value="' + d + '"' + (d===todayDay?' selected':'') + '>' + d + ' 日（週' + wd + ')' + hasMark + '</option>';
+  }
+
+  el.innerHTML = '<div class="card"><div class="card-title" style="justify-content:space-between">'+
+    '<span>📅 選擇日期</span>' +
+    '<a href="https://otto2tfs2000-ctrl.github.io/sales-system/" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0;padding:6px 14px;border-radius:7px;font-size:12px;text-decoration:none;font-weight:500">📊 前往業績系統 ↗</a>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:12px">' +
+    '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:14px;outline:none;font-family:inherit">' + opts + '</select>' +
+    '<span style="font-size:12px;color:var(--text3)">✓ 表示已有紀錄</span>' +
+    '</div></div>' +
+    '<div id="day-form-area"></div>';
+
+  renderDayForm();
+}
+
+function renderDayForm() {
+  const mKey = getMonthKey();
+  const store = curStore.daily;
+  const teachers = getTeachers(store);
+  const day = parseInt(document.getElementById('day-sel')?.value || 1);
+  const entries = getDayEntries(store, mKey, day);
+  const agg = getDayAgg(store, mKey, day);
+  const el = document.getElementById('day-form-area');
+  if (!el) return;
+
+  // Teacher input rows
+  let tRows = '';
+  var selM_daily = parseInt(document.getElementById('selMonth').value);
+  teachers.forEach(function(t) {
+    var fbAmt = getFBSalesByDay(t.name, selM_daily, day);
+    var salesCell;
+    if (fbAmt > 0) {
+      salesCell = '<td>' +
+        '<span class="auto-val" style="font-size:14px;font-weight:600">$' + fbAmt.toLocaleString() + '</span>' +
+        '<br><span style="font-size:10px;color:var(--green)">● 業績系統</span>' +
+        '</td>';
+    } else if (fbLoaded) {
+      salesCell = '<td><span class="zero-val" style="font-size:12px">— <span style="font-size:10px;color:var(--text3)">無紀錄</span></span></td>';
+    } else {
+      salesCell = '<td><span style="font-size:11px;color:var(--text3)">載入中...</span></td>';
+    }
+    tRows += '<tr>' +
+      '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
+      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
+      '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
+      '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
+      '<td><span id="fee_' + t.id + '" class="zero-val">—</span></td>' +
+      salesCell +
+      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
+      '</tr>';
+  });
+
+  // Entry log
+  let logHtml = '';
+  if (entries.length === 0) {
+    logHtml = '<tr><td colspan="5"><div class="empty" style="padding:20px">今日尚無紀錄</div></td></tr>';
+  } else {
+    entries.forEach(function(entry, idx) {
+      var nc = entry.newCust || 0;
+      var oc = entry.oldCust || 0;
+      var summary = [];
+      Object.keys(entry.teachers||{}).forEach(function(tid) {
+        var t = teachers.find(function(x){ return x.id===tid; });
+        var td = entry.teachers[tid];
+        var parts = [];
+        if (td.count) parts.push(td.count + '人次');
+        if (td.outsideCount) parts.push('外派' + td.outsideCount);
+        var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+        if (lec) parts.push('講師費$' + lec.toLocaleString());
+        if (td.sales) parts.push('業績$' + td.sales.toLocaleString());
+        if (parts.length && t) summary.push(t.name + ': ' + parts.join('、'));
+      });
+      logHtml += '<tr>' +
+        '<td style="color:var(--text3);font-size:12px;white-space:nowrap">' + (entry.time||'—') + '</td>' +
+        '<td style="font-size:12px">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
+        '<td style="font-size:12px">' + (summary.join(' ｜ ')||'—') + '</td>' +
+        '<td style="font-size:12px;color:var(--text3)">' + (entry.note||'') + '</td>' +
+        '<td><button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button></td>' +
+        '</tr>';
+    });
+  }
+
+  // Today aggregate summary
+  var aggHtml = '';
+  if (entries.length > 0) {
+    var aggParts = [];
+    if (agg.newCust) aggParts.push('新客 <strong style="color:var(--gold2)">' + agg.newCust + '</strong>');
+    if (agg.oldCust) aggParts.push('舊客 <strong style="color:var(--gold2)">' + agg.oldCust + '</strong>');
+    teachers.forEach(function(t) {
+      var td = agg.teachers[t.id];
+      if (td && td.count) aggParts.push(t.name + ' <strong style="color:var(--gold2)">' + td.count + '</strong>人次');
+    });
+    if (aggParts.length) {
+      aggHtml = '<div class="entry-log"><div style="color:var(--text3);font-size:11px;margin-bottom:6px">今日合計</div>' +
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">' + aggParts.join(' ') + '</div></div>';
+    }
+  }
+
+  var html = '<div class="card">' +
+    '<div class="card-title">✏️ 新增本次紀錄 — ' + day + ' 日</div>' +
+    '<div class="info-box">填入這次的數據，按「新增本次紀錄」後資料儲存，欄位自動歸零。</div>' +
+    '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
+    '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0"></div>' +
+    '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0"></div>' +
+    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
+    '</div>' +
+    '<div style="overflow-x:auto"><table>' +
+    '<thead><tr>' +
+    '<th>老師</th>' +
+    '<th>一般人次<br><span style="font-size:10px;color:var(--green)">計獎金</span></th>' +
+    '<th>外派人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
+    '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
+    '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
+    '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
+    '<th>講師費（自動）</th>' +
+    '<th>當日業績<br><span style="font-size:10px;color:var(--green)">自動帶入</span></th>' +
+    '<th>備註</th>' +
+    '</tr></thead>' +
+    '<tbody>' + tRows + '</tbody></table></div>' +
+    '<div style="margin-top:16px;display:flex;gap:10px;align-items:center">' +
+    '<button class="btn btn-gold" onclick="submitEntry(\'' + store + '\',\'' + mKey + '\',' + day + ')">✚ 新增本次紀錄</button>' +
+    '<span style="font-size:12px;color:var(--text3)">按下後儲存，欄位自動歸零</span>' +
+    '</div></div>';
+
+  html += '<div class="card">' +
+    '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:12px;color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
+    aggHtml +
+    '<div style="overflow-x:auto"><table>' +
+    '<thead><tr><th>時間</th><th>新舊客</th><th>老師紀錄</th><th>備註</th><th></th></tr></thead>' +
+    '<tbody>' + logHtml + '</tbody></table></div></div>';
+
+  // Mixue support for flagship
+  if (store === 'flagship') {
+    var mixue = teachers.find(function(t){ return t.name==='米雪'; });
+    if (mixue) {
+      var k = dayKey(store, mKey, day);
+      var supH = S.daily[k]?.supHours || 0;
+      var supR = S.daily[k]?.supRate  || 0;
+      html += '<div class="card">' +
+        '<div class="card-title">🔄 米雪旗艦支援時數 — ' + day + ' 日</div>' +
+        '<div class="day-meta">' +
+        '<div class="day-meta-item"><label>支援時數</label>' +
+        '<input type="number" class="in-num md" value="' + supH + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supHours\',+this.value)"></div>' +
+        '<div class="day-meta-item"><label>時薪（元）</label>' +
+        '<input type="number" class="in-num md" value="' + supR + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supRate\',+this.value)"></div>' +
+        '</div></div>';
+    }
+  }
+
+  el.innerHTML = html;
+}
+
+function updateFee(tid) {
+  var m = parseInt(document.getElementById('inp_m_' + tid)?.value) || 0;
+  var a = parseInt(document.getElementById('inp_a_' + tid)?.value) || 0;
+  var j = parseInt(document.getElementById('inp_j_' + tid)?.value) || 0;
+  var fee = m*2000 + a*1500 + j*1000;
+  var el = document.getElementById('fee_' + tid);
+  if (el) { el.textContent = fee ? '$'+fee.toLocaleString() : '—'; el.className = fee?'auto-val':'zero-val'; }
+}
+
+function submitEntry(store, mKey, day) {
+  var teachers = getTeachers(store);
+  var now = new Date();
+  var time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  var entry = {
+    time: time,
+    newCust: parseInt(document.getElementById('inp_nc')?.value) || 0,
+    oldCust: parseInt(document.getElementById('inp_oc')?.value) || 0,
+    note: document.getElementById('inp_en')?.value || '',
+    teachers: {}
+  };
+  var hasData = entry.newCust || entry.oldCust;
+  var selM_submit = parseInt(document.getElementById('selMonth').value);
+  teachers.forEach(function(t) {
+    var c = parseInt(document.getElementById('inp_c_' + t.id)?.value) || 0;
+    var o = parseInt(document.getElementById('inp_o_' + t.id)?.value) || 0;
+    var m = parseInt(document.getElementById('inp_m_' + t.id)?.value) || 0;
+    var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
+    var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
+    var n = document.getElementById('inp_n_' + t.id)?.value || '';
+    var s = getFBSalesByDay(t.name, selM_submit, day);
+    if (c||o||m||a||j) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s}; }
+  });
+  if (!hasData) { alert('請至少填入一筆資料'); return; }
+  addEntry(store, mKey, day, entry);
+  renderDayForm();
+}
+
+// ── Monthly Aggregation ─────────────────────────────────
+function aggregateMonth(store, mKey) {
+  var selY = parseInt(document.getElementById('selYear').value);
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var days = getDaysInMonth(selY, selM);
+  var teachers = getTeachers(store);
+  var totals = { newCust:0, oldCust:0, teachers:{} };
+  teachers.forEach(function(t) {
+    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0 };
+  });
+  for (var d=1; d<=days; d++) {
+    var agg = getDayAgg(store, mKey, d);
+    totals.newCust += agg.newCust;
+    totals.oldCust += agg.oldCust;
+    teachers.forEach(function(t) {
+      var td = agg.teachers[t.id] || {};
+      totals.teachers[t.id].count        += td.count        || 0;
+      totals.teachers[t.id].outsideCount += td.outsideCount || 0;
+      totals.teachers[t.id].master       += td.master       || 0;
+      totals.teachers[t.id].assist       += td.assist       || 0;
+      totals.teachers[t.id].junior       += td.junior       || 0;
+      totals.teachers[t.id].sales        += td.sales        || 0;
+    });
+    // Mixue support hours stored at day level
+    var mixue = teachers.find(function(t){ return t.name==='米雪'; });
+    if (mixue) {
+      var k = dayKey(store, mKey, d);
+      totals.teachers[mixue.id].supHours += S.daily[k]?.supHours || 0;
+      if (S.daily[k]?.supRate) totals.teachers[mixue.id].supRate = S.daily[k].supRate;
+    }
+  }
+  return totals;
+}
+
+// ── Render Monthly ──────────────────────────────────────
+function renderMonthly() {
+  var mKey = getMonthKey();
+  var store = curStore.monthly;
+  var teachers = getTeachers(store);
+  var el = document.getElementById('monthly-content');
+
+  if (!teachers.length) { el.innerHTML = '<div class="card"><div class="empty">此分店尚無老師。</div></div>'; return; }
+
+  var totals = aggregateMonth(store, mKey);
+  var tCount=0, tOutside=0, tLec=0, tSales=0;
+  teachers.forEach(function(t) {
+    var tt = totals.teachers[t.id];
+    tCount   += tt.count;
+    tOutside += tt.outsideCount;
+    tLec     += tt.master*2000 + tt.assist*1500 + tt.junior*1000;
+    tSales   += tt.sales;
+  });
+
+  var statHtml = '<div class="stat-grid">' +
+    '<div class="stat-card"><div class="lbl">教學人次</div><div class="val">' + tCount + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">外派人次</div><div class="val">' + (tOutside||'—') + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">新客</div><div class="val">' + totals.newCust + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">業績合計</div><div class="val">$' + tSales.toLocaleString() + '</div></div>' +
+    '</div>';
+
+  var tRows = '';
+  teachers.forEach(function(t) {
+    var tt = totals.teachers[t.id];
+    var lec = tt.master*2000 + tt.assist*1500 + tt.junior*1000;
+    tRows += '<tr>' +
+      '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
+      '<td><span class="badge ' + (t.role==='sales'?'b-purple':t.role==='admin'?'b-blue':'b-gray') + '">' + ROLE_NAME[t.role||'teacher'] + '</span></td>' +
+      '<td>' + tt.count + '</td>' +
+      '<td class="' + (tt.outsideCount?'auto-val':'zero-val') + '">' + (tt.outsideCount||'—') + '</td>' +
+      '<td>' + (tt.master||'—') + '</td>' +
+      '<td>' + (tt.assist||'—') + '</td>' +
+      '<td>' + (tt.junior||'—') + '</td>' +
+      '<td class="' + (lec?'auto-val':'zero-val') + '">' + (lec?'$'+lec.toLocaleString():'—') + '</td>' +
+      (function(){
+        var selM2 = parseInt(document.getElementById('selMonth').value);
+        var fbAmt2 = getFBSales(t.name, selM2);
+        var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
+        var fbTag = fbAmt2 > 0 ? ' <span style="font-size:10px;color:var(--green)">●FB</span>' : '';
+        return '<td class="' + (dispAmt?'auto-val':'zero-val') + '">' + (dispAmt?'$'+dispAmt.toLocaleString()+fbTag:'—') + '</td>';
+      })() +
+      (store==='flagship'?'<td class="' + (tt.supHours?'auto-val':'zero-val') + '">' + (tt.supHours||'—') + '</td>':'') +
+      '</tr>';
+  });
+  tRows += '<tr class="total-row">' +
+    '<td>合計</td><td>—</td>' +
+    '<td>' + tCount + '</td>' +
+    '<td>' + (tOutside||'—') + '</td>' +
+    '<td>—</td><td>—</td><td>—</td>' +
+    '<td>$' + tLec.toLocaleString() + '</td>' +
+    '<td>$' + tSales.toLocaleString() + '</td>' +
+    (store==='flagship'?'<td>—</td>':'') +
+    '</tr>';
+
+  // Part-time hours section
+  var ptTeachers = teachers.filter(function(t){ return t.type==='part'; });
+  var ptHtml = '';
+  if (ptTeachers.length) {
+    var ptKey = 'pt_' + mKey + '_' + store;
+    if (!S.salaryBase) S.salaryBase = {};
+    if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
+    var ptRows = ptTeachers.map(function(t) {
+      var hrs = S.salaryBase[ptKey][t.id] || 0;
+      return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
+        '<td><input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value)" placeholder="0"></td>' +
+        '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算</td></tr>';
+    }).join('');
+    ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
+      '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。</div>' +
+      '<table><thead><tr><th>姓名</th><th>職別</th><th>本月時數（小時）</th><th>說明</th></tr></thead>' +
+      '<tbody>' + ptRows + '</tbody></table></div>';
+  }
+
+  // Daily breakdown
+  var selY = parseInt(document.getElementById('selYear').value);
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var days = getDaysInMonth(selY, selM);
+  var dailyRows = '';
+  var dNewSum=0, dOldSum=0, dCountSum=0, dOutsideSum=0, dLecSum=0, dSalesSum=0;
+
+  for (var d=1; d<=days; d++) {
+    var agg2 = getDayAgg(store, mKey, d);
+    var dd = new Date(selY,selM-1,d);
+    var wd = ['日','一','二','三','四','五','六'][dd.getDay()];
+    var isWkend = dd.getDay()===0||dd.getDay()===6;
+    var dc=0, do2=0, dl=0, ds=0;
+    teachers.forEach(function(t) {
+      var td = agg2.teachers[t.id]||{};
+      dc += td.count||0; do2 += td.outsideCount||0;
+      dl += (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+      ds += td.sales||0;
+    });
+    dNewSum+=agg2.newCust; dOldSum+=agg2.oldCust;
+    dCountSum+=dc; dOutsideSum+=do2; dLecSum+=dl; dSalesSum+=ds;
+
+    var entries2 = getDayEntries(store, mKey, d);
+    var detHtml = '';
+    teachers.forEach(function(t) {
+      var td = agg2.teachers[t.id]||{};
+      var tl = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
+      if (td.count||td.outsideCount||tl||td.sales) {
+        detHtml += '<tr style="background:rgba(255,255,255,0.015)">' +
+          '<td style="padding-left:28px;color:var(--text2);font-size:12px">└ ' + t.name + '</td>' +
+          '<td></td><td></td>' +
+          '<td style="font-size:12px;color:var(--text2)">' + (td.count||'—') + '</td>' +
+          '<td style="font-size:12px;color:var(--text2)">' + (td.outsideCount||'—') + '</td>' +
+          '<td style="font-size:12px;color:var(--text2)">' + (tl?'$'+tl.toLocaleString():'—') + '</td>' +
+          '<td style="font-size:12px;color:var(--text2)">' + (td.sales?'$'+td.sales.toLocaleString():'—') + '</td>' +
+          '</tr>';
+      }
+    });
+
+    var rowId = 'dr_' + store + '_' + d;
+    dailyRows += '<tr style="background:' + (isWkend?'rgba(201,168,76,0.03)':'') + ';' + (detHtml?'cursor:pointer':'') + '"' +
+      (detHtml?' onclick="toggleRow(\'' + rowId + '\',\'arr_' + store + '_' + d + '\')"':'') + '>' +
+      '<td><strong style="font-size:13px">' + d + '</strong><span style="color:var(--text3);font-size:11px;margin-left:5px">週' + wd + '</span>' +
+      (detHtml?'<span id="arr_' + store + '_' + d + '" style="color:var(--text3);font-size:10px;margin-left:6px">▶</span>':'') +
+      (entries2.length?'<span style="color:var(--green);font-size:10px;margin-left:4px">✓</span>':'') + '</td>' +
+      '<td>' + (agg2.newCust||0) + '</td>' +
+      '<td>' + (agg2.oldCust||0) + '</td>' +
+      '<td class="' + (dc?'auto-val':'zero-val') + '">' + (dc||'—') + '</td>' +
+      '<td class="' + (do2?'auto-val':'zero-val') + '">' + (do2||'—') + '</td>' +
+      '<td class="' + (dl?'auto-val':'zero-val') + '">' + (dl?'$'+dl.toLocaleString():'—') + '</td>' +
+      '<td class="' + (ds?'auto-val':'zero-val') + '">' + (ds?'$'+ds.toLocaleString():'—') + '</td>' +
+      '</tr>';
+    if (detHtml) {
+      dailyRows += '<tr id="' + rowId + '" style="display:none"><td colspan="7" style="padding:0">' +
+        '<table style="width:100%;border-collapse:collapse">' + detHtml + '</table></td></tr>';
+    }
+  }
+  dailyRows += '<tr class="total-row"><td>合計</td>' +
+    '<td>' + dNewSum + '</td><td>' + dOldSum + '</td>' +
+    '<td>' + dCountSum + '</td>' +
+    '<td>' + (dOutsideSum||'—') + '</td>' +
+    '<td>' + (dLecSum?'$'+dLecSum.toLocaleString():'—') + '</td>' +
+    '<td>' + (dSalesSum?'$'+dSalesSum.toLocaleString():'—') + '</td>' +
+    '</tr>';
+
+  var summaryTable = '<div class="card">' +
+    '<div class="card-title" style="justify-content:space-between"><span>📊 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</span>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button class="btn btn-dl btn-sm" onclick="dlExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel</button>' +
+    '<button class="btn btn-dl btn-sm" onclick="dlPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button>' +
+    '</div></div>' +
+    '<div style="overflow-x:auto"><table><thead><tr>' +
+    '<th>老師</th><th>職位</th><th>一般人次</th><th>外派人次</th>' +
+    '<th>外派主教</th><th>外派助教</th><th>小老師場</th>' +
+    '<th>講師費</th><th>業績金額</th>' +
+    (store==='flagship'?'<th>米雪支援時數</th>':'') +
+    '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
+
+  var dailyTable = '<div class="card">' +
+    '<div class="card-title">📆 每日明細 <span style="font-size:11px;color:var(--text3);font-weight:400">有 ▶ 可點開看老師明細</span></div>' +
+    '<div style="overflow-x:auto"><table><thead><tr>' +
+    '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>講師費</th><th>業績</th>' +
+    '</tr></thead><tbody>' + dailyRows + '</tbody></table></div></div>';
+
+  el.innerHTML = statHtml + ptHtml + summaryTable + dailyTable;
+}
+
+function toggleRow(rowId, arrId) {
+  var row = document.getElementById(rowId);
+  var arr = document.getElementById(arrId);
+  if (!row) return;
+  var hidden = row.style.display === 'none';
+  row.style.display = hidden ? 'table-row' : 'none';
+  if (arr) arr.textContent = hidden ? '▼' : '▶';
+}
+
+function setPTHours(ptKey, tid, val) {
+  if (!S.salaryBase) S.salaryBase = {};
+  if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
+  S.salaryBase[ptKey][tid] = val;
+  save();
+}
+
+// ── Salary ──────────────────────────────────────────────
+function calcSalary(t, store, mKey) {
+  var totals = aggregateMonth(store, mKey);
+  var tt = totals.teachers[t.id] || {};
+  var adminAmt = store==='flagship' ? (t.adminF||0) : (t.adminG||0);
+  var ptKey = 'pt_' + mKey + '_' + store;
+  var ptHours = t.type==='part' ? (S.salaryBase?.[ptKey]?.[t.id] || 0) : 0;
+
+  var countBonus = 0;
+  if (t.mode === 'minni') {
+    var base = Math.max(0, ptHours/2 - 3);
+    countBonus = Math.max(0, Math.round(((tt.count||0) - base) * 50));
+  } else if (t.mode === 'half') {
+    countBonus = Math.round((tt.count||0)/2) * 50;
+  } else if (t.mode === 'over') {
+    countBonus = Math.max(0, (tt.count||0) - (t.threshold||0)) * 50;
+  } else {
+    countBonus = (tt.count||0) * 50;
+  }
+
+  var lectureFee = (tt.master||0)*2000 + (tt.assist||0)*1500 + (tt.junior||0)*1000;
+  // Use Firebase sales data if loaded, otherwise use manually entered data
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var fbAmt = getFBSales(t.name, selM);
+  var salesAmt = fbAmt > 0 ? fbAmt : (tt.sales||0);
+  var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
+  var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
+  var ptBasePay  = t.type==='part' ? (t.base||0)*ptHours : 0;
+  var sub = countBonus + lectureFee + salesPerf + adminAmt + supFee + ptBasePay;
+
+  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, sub };
+}
+
+function renderSalary() {
+  var mKey = getMonthKey();
+  var store = curStore.salary;
+  var teachers = getTeachers(store);
+  var el = document.getElementById('salary-content');
+  var isFlagship = store==='flagship';
+
+  if (!teachers.length) { el.innerHTML='<div class="card"><div class="empty">此分店尚無老師。</div></div>'; return; }
+
+  var bk = mKey + '_' + store;
+  if (!S.salaryBase) S.salaryBase = {};
+  if (!S.salaryBase[bk]) S.salaryBase[bk] = {};
+
+  var tCB=0,tLF=0,tSP=0,tAD=0,tSU=0,tPTB=0,tSUB=0,tBASE=0,tGRAND=0;
+  var rows = teachers.map(function(t) {
+    var c = calcSalary(t, store, mKey);
+    var base = t.type==='full' ? (S.salaryBase[bk][t.id]!==undefined ? S.salaryBase[bk][t.id] : '') : 0;
+    var baseVal = t.type==='full' ? (parseInt(base)||0) : 0;
+    var grand = c.sub + baseVal;
+    tCB+=c.countBonus; tLF+=c.lectureFee; tSP+=c.salesPerf;
+    tAD+=c.adminAmt; tSU+=c.supFee; tPTB+=c.ptBasePay; tSUB+=c.sub; tBASE+=baseVal; tGRAND+=grand;
+    return { t, c, base, baseVal, grand };
+  });
+
+  var statHtml = '<div class="stat-grid">' +
+    '<div class="stat-card"><div class="lbl">人次獎金合計</div><div class="val">$' + tCB.toLocaleString() + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLF.toLocaleString() + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">績效合計</div><div class="val">$' + (tSP+tAD).toLocaleString() + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">總薪資合計</div><div class="val">$' + tGRAND.toLocaleString() + '</div></div>' +
+    '</div>';
+
+  var tRows = rows.map(function(row) {
+    var t=row.t, c=row.c, base=row.base, baseVal=row.baseVal, grand=row.grand;
+    return '<tr>' +
+      '<td><strong>' + t.name + '</strong><br><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
+      '<td class="' + (c.countBonus?'auto-val':'zero-val') + '">$' + c.countBonus.toLocaleString() + '</td>' +
+      '<td class="' + (c.lectureFee?'auto-val':'zero-val') + '">$' + c.lectureFee.toLocaleString() + '</td>' +
+      '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
+      '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
+      (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
+      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+(c.ptHours?' ('+c.ptHours+'h)':''):'—') + '</td>' +
+      '<td style="font-weight:500">$' + c.sub.toLocaleString() + '</td>' +
+      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
+      '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
+      '</tr>';
+  }).join('');
+
+  tRows += '<tr class="total-row">' +
+    '<td>合計</td>' +
+    '<td>$' + tCB.toLocaleString() + '</td>' +
+    '<td>$' + tLF.toLocaleString() + '</td>' +
+    '<td>$' + tSP.toLocaleString() + '</td>' +
+    '<td>$' + tAD.toLocaleString() + '</td>' +
+    (isFlagship?'<td>$' + tSU.toLocaleString() + '</td>':'') +
+    '<td>$' + tPTB.toLocaleString() + '</td>' +
+    '<td>$' + tSUB.toLocaleString() + '</td>' +
+    '<td>$' + tBASE.toLocaleString() + '</td>' +
+    '<td>$' + tGRAND.toLocaleString() + '</td>' +
+    '</tr>';
+
+  el.innerHTML = statHtml + '<div class="card">' +
+    '<div class="card-title" style="justify-content:space-between"><span>💰 ' + STORE_NAME[store] + ' 薪資明細 — ' + mKey + '</span>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-dl btn-sm" onclick="dlSalaryExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel</button>' +
+    '<button class="btn btn-dl btn-sm" onclick="dlSalaryPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button></div></div>' +
+    '<div class="info-box">底薪欄位僅正職老師填入，兼職依時薪×時數自動計算。</div>' +
+    '<div style="overflow-x:auto"><table><thead><tr>' +
+    '<th>老師</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>' +
+    (isFlagship?'<th>米雪支援費</th>':'') +
+    '<th>兼職時薪費</th><th>小計</th><th style="color:var(--gold)">底薪（正職填）</th><th style="color:var(--gold2)">總薪</th>' +
+    '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
+}
+
+function setSalaryBase(bk, tid, val) {
+  if (!S.salaryBase) S.salaryBase = {};
+  if (!S.salaryBase[bk]) S.salaryBase[bk] = {};
+  S.salaryBase[bk][tid] = val;
+  save(); renderSalary();
+}
+
+// ── Teacher Settings ────────────────────────────────────
+function addTeacher() {
+  var name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('請填入姓名'); return; }
+  S.teachers.push({
+    id: Date.now().toString(), name,
+    store: document.getElementById('f-store').value,
+    type:  document.getElementById('f-type').value,
+    role:  document.getElementById('f-role').value,
+    base:  parseInt(document.getElementById('f-base').value)||0,
+    mode:  document.getElementById('f-mode').value,
+    threshold: parseInt(document.getElementById('f-threshold').value)||0,
+    adminF: parseInt(document.getElementById('f-adminF').value)||0,
+    adminG: parseInt(document.getElementById('f-adminG').value)||0,
+    note: document.getElementById('f-note').value.trim(),
+  });
+  save();
+  ['f-name','f-base','f-note','f-threshold','f-adminF','f-adminG'].forEach(function(id){ document.getElementById(id).value=''; });
+  renderTeacherList();
+}
+
+function delTeacher(id) {
+  if (!confirm('確定要刪除？')) return;
+  S.teachers = S.teachers.filter(function(t){ return t.id!==id; });
+  save(); renderTeacherList();
+}
+
+function editTeacher(id) {
+  document.querySelectorAll('[id^="erow_"]').forEach(function(r){ r.style.display='none'; });
+  var row = document.getElementById('erow_' + id);
+  if (row) row.style.display = 'table-row';
+}
+
+function cancelEdit(id) {
+  var row = document.getElementById('erow_' + id);
+  if (row) row.style.display = 'none';
+}
+
+function saveTeacher(id) {
+  var t = S.teachers.find(function(x){ return x.id===id; });
+  if (!t) return;
+  t.name      = document.getElementById('en_' + id).value.trim() || t.name;
+  t.store     = document.getElementById('es_' + id).value;
+  t.type      = document.getElementById('et_' + id).value;
+  t.role      = document.getElementById('er_' + id).value;
+  t.base      = parseInt(document.getElementById('eb_' + id).value)||0;
+  t.mode      = document.getElementById('em_' + id).value;
+  t.threshold = parseInt(document.getElementById('eth_' + id).value)||0;
+  t.adminF    = parseInt(document.getElementById('eaf_' + id).value)||0;
+  t.adminG    = parseInt(document.getElementById('eag_' + id).value)||0;
+  t.note      = document.getElementById('eno_' + id).value.trim();
+  save(); renderTeacherList();
+}
+
+var dragSrcId = null;
+
+function dragStart(e) {
+  dragSrcId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function dragOver(e) {
+  e.preventDefault();
+  var row = e.currentTarget;
+  if (row.dataset.id !== dragSrcId) {
+    document.querySelectorAll('#teacher-tbody tr').forEach(function(r){ r.classList.remove('drag-over'); });
+    row.classList.add('drag-over');
+  }
+}
+
+function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+
+function dragDrop(e) {
+  e.preventDefault();
+  var targetId = e.currentTarget.dataset.id;
+  if (!targetId || targetId===dragSrcId) {
+    document.querySelectorAll('#teacher-tbody tr').forEach(function(r){ r.classList.remove('dragging','drag-over'); });
+    return;
+  }
+  var srcIdx = S.teachers.findIndex(function(t){ return t.id===dragSrcId; });
+  var tgtIdx = S.teachers.findIndex(function(t){ return t.id===targetId; });
+  if (srcIdx!==-1 && tgtIdx!==-1) {
+    var moved = S.teachers.splice(srcIdx,1)[0];
+    S.teachers.splice(tgtIdx,0,moved);
+    save(); renderTeacherList();
+  }
+}
+
+function renderTeacherList() {
+  var el = document.getElementById('teacher-list');
+  if (!S.teachers.length) { el.innerHTML='<div class="empty">尚未新增老師。</div>'; return; }
+
+  var rows = S.teachers.map(function(t) {
+    var storeBadge = t.store==='flagship'?'b-gold':t.store==='guotu'?'b-blue':t.store==='flagship_cross'?'b-green':'b-purple';
+    var editRow = '<tr id="erow_' + t.id + '" style="display:none;background:var(--bg3)">' +
+      '<td></td><td colspan="10" style="padding:14px">' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:12px">' +
+      '<div class="fg"><label>姓名</label><input id="en_' + t.id + '" value="' + t.name + '"></div>' +
+      '<div class="fg"><label>分店</label><select id="es_' + t.id + '">' +
+        '<option value="flagship"' + (t.store==='flagship'?' selected':'') + '>旗艦店</option>' +
+        '<option value="guotu"' + (t.store==='guotu'?' selected':'') + '>國圖店</option>' +
+        '<option value="both"' + (t.store==='both'?' selected':'') + '>兩店皆有</option>' +
+        '<option value="flagship_cross"' + (t.store==='flagship_cross'?' selected':'') + '>旗艦跨部門</option>' +
+      '</select></div>' +
+      '<div class="fg"><label>職別</label><select id="et_' + t.id + '">' +
+        '<option value="full"' + (t.type==='full'?' selected':'') + '>正職</option>' +
+        '<option value="part"' + (t.type==='part'?' selected':'') + '>兼職</option>' +
+      '</select></div>' +
+      '<div class="fg"><label>職位</label><select id="er_' + t.id + '">' +
+        '<option value="teacher"' + ((t.role||'teacher')==='teacher'?' selected':'') + '>老師</option>' +
+        '<option value="admin"' + (t.role==='admin'?' selected':'') + '>行政</option>' +
+        '<option value="sales"' + (t.role==='sales'?' selected':'') + '>業務</option>' +
+      '</select></div>' +
+      '<div class="fg"><label>底薪/時薪</label><input type="number" id="eb_' + t.id + '" value="' + (t.base||'') + '"></div>' +
+      '<div class="fg"><label>人次計算</label><select id="em_' + t.id + '">' +
+        '<option value="full"' + (t.mode==='full'?' selected':'') + '>完整（每人次×50）</option>' +
+        '<option value="over"' + (t.mode==='over'?' selected':'') + '>超過門檻才計算</option>' +
+        '<option value="half"' + (t.mode==='half'?' selected':'') + '>個人÷2（大熊用）</option>' +
+        '<option value="minni"' + (t.mode==='minni'?' selected':'') + '>兼職特殊公式</option>' +
+      '</select></div>' +
+      '<div class="fg"><label>門檻</label><input type="number" id="eth_' + t.id + '" value="' + (t.threshold||'') + '"></div>' +
+      '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '"></div>' +
+      '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '"></div>' +
+      '<div class="fg"><label>備註</label><input id="eno_' + t.id + '" value="' + (t.note||'') + '"></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px">' +
+      '<button class="btn btn-gold btn-sm" onclick="saveTeacher(\'' + t.id + '\')">儲存</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="cancelEdit(\'' + t.id + '\')">取消</button>' +
+      '</div></td></tr>';
+
+    var mainRow = '<tr draggable="true" data-id="' + t.id + '"' +
+      ' ondragstart="dragStart(event)" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dragDrop(event)">' +
+      '<td style="color:var(--text3);cursor:grab;font-size:16px;text-align:center">⠿</td>' +
+      '<td><strong>' + t.name + '</strong></td>' +
+      '<td><span class="badge ' + storeBadge + '">' + STORE_NAME[t.store] + '</span></td>' +
+      '<td><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
+      '<td><span class="badge ' + (t.role==='sales'?'b-purple':t.role==='admin'?'b-blue':'b-gray') + '">' + ROLE_NAME[t.role||'teacher'] + '</span></td>' +
+      '<td class="muted">' + MODE_NAME[t.mode] + '</td>' +
+      '<td class="muted">' + (t.threshold||'—') + '</td>' +
+      '<td class="muted">' + (t.adminF?'$'+t.adminF.toLocaleString():'—') + '</td>' +
+      '<td class="muted">' + (t.adminG?'$'+t.adminG.toLocaleString():'—') + '</td>' +
+      '<td class="muted">' + (t.base?'$'+t.base.toLocaleString():'—') + '</td>' +
+      '<td style="display:flex;gap:6px">' +
+      '<button class="btn btn-outline btn-sm" onclick="editTeacher(\'' + t.id + '\')">編輯</button>' +
+      '<button class="btn btn-del btn-sm" onclick="delTeacher(\'' + t.id + '\')">刪除</button>' +
+      '</td></tr>';
+
+    return mainRow + editRow;
+  }).join('');
+
+  el.innerHTML = '<table><thead><tr>' +
+    '<th style="width:30px"></th><th>姓名</th><th>分店</th><th>職別</th><th>職位</th>' +
+    '<th>人次計算</th><th>門檻</th><th>行政績效(旗)</th><th>行政績效(圖)</th><th>底薪/時薪</th><th></th>' +
+    '</tr></thead><tbody id="teacher-tbody">' + rows + '</tbody></table>';
+}
+
+// ── Download ────────────────────────────────────────────
+function dlExcel(store, mKey) {
+  var teachers = getTeachers(store);
+  var totals = aggregateMonth(store, mKey);
+  var selY = parseInt(document.getElementById('selYear').value);
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var days = getDaysInMonth(selY, selM);
+  var wb = XLSX.utils.book_new();
+  var sumData = [['Otto2 ARTCLUB ' + STORE_NAME[store] + ' 月報 - ' + mKey],[],
+    ['姓名','職位','一般人次','外派人次','外派主教','外派助教','小老師','講師費','業績金額']];
+  teachers.forEach(function(t) {
+    var tt = totals.teachers[t.id]||{};
+    var lec = (tt.master||0)*2000+(tt.assist||0)*1500+(tt.junior||0)*1000;
+    sumData.push([t.name,ROLE_NAME[t.role||'teacher'],tt.count||0,tt.outsideCount||0,tt.master||0,tt.assist||0,tt.junior||0,lec,tt.sales||0]);
+  });
+  sumData.push([],['新客',totals.newCust,'舊客',totals.oldCust]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumData), '月報');
+  var hdr = ['日期','新客','舊客'];
+  teachers.forEach(function(t){ hdr.push(t.name+'人次',t.name+'外派',t.name+'業績'); });
+  var dailyData = [hdr];
+  for (var d=1;d<=days;d++) {
+    var agg = getDayAgg(store, mKey, d);
+    var row = [mKey+'-'+String(d).padStart(2,'0'), agg.newCust||0, agg.oldCust||0];
+    teachers.forEach(function(t){ var td=agg.teachers[t.id]||{}; row.push(td.count||0,td.outsideCount||0,td.sales||0); });
+    dailyData.push(row);
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailyData), '每日明細');
+  XLSX.writeFile(wb, 'Otto2_' + STORE_NAME[store] + '_月報_' + mKey + '.xlsx');
+}
+
+function dlSalaryExcel(store, mKey) {
+  var teachers = getTeachers(store);
+  var bk = mKey+'_'+store;
+  var isFlagship = store==='flagship';
+  var hdr = ['姓名','職別','人次獎金','講師費','業績績效','行政績效'];
+  if(isFlagship) hdr.push('米雪支援費');
+  hdr.push('兼職時薪費','小計','底薪','總薪');
+  var rows = [['Otto2 ARTCLUB ' + STORE_NAME[store] + ' 薪資 - ' + mKey],[],hdr];
+  teachers.forEach(function(t) {
+    var c = calcSalary(t, store, mKey);
+    var base = t.type==='full' ? (S.salaryBase?.[bk]?.[t.id]||0) : 0;
+    var row = [t.name,TYPE_NAME[t.type],c.countBonus,c.lectureFee,c.salesPerf,c.adminAmt];
+    if(isFlagship) row.push(c.supFee);
+    row.push(c.ptBasePay,c.sub,base,c.sub+base);
+    rows.push(row);
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '薪資明細');
+  XLSX.writeFile(wb, 'Otto2_' + STORE_NAME[store] + '_薪資_' + mKey + '.xlsx');
+}
+
+function dlPDF(store, mKey) {
+  var teachers = getTeachers(store);
+  var totals = aggregateMonth(store, mKey);
+  var rows = teachers.map(function(t) {
+    var tt = totals.teachers[t.id]||{};
+    var lec = (tt.master||0)*2000+(tt.assist||0)*1500+(tt.junior||0)*1000;
+    return '<tr><td>'+t.name+'</td><td>'+ROLE_NAME[t.role||'teacher']+'</td><td>'+(tt.count||0)+'</td><td>'+(tt.outsideCount||0)+'</td><td>$'+lec.toLocaleString()+'</td><td>$'+(tt.sales||0).toLocaleString()+'</td></tr>';
+  }).join('');
+  var w = window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:8px}th{background:#f5f5f5}</style></head><body>'+
+    '<h2>Otto2 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</h2>'+
+    '<p>新客：'+totals.newCust+' ｜ 舊客：'+totals.oldCust+'</p>'+
+    '<table><thead><tr><th>姓名</th><th>職位</th><th>人次</th><th>外派</th><th>講師費</th><th>業績</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
+  w.document.close();
+}
+
+function dlSalaryPDF(store, mKey) {
+  var teachers = getTeachers(store);
+  var bk = mKey+'_'+store;
+  var isFlagship = store==='flagship';
+  var rows = teachers.map(function(t) {
+    var c = calcSalary(t,store,mKey);
+    var base = t.type==='full'?(S.salaryBase?.[bk]?.[t.id]||0):0;
+    return '<tr><td>'+t.name+'</td><td>$'+c.countBonus.toLocaleString()+'</td><td>$'+c.lectureFee.toLocaleString()+'</td><td>$'+c.salesPerf.toLocaleString()+'</td><td>$'+c.adminAmt.toLocaleString()+'</td>'+(isFlagship?'<td>$'+c.supFee.toLocaleString()+'</td>':'')+'<td>$'+c.ptBasePay.toLocaleString()+'</td><td>$'+c.sub.toLocaleString()+'</td><td>$'+base.toLocaleString()+'</td><td><strong>$'+(c.sub+base).toLocaleString()+'</strong></td></tr>';
+  }).join('');
+  var w = window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:7px}th{background:#f5f5f5}</style></head><body>'+
+    '<h2>Otto2 '+STORE_NAME[store]+' 薪資 — '+mKey+'</h2>'+
+    '<table><thead><tr><th>姓名</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>'+(isFlagship?'<th>支援費</th>':'')+'<th>時薪費</th><th>小計</th><th>底薪</th><th>總薪</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
+  w.document.close();
+}
+
+// ── Init ────────────────────────────────────────────────
+function renderAll() {
+  renderDaily();
+  renderMonthly();
+  if (tabUnlocked.salary) renderSalary();
+  if (tabUnlocked.settings) renderTeacherList();
+}
+
+initMonth();
+loadData();
+</script>
+</body>
+</html>
