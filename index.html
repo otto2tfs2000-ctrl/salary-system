@@ -253,12 +253,11 @@ let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
 
 function loadFirebaseSales() {
-  if (!fbDb2) { setTimeout(loadFirebaseSales, 500); return; }
-  fbDb2.ref('salesData/records').once('value')
-    .then(snapshot => {
-      const raw = snapshot.val();
+  const url = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/salesData/records.json';
+  fetch(url)
+    .then(r => r.json())
+    .then(raw => {
       if (!raw) return;
-      // Firebase 陣列可能是物件格式
       const records = Array.isArray(raw) ? raw : Object.values(raw);
       if (!records.length) return;
       fbSalesData = {};
@@ -279,7 +278,7 @@ function loadFirebaseSales() {
       fbLoaded = true;
       renderAll();
     })
-    .catch(e => console.error('[FB] error:', e));
+    .catch(e => console.error('[FB] fetch error:', e));
 }
 
 // Get sales amount from Firebase for a teacher, month, and store
