@@ -248,6 +248,19 @@ function matchStaff(salesStaff) {
   return null;
 }
 
+// Returns the SALES_STAFF_MAP key for a given salary system teacher name
+function getSalesKey(teacherName) {
+  // Direct match in map keys
+  if (SALES_STAFF_MAP[teacherName]) return teacherName;
+  // Search by alias
+  for (const [key, aliases] of Object.entries(SALES_STAFF_MAP)) {
+    if (aliases.some(a => teacherName.includes(a) || a.includes(teacherName))) {
+      return key;
+    }
+  }
+  return teacherName;
+}
+
 // Firebase sales data cache
 let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
@@ -621,7 +634,7 @@ function renderDayForm() {
   let tRows = '';
   var selM_daily = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
-    var fbAmt = getFBSalesByDay(t.name, selM_daily, day, store);
+    var fbAmt = getFBSalesByDay(getSalesKey(t.name), selM_daily, day, store);
     var salesCell;
     if (fbAmt > 0) {
       salesCell = '<td>' +
@@ -779,7 +792,7 @@ function submitEntry(store, mKey, day) {
     var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
     var n = document.getElementById('inp_n_' + t.id)?.value || '';
-    var s = getFBSalesByDay(t.name, selM_submit, day, store);
+    var s = getFBSalesByDay(getSalesKey(t.name), selM_submit, day, store);
     var tf = parseInt(document.getElementById('inp_tf_' + t.id)?.value) || 0;
     if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf}; }
   });
@@ -849,7 +862,7 @@ function renderMonthly() {
     tCount   += tt.count;
     tOutside += tt.outsideCount;
     tLec     += Math.round((tt.master*2000 + tt.assist*1500 + tt.junior*1000) * tLecRate);
-    var fbAmt = getFBSales(t.name, selM_monthly, store);
+    var fbAmt = getFBSales(getSalesKey(t.name), selM_monthly, store);
     tSales   += fbAmt > 0 ? fbAmt : (tt.sales||0);
   });
 
@@ -879,7 +892,7 @@ function renderMonthly() {
       '<td class="' + (lec?'auto-val':'zero-val') + '">' + (lec?'$'+lec.toLocaleString():'—') + '</td>' +
       '<td class="' + (tt.trainingFee?'auto-val':'zero-val') + '">' + (tt.trainingFee?'$'+tt.trainingFee.toLocaleString():'—') + '</td>' +
       (function(){
-        var fbAmt2 = getFBSales(t.name, selM_monthly, store);
+        var fbAmt2 = getFBSales(getSalesKey(t.name), selM_monthly, store);
         var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
         var fbTag = fbAmt2 > 0 ? ' <span style="font-size:10px;color:var(--green)">●FB</span>' : '';
         return '<td class="' + (dispAmt?'auto-val':'zero-val') + '">' + (dispAmt?'$'+dispAmt.toLocaleString()+fbTag:'—') + '</td>';
@@ -1049,7 +1062,7 @@ function calcSalary(t, store, mKey) {
   var lectureFee = Math.round(((tt.master||0)*2000 + (tt.assist||0)*1500 + (tt.junior||0)*1000) * lecRate);
   // Use Firebase sales data if loaded, otherwise use manually entered data
   var selM = parseInt(document.getElementById('selMonth').value);
-  var fbAmt = getFBSales(t.name, selM, store);
+  var fbAmt = getFBSales(getSalesKey(t.name), selM, store);
   var salesAmt = fbAmt > 0 ? fbAmt : (tt.sales||0);
   var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
   var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
