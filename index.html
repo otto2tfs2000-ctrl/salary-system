@@ -700,6 +700,7 @@ function renderDayForm() {
     '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0"></div>' +
     '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0"></div>' +
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
+    '<div class="day-meta-item"><label style="color:var(--gold2)">當日營收（元）</label><input type="number" id="inp_rev" placeholder="0" min="0" style="width:140px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr>' +
@@ -782,6 +783,14 @@ function submitEntry(store, mKey, day) {
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
   addEntry(store, mKey, day, entry);
+  // 儲存當日營收
+  var rev = parseInt(document.getElementById('inp_rev')?.value) || 0;
+  if (rev > 0) {
+    var revKey = dayKey(store, mKey, day);
+    if (!S.daily[revKey]) S.daily[revKey] = { entries:[] };
+    S.daily[revKey].revenue = (S.daily[revKey].revenue || 0) + rev;
+    save();
+  }
   renderDayForm();
 }
 
@@ -849,6 +858,7 @@ function renderMonthly() {
     '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
     '<div class="stat-card"><div class="lbl">業績合計</div><div class="val">$' + tSales.toLocaleString() + '</div></div>' +
+    (function(){ var totalRev=0; for(var dd=1;dd<=getDaysInMonth(selY,selM);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card" style="border-color:var(--gold)"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
     '</div>';
 
   var tRows = '';
@@ -958,9 +968,10 @@ function renderMonthly() {
       '<td class="' + (do2?'auto-val':'zero-val') + '">' + (do2||'—') + '</td>' +
       '<td class="' + (dl?'auto-val':'zero-val') + '">' + (dl?'$'+dl.toLocaleString():'—') + '</td>' +
       '<td class="' + (ds?'auto-val':'zero-val') + '">' + (ds?'$'+ds.toLocaleString():'—') + '</td>' +
+      (function(){ var rv = S.daily[dayKey(store,mKey,d)]?.revenue||0; return '<td class="' + (rv?'auto-val':'zero-val') + '" style="color:var(--gold2)">' + (rv?'$'+rv.toLocaleString():'—') + '</td>'; })() +
       '</tr>';
     if (detHtml) {
-      dailyRows += '<tr id="' + rowId + '" style="display:none"><td colspan="7" style="padding:0">' +
+      dailyRows += '<tr id="' + rowId + '" style="display:none"><td colspan="8" style="padding:0">' +
         '<table style="width:100%;border-collapse:collapse">' + detHtml + '</table></td></tr>';
     }
   }
@@ -970,6 +981,7 @@ function renderMonthly() {
     '<td>' + (dOutsideSum||'—') + '</td>' +
     '<td>' + (dLecSum?'$'+dLecSum.toLocaleString():'—') + '</td>' +
     '<td>' + (dSalesSum?'$'+dSalesSum.toLocaleString():'—') + '</td>' +
+    (function(){ var totalRev2=0; for(var dd=1;dd<=getDaysInMonth(selY,selM);dd++){totalRev2+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<td style="color:var(--gold2)">' + (totalRev2?'$'+totalRev2.toLocaleString():'—') + '</td>'; })() +
     '</tr>';
 
   var summaryTable = '<div class="card">' +
@@ -989,7 +1001,7 @@ function renderMonthly() {
   var dailyTable = '<div class="card">' +
     '<div class="card-title">📆 每日明細 <span style="font-size:11px;color:var(--text3);font-weight:400">有 ▶ 可點開看老師明細</span></div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>講師費</th><th>業績</th>' +
+    '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>講師費</th><th>業績</th><th style="color:var(--gold2)">營收</th>' +
     '</tr></thead><tbody>' + dailyRows + '</tbody></table></div></div>';
 
   el.innerHTML = statHtml + ptHtml + summaryTable + dailyTable;
