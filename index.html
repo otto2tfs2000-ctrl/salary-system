@@ -293,6 +293,7 @@ function loadFirebaseSales() {
         fbSalesData[dKeyAll] = (fbSalesData[dKeyAll] || 0) + (r.amount || 0);
       });
       fbLoaded = true;
+      console.log('[FB] fbSalesData keys:', Object.keys(fbSalesData).filter(k=>k.includes('Ethan')));
       renderAll();
     })
     .catch(e => console.error('[FB] 讀取失敗:', e));
