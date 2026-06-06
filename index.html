@@ -260,6 +260,8 @@ function loadFirebaseSales() {
       const data = snapshot.val();
       console.log('[FB] salesData received, keys:', data ? Object.keys(data) : 'null');
       if (!data) return;
+      const recs = Array.isArray(data) ? data : (data.records || null);
+      if (recs && recs.length > 0) console.log('[FB] first record:', JSON.stringify(recs[0]));
       const records = Array.isArray(data) ? data : (data.records || null);
       if (!records || !Array.isArray(records)) return;
       fbSalesData = {};
