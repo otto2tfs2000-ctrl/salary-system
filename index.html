@@ -253,51 +253,33 @@ let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
 
 function loadFirebaseSales() {
-  console.log('[FB] loadFirebaseSales called, fbDb2:', !!fbDb2);
-  if (!fbDb2) { console.warn('[FB] fbDb2 未初始化'); return; }
-  fbDb2.ref('salesData').once('value')
+  if (!fbDb2) { setTimeout(loadFirebaseSales, 500); return; }
+  fbDb2.ref('salesData/records').once('value')
     .then(snapshot => {
-      const data = snapshot.val();
-      console.log('[FB] salesData received, keys:', data ? Object.keys(data) : 'null');
-      if (!data) return;
-      const recs = Array.isArray(data) ? data : (data.records || null);
-      if (recs && recs.length > 0) {
-        console.log('[FB] first record:', JSON.stringify(recs[0]));
-        const ethanRecs = recs.filter(r => r.staff && r.staff.includes('Ethan') && r.month === 6);
-        console.log('[FB] Ethan June records:', JSON.stringify(ethanRecs));
-        console.log('[FB] total records:', recs.length);
-      }
-      let records = Array.isArray(data) ? data : (data.records || null);
-      // Firebase 有時把陣列存成物件，用 Object.values 轉回陣列
-      if (records && !Array.isArray(records)) records = Object.values(records);
-      console.log('[FB] records type:', typeof records, Array.isArray(records), records ? records.length : 'null');
-      if (!records || !Array.isArray(records) || records.length === 0) return;
+      const raw = snapshot.val();
+      if (!raw) return;
+      // Firebase 陣列可能是物件格式
+      const records = Array.isArray(raw) ? raw : Object.values(raw);
+      if (!records.length) return;
       fbSalesData = {};
       records.forEach(r => {
-        if (r.voided || r.pending) return;
+        if (!r || r.voided || r.pending) return;
         const teacherName = matchStaff(r.staff || '');
         if (!teacherName) return;
-        // 判斷分店：2F、4F 屬旗艦店；國圖 屬國圖店
         const dept = r.dept || '';
         const storeKey = (dept === '國圖') ? 'guotu' : 'flagship';
-        // 月合計（含分店）
-        const mKey = teacherName + '_' + r.month + '_' + storeKey;
-        fbSalesData[mKey] = (fbSalesData[mKey] || 0) + (r.amount || 0);
-        // 月合計（不分店，供整體統計）
-        const mKeyAll = teacherName + '_' + r.month;
-        fbSalesData[mKeyAll] = (fbSalesData[mKeyAll] || 0) + (r.amount || 0);
-        // 日合計（含分店）
-        const dKey = teacherName + '_' + r.month + '_' + r.day + '_' + storeKey;
-        fbSalesData[dKey] = (fbSalesData[dKey] || 0) + (r.amount || 0);
-        // 日合計（不分店）
-        const dKeyAll = teacherName + '_' + r.month + '_' + r.day;
-        fbSalesData[dKeyAll] = (fbSalesData[dKeyAll] || 0) + (r.amount || 0);
+        const m = parseInt(r.month) || 0;
+        const d = parseInt(r.day) || 0;
+        const amt = parseInt(r.amount) || 0;
+        fbSalesData[teacherName+'_'+m+'_'+storeKey] = (fbSalesData[teacherName+'_'+m+'_'+storeKey]||0) + amt;
+        fbSalesData[teacherName+'_'+m] = (fbSalesData[teacherName+'_'+m]||0) + amt;
+        fbSalesData[teacherName+'_'+m+'_'+d+'_'+storeKey] = (fbSalesData[teacherName+'_'+m+'_'+d+'_'+storeKey]||0) + amt;
+        fbSalesData[teacherName+'_'+m+'_'+d] = (fbSalesData[teacherName+'_'+m+'_'+d]||0) + amt;
       });
       fbLoaded = true;
-      console.log('[FB] fbSalesData keys:', Object.keys(fbSalesData).filter(k=>k.includes('Ethan')));
       renderAll();
     })
-    .catch(e => console.error('[FB] 讀取失敗:', e));
+    .catch(e => console.error('[FB] error:', e));
 }
 
 // Get sales amount from Firebase for a teacher, month, and store
