@@ -212,12 +212,21 @@ const FB_CONFIG = {
 };
 let fbApp2 = null;
 let fbDb2 = null;
-(function initFB() {
+function initFB() {
   try {
+    if (typeof firebase === 'undefined') {
+      setTimeout(initFB, 100);
+      return;
+    }
     fbApp2 = firebase.initializeApp(FB_CONFIG, 'salaryApp_' + Date.now());
     fbDb2 = fbApp2.database();
+    // FB 初始化完成後，如果頁面已載入就補抓業績
+    if (document.readyState === 'complete') {
+      loadFirebaseSales();
+    }
   } catch(e) { console.error('FB init error:', e); }
-})();
+}
+initFB();
 
 const SALES_STAFF_MAP = {
   'Ethan': ['吳忠懋-Ethan', 'Ethan'],
@@ -244,10 +253,12 @@ let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
 
 function loadFirebaseSales() {
+  console.log('[FB] loadFirebaseSales called, fbDb2:', !!fbDb2);
   if (!fbDb2) { console.warn('[FB] fbDb2 未初始化'); return; }
   fbDb2.ref('salesData').once('value')
     .then(snapshot => {
       const data = snapshot.val();
+      console.log('[FB] salesData received, keys:', data ? Object.keys(data) : 'null');
       if (!data) return;
       const records = Array.isArray(data) ? data : (data.records || null);
       if (!records || !Array.isArray(records)) return;
@@ -317,9 +328,8 @@ function setSync(status, text) {
 
 async function loadData() {
   if (!fbDb2) {
-    setSync('err','Firebase 未初始化');
-    document.getElementById('loading-overlay').style.display = 'none';
-    renderAll();
+    // fbDb2 還沒好，等一下再試
+    setTimeout(loadData, 200);
     return;
   }
   try {
@@ -987,7 +997,7 @@ function renderMonthly() {
   var summaryTable = '<div class="card">' +
     '<div class="card-title" style="justify-content:space-between"><span>📊 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</span>' +
     '<div style="display:flex;gap:8px">' +
-    '<button class="btn btn-outline btn-sm" onclick="renderMonthly()" style="border-color:var(--green);color:var(--green)">↺ 重新整理業績</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="fbSalesData={};fbLoaded=false;loadFirebaseSales();" style="border-color:var(--green);color:var(--green)">↺ 重新整理業績</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button>' +
     '</div></div>' +
@@ -1389,7 +1399,14 @@ function renderAll() {
 }
 
 initMonth();
-loadData();
+// 等頁面完全載入才啟動
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(loadData, 300);
+  });
+} else {
+  setTimeout(loadData, 300);
+}
 </script>
 </body>
 </html>
