@@ -270,6 +270,7 @@ function loadFirebaseSales() {
       let records = Array.isArray(data) ? data : (data.records || null);
       // Firebase 有時把陣列存成物件，用 Object.values 轉回陣列
       if (records && !Array.isArray(records)) records = Object.values(records);
+      console.log('[FB] records type:', typeof records, Array.isArray(records), records ? records.length : 'null');
       if (!records || !Array.isArray(records) || records.length === 0) return;
       fbSalesData = {};
       records.forEach(r => {
