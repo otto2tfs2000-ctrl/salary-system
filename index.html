@@ -27,7 +27,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 .month-nav{display:flex;align-items:center;gap:8px}
 .month-nav select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit}
-.tabs{display:flex;background:#0d0d0d;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto}
+.tabs{display:flex;background:#0d0d0d;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;position:sticky;top:49px;z-index:190}
 .tab{padding:12px 18px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
 .tab:hover{color:var(--text)}.tab.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:500}
 .page{display:none;padding:24px;max-width:1300px;margin:0 auto}.page.active{display:block}
@@ -176,7 +176,7 @@ tr[draggable]{cursor:grab}
           <option value="sales">業務</option>
         </select>
       </div>
-      <div class="fg"><label>底薪／時薪（元）</label><input id="f-base" type="number" placeholder="正職底薪，兼職時薪"></div>
+      <div class="fg"><label>底薪／時薪（元）</label><input id="f-base" type="number" placeholder="正職底薪，兼職時薪" onwheel="this.blur()"></div>
       <div class="fg"><label>人次計算方式</label>
         <select id="f-mode">
           <option value="full">完整（每人次×50）</option>
@@ -185,10 +185,10 @@ tr[draggable]{cursor:grab}
           <option value="minni">兼職特殊公式（米妮用）</option>
         </select>
       </div>
-      <div class="fg"><label>基礎人次門檻</label><input id="f-threshold" type="number" placeholder="例：20"></div>
-      <div class="fg"><label>行政績效—旗艦（元）</label><input id="f-adminF" type="number" placeholder="0"></div>
-      <div class="fg"><label>行政績效—國圖（元）</label><input id="f-adminG" type="number" placeholder="0"></div>
-      <div class="fg"><label>講師費倍率</label><input id="f-lecRate" type="number" placeholder="預設1，減半填0.5" step="0.1" min="0" max="1"></div>
+      <div class="fg"><label>基礎人次門檻</label><input id="f-threshold" type="number" placeholder="例：20" onwheel="this.blur()"></div>
+      <div class="fg"><label>行政績效—旗艦（元）</label><input id="f-adminF" type="number" placeholder="0" onwheel="this.blur()"></div>
+      <div class="fg"><label>行政績效—國圖（元）</label><input id="f-adminG" type="number" placeholder="0" onwheel="this.blur()"></div>
+      <div class="fg"><label>講師費倍率</label><input id="f-lecRate" type="number" placeholder="預設1，減半填0.5" step="0.1" min="0" max="1" onwheel="this.blur()"></div>
       <div class="fg"><label>備註</label><input id="f-note" placeholder="選填"></div>
     </div>
     <button class="btn btn-gold" onclick="addTeacher()">+ 新增老師</button>
@@ -514,11 +514,11 @@ function openEditEntry(store, mKey, day, idx) {
     var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong></td>' +
-      '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0"></td>' +
+      '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:12px;outline:none;font-family:inherit" id="ee_n_' + t.id + '" value="' + (td.note||'') + '"></td>' +
       '</tr>';
   });
@@ -529,8 +529,8 @@ function openEditEntry(store, mKey, day, idx) {
   modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:900px;width:100%;max-height:85vh;overflow-y:auto">' +
     '<div style="font-size:15px;font-weight:600;color:var(--gold2);margin-bottom:16px">✏️ 編輯紀錄 — ' + day + ' 日 ' + (entry.time||'') + '</div>' +
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
-    '<div class="day-meta-item"><label>新客</label><input type="number" class="in-num md" id="ee_nc" value="' + (entry.newCust||0) + '" min="0"></div>' +
-    '<div class="day-meta-item"><label>舊客</label><input type="number" class="in-num md" id="ee_oc" value="' + (entry.oldCust||0) + '" min="0"></div>' +
+    '<div class="day-meta-item"><label>新客</label><input type="number" class="in-num md" id="ee_nc" value="' + (entry.newCust||0) + '" min="0" onwheel="this.blur()"></div>' +
+    '<div class="day-meta-item"><label>舊客</label><input type="number" class="in-num md" id="ee_oc" value="' + (entry.oldCust||0) + '" min="0" onwheel="this.blur()"></div>' +
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
@@ -648,12 +648,12 @@ function renderDayForm() {
     }
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
-      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0"></td>' +
-      '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
-      '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
-      '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')"></td>' +
-      '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0"></td>' +
+      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0" onwheel="this.blur()"></td>' +
       salesCell +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
       '</tr>';
@@ -712,8 +712,8 @@ function renderDayForm() {
     '<div class="card-title">✏️ 新增本次紀錄 — ' + day + ' 日</div>' +
     '<div class="info-box">填入這次的數據，按「新增本次紀錄」後資料儲存，欄位自動歸零。</div>' +
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
-    '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0"></div>' +
-    '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0"></div>' +
+    '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0" onwheel="this.blur()"></div>' +
+    '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0" onwheel="this.blur()"></div>' +
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
 
     '</div>' +
@@ -741,7 +741,7 @@ function renderDayForm() {
     '<div class="card-title" style="color:var(--gold2)">💰 當日營收（可單獨儲存）</div>' +
     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label style="color:var(--gold2)">今日實際營收（元）</label>' +
-    '<input type="number" id="inp_rev" placeholder="0" min="0" value="' + (existRev||'') + '" style="width:160px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit">' +
+    '<input type="number" id="inp_rev" placeholder="0" min="0" value="' + (existRev||'') + '" style="width:160px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()">' +
     '</div>' +
     (existRev ? '<div style="font-size:13px;color:var(--gold2)">目前已記錄：<strong>$' + existRev.toLocaleString() + '</strong></div>' : '') +
     '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存當日營收</button>' +
@@ -767,9 +767,9 @@ function renderDayForm() {
         '<div class="card-title">🔄 米雪旗艦支援時數 — ' + day + ' 日</div>' +
         '<div class="day-meta">' +
         '<div class="day-meta-item"><label>支援時數</label>' +
-        '<input type="number" class="in-num md" value="' + supH + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supHours\',+this.value)"></div>' +
+        '<input type="number" class="in-num md" value="' + supH + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supHours\',+this.value)" onwheel="this.blur()"></div>' +
         '<div class="day-meta-item"><label>時薪（元）</label>' +
-        '<input type="number" class="in-num md" value="' + supR + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supRate\',+this.value)"></div>' +
+        '<input type="number" class="in-num md" value="' + supR + '" onchange="setSupHours(\'' + store + '\',\'' + mKey + '\',' + day + ',\'supRate\',+this.value)" onwheel="this.blur()"></div>' +
         '</div></div>';
     }
   }
@@ -792,10 +792,12 @@ function saveRevOnly(store, mKey, day) {
   if (!rev) { alert('請輸入營收金額'); return; }
   var rk = dayKey(store, mKey, day);
   if (!S.daily[rk]) S.daily[rk] = { entries:[] };
-  S.daily[rk].revenue = rev;  // 直接覆蓋，不累加
+  S.daily[rk].revenue = rev;
   save();
   renderDayForm();
-  alert('✅ 當日營收已儲存：$' + rev.toLocaleString());
+  // 顯示成功提示
+  var btn = document.querySelector('[onclick*="saveRevOnly"]');
+  if (btn) { var orig = btn.textContent; btn.textContent = '✅ 已儲存 $' + rev.toLocaleString(); btn.style.background='var(--green)'; setTimeout(function(){ btn.textContent=orig; btn.style.background='var(--gold)'; }, 2000); }
 }
 
 function submitEntry(store, mKey, day) {
@@ -891,7 +893,7 @@ function renderMonthly() {
     '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
     '<div class="stat-card"><div class="lbl">業績合計</div><div class="val">$' + tSales.toLocaleString() + '</div></div>' +
-    (function(){ var totalRev=0; for(var dd=1;dd<=getDaysInMonth(selY,selM);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card" style="border-color:var(--gold)"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
+    (function(){ var _y=parseInt(document.getElementById('selYear').value); var _m=parseInt(document.getElementById('selMonth').value); var totalRev=0; for(var dd=1;dd<=getDaysInMonth(_y,_m);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card" style="border-color:var(--gold)"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
     '</div>';
 
   var tRows = '';
@@ -939,7 +941,7 @@ function renderMonthly() {
     var ptRows = ptTeachers.map(function(t) {
       var hrs = S.salaryBase[ptKey][t.id] || 0;
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
-        '<td><input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value)" placeholder="0"></td>' +
+        '<td><input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value)" placeholder="0" onwheel="this.blur()"></td>' +
         '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算</td></tr>';
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
@@ -1014,7 +1016,7 @@ function renderMonthly() {
     '<td>' + (dOutsideSum||'—') + '</td>' +
     '<td>' + (dLecSum?'$'+dLecSum.toLocaleString():'—') + '</td>' +
     '<td>' + (dSalesSum?'$'+dSalesSum.toLocaleString():'—') + '</td>' +
-    (function(){ var totalRev2=0; for(var dd=1;dd<=getDaysInMonth(selY,selM);dd++){totalRev2+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<td style="color:var(--gold2)">' + (totalRev2?'$'+totalRev2.toLocaleString():'—') + '</td>'; })() +
+    (function(){ var _y2=parseInt(document.getElementById('selYear').value); var _m2=parseInt(document.getElementById('selMonth').value); var totalRev2=0; for(var dd=1;dd<=getDaysInMonth(_y2,_m2);dd++){totalRev2+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<td style="color:var(--gold2)">' + (totalRev2?'$'+totalRev2.toLocaleString():'—') + '</td>'; })() +
     '</tr>';
 
   var summaryTable = '<div class="card">' +
@@ -1132,7 +1134,7 @@ function renderSalary() {
       (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
       '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+(c.ptHours?' ('+c.ptHours+'h)':''):'—') + '</td>' +
       '<td style="font-weight:500">$' + c.sub.toLocaleString() + '</td>' +
-      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
+      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
       '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
       '</tr>';
   }).join('');
@@ -1284,17 +1286,17 @@ function renderTeacherList() {
         '<option value="admin"' + (t.role==='admin'?' selected':'') + '>行政</option>' +
         '<option value="sales"' + (t.role==='sales'?' selected':'') + '>業務</option>' +
       '</select></div>' +
-      '<div class="fg"><label>底薪/時薪</label><input type="number" id="eb_' + t.id + '" value="' + (t.base||'') + '"></div>' +
+      '<div class="fg"><label>底薪/時薪</label><input type="number" id="eb_' + t.id + '" value="' + (t.base||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>人次計算</label><select id="em_' + t.id + '">' +
         '<option value="full"' + (t.mode==='full'?' selected':'') + '>完整（每人次×50）</option>' +
         '<option value="over"' + (t.mode==='over'?' selected':'') + '>超過門檻才計算</option>' +
         '<option value="half"' + (t.mode==='half'?' selected':'') + '>個人÷2（大熊用）</option>' +
         '<option value="minni"' + (t.mode==='minni'?' selected':'') + '>兼職特殊公式</option>' +
       '</select></div>' +
-      '<div class="fg"><label>門檻</label><input type="number" id="eth_' + t.id + '" value="' + (t.threshold||'') + '"></div>' +
-      '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '"></div>' +
-      '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '"></div>' +
-      '<div class="fg"><label>講師費倍率</label><input type="number" step="0.1" min="0" max="1" id="elr_' + t.id + '" value="' + (t.lecRate!==undefined?t.lecRate:1) + '"></div>' +
+      '<div class="fg"><label>門檻</label><input type="number" id="eth_' + t.id + '" value="' + (t.threshold||'') + '" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>講師費倍率</label><input type="number" step="0.1" min="0" max="1" id="elr_' + t.id + '" value="' + (t.lecRate!==undefined?t.lecRate:1) + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>備註</label><input id="eno_' + t.id + '" value="' + (t.note||'') + '"></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
