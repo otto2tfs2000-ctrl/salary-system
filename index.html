@@ -470,8 +470,8 @@ function getDayAgg(store, mKey, day) {
     Object.keys(e.teachers||{}).forEach(tid => {
       if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0 };
       const td = e.teachers[tid];
-      r.teachers[tid].count        += td.count        || 0;
-      r.teachers[tid].outsideCount += td.outsideCount || 0;
+      r.teachers[tid].count        += parseFloat(td.count)        || 0;
+      r.teachers[tid].outsideCount += parseFloat(td.outsideCount) || 0;
       r.teachers[tid].master       += td.master       || 0;
       r.teachers[tid].assist       += td.assist       || 0;
       r.teachers[tid].junior       += td.junior       || 0;
@@ -514,8 +514,8 @@ function openEditEntry(store, mKey, day, idx) {
     var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong></td>' +
-      '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0" onwheel="this.blur()"></td>' +
-      '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0" onwheel="this.blur()"></td>' +
@@ -556,8 +556,8 @@ function saveEditEntry(store, mKey, day, idx) {
   entry.teachers = {};
 
   teachers.forEach(function(t) {
-    var c = parseInt(document.getElementById('ee_c_' + t.id)?.value) || 0;
-    var o = parseInt(document.getElementById('ee_o_' + t.id)?.value) || 0;
+    var c = parseFloat(document.getElementById('ee_c_' + t.id)?.value) || 0;
+    var o = parseFloat(document.getElementById('ee_o_' + t.id)?.value) || 0;
     var m = parseInt(document.getElementById('ee_m_' + t.id)?.value) || 0;
     var a = parseInt(document.getElementById('ee_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('ee_j_' + t.id)?.value) || 0;
@@ -612,7 +612,9 @@ function renderDaily() {
     '<span>📅 選擇日期</span>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px">' +
+    '<button onclick="shiftDay(-1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:16px;cursor:pointer;line-height:1" title="前一天">‹</button>' +
     '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:14px;outline:none;font-family:inherit">' + opts + '</select>' +
+    '<button onclick="shiftDay(+1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:16px;cursor:pointer;line-height:1" title="後一天">›</button>' +
     '<span style="font-size:12px;color:var(--text3)">✓ 表示已有紀錄</span>' +
     '</div></div>' +
     '<div id="day-form-area"></div>';
@@ -648,8 +650,8 @@ function renderDayForm() {
     }
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
-      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" onwheel="this.blur()"></td>' +
-      '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
@@ -777,6 +779,16 @@ function renderDayForm() {
   el.innerHTML = html;
 }
 
+function shiftDay(delta) {
+  var sel = document.getElementById('day-sel');
+  if (!sel) return;
+  var cur = parseInt(sel.value) || 1;
+  var next = cur + delta;
+  if (next < 1 || next > sel.options.length) return;
+  sel.value = next;
+  renderDayForm();
+}
+
 function updateFee(tid) {
   var m = parseInt(document.getElementById('inp_m_' + tid)?.value) || 0;
   var a = parseInt(document.getElementById('inp_a_' + tid)?.value) || 0;
@@ -814,8 +826,8 @@ function submitEntry(store, mKey, day) {
   var hasData = entry.newCust || entry.oldCust;
   var selM_submit = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
-    var c = parseInt(document.getElementById('inp_c_' + t.id)?.value) || 0;
-    var o = parseInt(document.getElementById('inp_o_' + t.id)?.value) || 0;
+    var c = parseFloat(document.getElementById('inp_c_' + t.id)?.value) || 0;
+    var o = parseFloat(document.getElementById('inp_o_' + t.id)?.value) || 0;
     var m = parseInt(document.getElementById('inp_m_' + t.id)?.value) || 0;
     var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
@@ -845,8 +857,8 @@ function aggregateMonth(store, mKey) {
     totals.oldCust += agg.oldCust;
     teachers.forEach(function(t) {
       var td = agg.teachers[t.id] || {};
-      totals.teachers[t.id].count        += td.count        || 0;
-      totals.teachers[t.id].outsideCount += td.outsideCount || 0;
+      totals.teachers[t.id].count        += parseFloat(td.count)        || 0;
+      totals.teachers[t.id].outsideCount += parseFloat(td.outsideCount) || 0;
       totals.teachers[t.id].master       += td.master       || 0;
       totals.teachers[t.id].assist       += td.assist       || 0;
       totals.teachers[t.id].junior       += td.junior       || 0;
@@ -965,7 +977,7 @@ function renderMonthly() {
     var dc=0, do2=0, dl=0, ds=0;
     teachers.forEach(function(t) {
       var td = agg2.teachers[t.id]||{};
-      dc += td.count||0; do2 += td.outsideCount||0;
+      dc += parseFloat(td.count)||0; do2 += parseFloat(td.outsideCount)||0;
       var dLecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
       dl += Math.round(((td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000) * dLecRate);
       ds += td.sales||0;
@@ -1069,13 +1081,13 @@ function calcSalary(t, store, mKey) {
   var countBonus = 0;
   if (t.mode === 'minni') {
     var base = Math.max(0, ptHours/2 - 3);
-    countBonus = Math.max(0, Math.round(((tt.count||0) - base) * 50));
+    countBonus = Math.max(0, Math.round(((parseFloat(tt.count)||0) - base) * 50));
   } else if (t.mode === 'half') {
-    countBonus = Math.round((tt.count||0)/2) * 50;
+    countBonus = Math.round((parseFloat(tt.count)||0)/2) * 50;
   } else if (t.mode === 'over') {
-    countBonus = Math.max(0, (tt.count||0) - (t.threshold||0)) * 50;
+    countBonus = Math.max(0, (parseFloat(tt.count)||0) - (t.threshold||0)) * 50;
   } else {
-    countBonus = (tt.count||0) * 50;
+    countBonus = (parseFloat(tt.count)||0) * 50;
   }
 
   var lecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
