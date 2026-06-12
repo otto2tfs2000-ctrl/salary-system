@@ -127,6 +127,7 @@ tr[draggable]{cursor:grab}
   <div class="tab active" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
+  <div class="tab" onclick="switchTab('consumables')">🧴 耗材記帳</div>
   <div class="tab" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
 </div>
 
@@ -152,6 +153,74 @@ tr[draggable]{cursor:grab}
     <button class="store-btn" onclick="switchStore('salary','guotu',this)">國圖店</button>
   </div>
   <div id="salary-content"></div>
+</div>
+
+<div id="tab-consumables" class="page">
+  <div class="store-tabs">
+    <button class="store-btn active" onclick="switchStore('consumables','flagship',this)">旗艦店</button>
+    <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖店</button>
+  </div>
+  <div class="card">
+    <div class="card-title">➕ 新增耗材支出</div>
+    <div class="form-grid">
+      <div class="fg"><label>日期</label><input id="cm-date" type="date"></div>
+      <div class="fg"><label>類別</label>
+        <select id="cm-cat">
+          <option value="顏料">🎨 顏料</option>
+          <option value="畫布">🖼 畫布/畫板</option>
+          <option value="紙張">📄 紙張/素描本</option>
+          <option value="筆刷">🖌 筆刷/工具</option>
+          <option value="樹脂">💎 樹脂/UV膠</option>
+          <option value="溶劑">🧪 溶劑/調和油</option>
+          <option value="包裝">📦 包裝材料</option>
+          <option value="清潔">🧹 清潔用品</option>
+          <option value="印刷">🖨 印刷/文件</option>
+          <option value="其他">📌 其他</option>
+        </select>
+      </div>
+      <div class="fg"><label>品項名稱</label><input id="cm-name" placeholder="例：白色壓克力顏料"></div>
+      <div class="fg"><label>幣別</label>
+        <select id="cm-currency" onchange="updateCMPreview()">
+          <option value="TWD">台幣 NT$</option>
+          <option value="CNY">人民幣 ¥</option>
+          <option value="USD">美元 $</option>
+          <option value="JPY">日圓 ¥</option>
+        </select>
+      </div>
+      <div class="fg"><label>金額（原幣）</label><input id="cm-amount" type="number" placeholder="0" min="0" onwheel="this.blur()" oninput="updateCMPreview()"></div>
+      <div class="fg" id="cm-rate-wrap" style="display:none"><label>匯率（×台幣）</label><input id="cm-rate" type="number" placeholder="4.4" step="0.01" min="0" onwheel="this.blur()" oninput="updateCMPreview()"></div>
+      <div class="fg" id="cm-twd-wrap" style="display:none"><label>換算台幣</label><div id="cm-twd-preview" style="background:var(--bg3);border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 11px;border-radius:7px;font-size:14px;font-weight:600">—</div></div>
+      <div class="fg"><label>購買來源</label>
+        <select id="cm-source">
+          <option value="實體店">實體店</option>
+          <option value="蝦皮">蝦皮</option>
+          <option value="淘寶">淘寶</option>
+          <option value="拼多多">拼多多</option>
+          <option value="PChome">PChome</option>
+          <option value="Amazon">Amazon</option>
+          <option value="其他網路">其他網路</option>
+        </select>
+      </div>
+      <div class="fg"><label>用途/備註</label><input id="cm-note" placeholder="選填，例：水彩課消耗"></div>
+    </div>
+    <!-- 多筆明細區塊 -->
+    <div style="margin-top:14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:13px;color:var(--text2)">📎 明細備註（選填，適合一張訂單含多種品項）</span>
+        <button class="btn btn-outline btn-sm" onclick="addCMDetailRow()">＋ 新增明細行</button>
+      </div>
+      <div id="cm-detail-rows"></div>
+    </div>
+    <button class="btn btn-gold" onclick="addConsumable()">+ 記錄支出</button>
+  </div>
+  <div id="cm-stats-area"></div>
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>📋 本月明細</span>
+      <button class="btn btn-outline btn-sm" onclick="dlConsumableExcel()">⬇ 匯出 Excel</button>
+    </div>
+    <div id="cm-list-area"></div>
+  </div>
 </div>
 
 <div id="tab-settings" class="page">
@@ -312,8 +381,8 @@ function getFBSalesByDay(teacherName, month, day, store) {
   return fbSalesData[key] || 0;
 }
 
-let S = { teachers:[], daily:{}, salaryBase:{} };
-let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship' };
+let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{} };
+let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'flagship' };
 let tabUnlocked = { salary:false, settings:false };
 let pendingTab = null;
 let saveTimer = null;
@@ -428,13 +497,14 @@ function switchTab(tab) {
 
 function doSwitchTab(tab) {
   document.querySelectorAll('.tab').forEach((el,i) => {
-    el.classList.toggle('active', ['daily','monthly','salary','settings'][i] === tab);
+    el.classList.toggle('active', ['daily','monthly','salary','consumables','settings'][i] === tab);
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();
+  if (tab==='consumables') renderConsumables();
   if (tab==='settings') renderTeacherList();
 }
 
@@ -446,6 +516,7 @@ function switchStore(tab, store, el) {
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();
+  if (tab==='consumables') renderConsumables();
 }
 
 function getTeachers(store) {
@@ -1425,6 +1496,393 @@ function dlSalaryPDF(store, mKey) {
     '<table><thead><tr><th>姓名</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>'+(isFlagship?'<th>支援費</th>':'')+'<th>時薪費</th><th>小計</th><th>底薪</th><th>總薪</th></tr></thead><tbody>'+rows+'</tbody></table>'+
     '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
   w.document.close();
+}
+
+
+// ── Consumables ─────────────────────────────────────────
+
+const CM_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
+const CM_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
+const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','筆刷':'b-purple','樹脂':'b-blue','溶劑':'b-gray','包裝':'b-green','清潔':'b-green','印刷':'b-gray','其他':'b-gray'};
+
+function getCMKey() {
+  return getMonthKey() + '_' + curStore.consumables;
+}
+
+function getConsumables() {
+  var k = getCMKey();
+  if (!S.consumables) S.consumables = {};
+  if (!S.consumables[k]) S.consumables[k] = [];
+  return S.consumables[k];
+}
+
+// 匯率預設值
+var CM_RATES = { TWD: 1, CNY: 4.4, USD: 32, JPY: 0.22 };
+
+function updateCMPreview() {
+  var currency = document.getElementById('cm-currency').value;
+  var rateWrap = document.getElementById('cm-rate-wrap');
+  var twdWrap = document.getElementById('cm-twd-wrap');
+  var rateEl = document.getElementById('cm-rate');
+  var preview = document.getElementById('cm-twd-preview');
+  var amt = parseFloat(document.getElementById('cm-amount').value) || 0;
+
+  if (currency === 'TWD') {
+    rateWrap.style.display = 'none';
+    twdWrap.style.display = 'none';
+    preview.textContent = '—';
+    return;
+  }
+  rateWrap.style.display = '';
+  twdWrap.style.display = '';
+  if (!rateEl.value) rateEl.value = CM_RATES[currency] || 1;
+  var rate = parseFloat(rateEl.value) || CM_RATES[currency] || 1;
+  var twd = Math.round(amt * rate);
+  preview.textContent = twd > 0 ? 'NT$' + twd.toLocaleString() : '—';
+}
+
+var cmDetailCount = 0;
+function addCMDetailRow(name, amt, currency, rate) {
+  cmDetailCount++;
+  var id = 'cmdr_' + cmDetailCount;
+  var wrap = document.getElementById('cm-detail-rows');
+
+  var div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 80px 80px 80px auto;gap:8px;margin-bottom:8px;align-items:center';
+
+  // 品項名稱
+  var nameInp = document.createElement('input');
+  nameInp.type = 'text';
+  nameInp.placeholder = '品項名稱（例：生褐170ml）';
+  nameInp.value = name || '';
+  nameInp.className = 'cmdr-name';
+  nameInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit';
+
+  // 金額
+  var amtInp = document.createElement('input');
+  amtInp.type = 'number';
+  amtInp.placeholder = '金額';
+  amtInp.value = amt || '';
+  amtInp.min = '0';
+  amtInp.step = '0.01';
+  amtInp.className = 'cmdr-amt';
+  amtInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;text-align:right';
+  amtInp.addEventListener('wheel', function(){ this.blur(); });
+  amtInp.addEventListener('input', function(){ calcDetailTWD(this); });
+
+  // 幣別
+  var curSel = document.createElement('select');
+  curSel.className = 'cmdr-cur';
+  curSel.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 6px;border-radius:6px;font-size:12px;outline:none;font-family:inherit';
+  [['TWD','NT$'],['CNY','¥人民幣'],['USD','$美元'],['JPY','¥日圓']].forEach(function(opt){
+    var o = document.createElement('option');
+    o.value = opt[0]; o.textContent = opt[1];
+    if ((currency||'CNY') === opt[0]) o.selected = true;
+    curSel.appendChild(o);
+  });
+  curSel.addEventListener('change', function(){ calcDetailTWD(div.querySelector('.cmdr-amt')); });
+
+  // 匯率
+  var rateInp = document.createElement('input');
+  rateInp.type = 'number';
+  rateInp.placeholder = '匯率';
+  rateInp.value = rate || CM_RATES['CNY'];
+  rateInp.step = '0.01';
+  rateInp.className = 'cmdr-rate';
+  rateInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:12px;outline:none;font-family:inherit;text-align:right';
+  rateInp.addEventListener('wheel', function(){ this.blur(); });
+  rateInp.addEventListener('input', function(){ calcDetailTWD(div.querySelector('.cmdr-amt')); });
+
+  // 台幣預覽
+  var twdDiv = document.createElement('div');
+  twdDiv.className = 'cmdr-twd';
+  twdDiv.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);color:var(--gold2);padding:7px 8px;border-radius:6px;font-size:12px;font-weight:600;text-align:right;white-space:nowrap';
+  twdDiv.textContent = '—';
+
+  // 刪除按鈕
+  var delBtn = document.createElement('button');
+  delBtn.textContent = '✕';
+  delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:12px';
+  delBtn.addEventListener('click', function(){ div.remove(); });
+
+  div.appendChild(nameInp);
+  div.appendChild(amtInp);
+  div.appendChild(curSel);
+  div.appendChild(rateInp);
+  div.appendChild(twdDiv);
+  div.appendChild(delBtn);
+  wrap.appendChild(div);
+
+  if (amt) calcDetailTWD(amtInp);
+}
+
+function calcDetailTWDFromSel(selEl) {
+  var row = selEl.closest('div[id^="cmdr_"]');
+  if (!row) return;
+  calcDetailTWD(row.querySelector('.cmdr-amt'));
+}
+
+function calcDetailTWDFromRate(rateEl) {
+  var row = rateEl.closest('div[id^="cmdr_"]');
+  if (!row) return;
+  calcDetailTWD(row.querySelector('.cmdr-amt'));
+}
+
+function calcDetailTWD(amtEl) {
+  var row = amtEl.closest('div[id^="cmdr_"]');
+  if (!row) return;
+  var amt = parseFloat(amtEl.value) || 0;
+  var cur = row.querySelector('.cmdr-cur').value;
+  var rate = parseFloat(row.querySelector('.cmdr-rate').value) || CM_RATES[cur] || 1;
+  var twdEl = row.querySelector('.cmdr-twd');
+  if (cur === 'TWD') {
+    twdEl.textContent = amt > 0 ? 'NT$'+Math.round(amt).toLocaleString() : '—';
+  } else {
+    twdEl.textContent = amt > 0 ? 'NT$'+Math.round(amt*rate).toLocaleString() : '—';
+  }
+}
+
+function getCMDetails() {
+  var rows = document.querySelectorAll('#cm-detail-rows div[id^="cmdr_"]');
+  var result = [];
+  rows.forEach(function(row) {
+    var name = row.querySelector('.cmdr-name').value.trim();
+    var amt = parseFloat(row.querySelector('.cmdr-amt').value) || 0;
+    var cur = row.querySelector('.cmdr-cur').value;
+    var rate = parseFloat(row.querySelector('.cmdr-rate').value) || CM_RATES[cur] || 1;
+    var twd = cur === 'TWD' ? amt : Math.round(amt * rate);
+    if (name || amt) result.push({ name: name, origAmt: amt, currency: cur, rate: rate, twd: twd });
+  });
+  return result;
+}
+
+function addConsumable() {
+  var dateVal = document.getElementById('cm-date').value;
+  var cat = document.getElementById('cm-cat').value;
+  var name = document.getElementById('cm-name').value.trim();
+  var currency = document.getElementById('cm-currency').value;
+  var origAmt = parseFloat(document.getElementById('cm-amount').value) || 0;
+  var rateEl = document.getElementById('cm-rate');
+  var rate = parseFloat(rateEl && rateEl.value) || CM_RATES[currency] || 1;
+  var source = document.getElementById('cm-source').value;
+  var note = document.getElementById('cm-note').value.trim();
+  var details = getCMDetails();
+
+  if (!name) { alert('請填入品項名稱'); return; }
+  if (!origAmt) { alert('請填入金額'); return; }
+
+  // 換算台幣
+  var twdAmt = currency === 'TWD' ? Math.round(origAmt) : Math.round(origAmt * rate);
+
+  var item = {
+    id: Date.now(),
+    date: dateVal || getMonthKey() + '-01',
+    cat: cat,
+    name: name,
+    currency: currency,
+    origAmt: origAmt,
+    rate: currency !== 'TWD' ? rate : null,
+    amount: twdAmt,
+    source: source,
+    note: note,
+    details: details.length > 0 ? details : null
+  };
+
+  var k = getCMKey();
+  if (!S.consumables) S.consumables = {};
+  if (!S.consumables[k]) S.consumables[k] = [];
+  S.consumables[k].push(item);
+  save();
+
+  // 清空輸入
+  document.getElementById('cm-name').value = '';
+  document.getElementById('cm-amount').value = '';
+  document.getElementById('cm-note').value = '';
+  document.getElementById('cm-currency').value = 'TWD';
+  if (rateEl) rateEl.value = '';
+  document.getElementById('cm-rate-wrap').style.display = 'none';
+  document.getElementById('cm-twd-wrap').style.display = 'none';
+  document.getElementById('cm-twd-preview').textContent = '—';
+  document.getElementById('cm-detail-rows').innerHTML = '';
+  cmDetailCount = 0;
+
+  renderConsumables();
+}
+
+function delConsumable(id) {
+  var k = getCMKey();
+  if (!S.consumables || !S.consumables[k]) return;
+  S.consumables[k] = S.consumables[k].filter(function(x){ return x.id !== id; });
+  save();
+  renderConsumables();
+}
+
+function renderConsumables() {
+  var items = getConsumables();
+  var mKey = getMonthKey();
+  var store = curStore.consumables;
+
+  // 設定日期預設值
+  var dateEl = document.getElementById('cm-date');
+  if (dateEl && !dateEl.value) {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = now.getMonth()+1;
+    var d = now.getDate();
+    dateEl.value = y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+  }
+
+  // 統計
+  var total = 0;
+  var byCat = {};
+  CM_CATS.forEach(function(c){ byCat[c] = 0; });
+  items.forEach(function(x){ total += x.amount; byCat[x.cat] = (byCat[x.cat]||0)+x.amount; });
+
+  // 找出最高類別
+  var topCat = '—', topAmt = 0;
+  CM_CATS.forEach(function(c){ if(byCat[c]>topAmt){ topAmt=byCat[c]; topCat=c; } });
+
+  // 分析：超過 30% 的類別才提醒
+  var alerts = [];
+  if (total > 0) {
+    CM_CATS.forEach(function(c){
+      var pct = byCat[c]/total*100;
+      if (pct >= 30) alerts.push(CM_CAT_ICONS[c]+' '+c+'（'+pct.toFixed(0)+'%，$'+byCat[c].toLocaleString()+'）');
+    });
+  }
+
+  // 月份比較（和上個月）
+  var selY = parseInt(document.getElementById('selYear').value);
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var prevM = selM===1 ? 12 : selM-1;
+  var prevY = selM===1 ? selY-1 : selY;
+  var prevKey = prevY+'-'+String(prevM).padStart(2,'0')+'_'+store;
+  var prevItems = (S.consumables && S.consumables[prevKey]) ? S.consumables[prevKey] : [];
+  var prevTotal = prevItems.reduce(function(s,x){ return s+x.amount; }, 0);
+  var diffHtml = '';
+  if (prevTotal > 0) {
+    var diff = total - prevTotal;
+    var diffPct = (diff/prevTotal*100).toFixed(1);
+    var color = diff > 0 ? 'var(--red)' : 'var(--green)';
+    var sign = diff > 0 ? '+' : '';
+    diffHtml = '<span style="color:'+color+';font-size:13px;margin-left:8px">'+sign+'$'+diff.toLocaleString()+'（'+sign+diffPct+'%）vs 上月</span>';
+  }
+
+  // 渲染統計卡片
+  var statsHtml = '<div class="card"><div class="card-title">📊 本月耗材概況 — '+mKey+' '+{'flagship':'旗艦店','guotu':'國圖店'}[store]+'</div>';
+  statsHtml += '<div class="stat-grid">';
+  statsHtml += '<div class="stat-card"><div class="lbl">本月總支出</div><div class="val">$'+total.toLocaleString()+'</div>'+diffHtml+'</div>';
+  statsHtml += '<div class="stat-card"><div class="lbl">筆數</div><div class="val">'+items.length+'</div></div>';
+  statsHtml += '<div class="stat-card"><div class="lbl">最高類別</div><div class="val" style="font-size:16px">'+CM_CAT_ICONS[topCat]+' '+topCat+'</div><div style="font-size:12px;color:var(--text3)">$'+topAmt.toLocaleString()+'</div></div>';
+  statsHtml += '</div>';
+
+  // 類別分解條
+  if (total > 0) {
+    statsHtml += '<div style="margin-bottom:16px">';
+    statsHtml += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">支出分布</div>';
+    statsHtml += '<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:10px">';
+    var barColors = ['#c9a84c','#80c0f0','#aaa','#c0a0f0','#80c0f0','#888','#70e0a8','#70e0a8','#aaa','#666'];
+    CM_CATS.forEach(function(c,i){
+      var pct = byCat[c]/total*100;
+      if (pct > 0) statsHtml += '<div style="width:'+pct.toFixed(1)+'%;background:'+barColors[i]+'" title="'+c+': $'+byCat[c].toLocaleString()+'"></div>';
+    });
+    statsHtml += '</div>';
+    statsHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    CM_CATS.forEach(function(c,i){
+      if (byCat[c] > 0) {
+        var pct = (byCat[c]/total*100).toFixed(0);
+        statsHtml += '<span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+barColors[i]+';display:inline-block"></span>'+CM_CAT_ICONS[c]+' '+c+' '+pct+'%</span>';
+      }
+    });
+    statsHtml += '</div></div>';
+  }
+
+  // 智慧提醒
+  if (alerts.length > 0 || (prevTotal > 0 && total > prevTotal * 1.2)) {
+    statsHtml += '<div class="info-box">⚠️ 注意事項：';
+    if (alerts.length > 0) statsHtml += '單一類別佔比偏高：'+alerts.join('、')+'。';
+    if (prevTotal > 0 && total > prevTotal * 1.2) statsHtml += ' 本月比上月多出 '+(((total-prevTotal)/prevTotal)*100).toFixed(0)+'%，建議檢查是否有採購異常。';
+    statsHtml += '</div>';
+  }
+
+  statsHtml += '</div>';
+  document.getElementById('cm-stats-area').innerHTML = statsHtml;
+
+  // 渲染明細表
+  var listEl = document.getElementById('cm-list-area');
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="empty">本月尚無耗材紀錄，點上方「新增耗材支出」開始記帳。</div>';
+    return;
+  }
+
+  // 依日期排序（新→舊）
+  var sorted = items.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || b.id-a.id; });
+
+  var rows = sorted.map(function(x){
+    var icon = CM_CAT_ICONS[x.cat]||'📌';
+    var badgeClass = CM_CAT_COLORS[x.cat]||'b-gray';
+    return '<tr>'+
+      '<td style="font-size:12px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
+      '<td><span class="badge '+badgeClass+'">'+icon+' '+x.cat+'</span></td>'+
+      '<td style="font-weight:500">'+x.name+'</td>'+
+      '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
+      '<td style="font-size:12px;color:var(--text3)">'+x.source+'</td>'+
+      '<td style="font-size:12px;color:var(--text3)">'+x.note+'</td>'+
+      '<td><button class="btn btn-del btn-sm" onclick="delConsumable('+x.id+')">刪除</button></td>'+
+      '</tr>';
+  }).join('');
+
+  listEl.innerHTML = '<table><thead><tr>'+
+    '<th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>來源</th><th>備註</th><th></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+function toggleDetail(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function dlConsumableExcel() {
+  var items = getConsumables();
+  var mKey = getMonthKey();
+  var store = curStore.consumables;
+  var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[store];
+  var wb = XLSX.utils.book_new();
+
+  // 明細工作表
+  var CUR_NAMES = { TWD:'台幣', CNY:'人民幣', USD:'美元', JPY:'日圓' };
+  var detail = [['Otto2 ARTCLUB '+storeName+' 耗材明細 '+mKey],[],['日期','類別','品項','台幣金額','原幣金額','幣別','匯率','來源','備註','明細備註']];
+  items.slice().sort(function(a,b){ return a.date.localeCompare(b.date); }).forEach(function(x){
+    var origInfo = (x.currency && x.currency !== 'TWD') ? x.origAmt : '';
+    var curName = (x.currency && x.currency !== 'TWD') ? (CUR_NAMES[x.currency]||x.currency) : '';
+    var rateInfo = (x.currency && x.currency !== 'TWD') ? x.rate : '';
+    var detailStr = '';
+    if (x.details && x.details.length > 0) {
+      detailStr = x.details.map(function(d){
+        var dOrig = (d.currency && d.currency !== 'TWD') ? d.origAmt+'('+d.currency+'×'+d.rate+')=NT$'+d.twd : 'NT$'+d.twd;
+        return d.name+': '+dOrig;
+      }).join(' | ');
+    }
+    detail.push([x.date, x.cat, x.name, x.amount, origInfo, curName, rateInfo, x.source, x.note, detailStr]);
+  });
+  detail.push([],[]);
+  detail.push(['總計','','',items.reduce(function(s,x){ return s+x.amount; },0)]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detail), '耗材明細');
+
+  // 類別匯總工作表
+  var byCat = {};
+  CM_CATS.forEach(function(c){ byCat[c]=0; });
+  items.forEach(function(x){ byCat[x.cat]=(byCat[x.cat]||0)+x.amount; });
+  var total = items.reduce(function(s,x){ return s+x.amount; },0);
+  var summary = [['類別匯總 — '+mKey+' '+storeName],[],['類別','金額','佔比']];
+  CM_CATS.forEach(function(c){
+    if (byCat[c]>0) summary.push([c, byCat[c], total>0 ? (byCat[c]/total*100).toFixed(1)+'%' : '0%']);
+  });
+  summary.push(['合計', total, '100%']);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), '類別匯總');
+
+  XLSX.writeFile(wb, 'Otto2_耗材_'+storeName+'_'+mKey+'.xlsx');
 }
 
 // ── Init ────────────────────────────────────────────────
