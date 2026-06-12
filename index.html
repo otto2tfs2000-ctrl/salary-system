@@ -160,6 +160,28 @@ tr[draggable]{cursor:grab}
     <button class="store-btn active" onclick="switchStore('consumables','flagship',this)">旗艦店</button>
     <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖店</button>
   </div>
+
+  <!-- AI 照片辨識區塊 -->
+  <div class="card" id="cm-ai-card">
+    <div class="card-title">📷 上傳憑證照片（AI 自動辨識）</div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+      <label for="cm-photo-input" style="display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;transition:all 0.15s" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
+        📎 選擇照片（可多張）
+      </label>
+      <input type="file" id="cm-photo-input" accept="image/*" multiple style="display:none" onchange="handleCMPhotos(this)">
+      <span style="font-size:12px;color:var(--text3)">支援淘寶截圖、手寫請款單、任何收據</span>
+    </div>
+    <div id="cm-photo-preview" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+    <div id="cm-ai-status" style="display:none"></div>
+    <div id="cm-ai-results" style="display:none">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:10px">✅ 辨識結果，確認後匯入：</div>
+      <div id="cm-ai-rows"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="btn btn-gold" onclick="importAIResults()">⬇ 全部匯入</button>
+        <button class="btn btn-outline" onclick="clearAIResults()">✕ 清除</button>
+      </div>
+    </div>
+  </div>
   <div class="card">
     <div class="card-title">➕ 新增耗材支出</div>
     <div class="form-grid">
@@ -1836,6 +1858,277 @@ function renderConsumables() {
   listEl.innerHTML = '<table><thead><tr>'+
     '<th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>來源</th><th>備註</th><th></th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+
+// ── AI 照片辨識耗材 ────────────────────────────────────────
+
+var cmAIItems = []; // 暫存辨識結果
+
+function handleCMPhotos(input) {
+  var files = Array.from(input.files);
+  if (!files.length) return;
+
+  // 預覽
+  var previewEl = document.getElementById('cm-photo-preview');
+  previewEl.innerHTML = '';
+  files.forEach(function(file) {
+    var url = URL.createObjectURL(file);
+    var img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border)';
+    previewEl.appendChild(img);
+  });
+
+  // 開始辨識
+  setAIStatus('loading', '🔍 AI 辨識中，請稍候...');
+  document.getElementById('cm-ai-results').style.display = 'none';
+  cmAIItems = [];
+
+  // 轉 base64 並依序送出
+  var promises = files.map(function(file) {
+    return new Promise(function(resolve) {
+      var reader = new FileReader();
+      reader.onload = function(e) { resolve(e.target.result.split(',')[1]); };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  Promise.all(promises).then(function(base64List) {
+    return recognizeImages(base64List);
+  }).then(function(items) {
+    cmAIItems = items;
+    renderAIResults(items);
+    setAIStatus('ok', '✅ 辨識完成，共 ' + items.length + ' 筆，請確認後匯入。');
+    document.getElementById('cm-ai-results').style.display = 'block';
+  }).catch(function(err) {
+    console.error('AI error:', err);
+    setAIStatus('err', '❌ 辨識失敗：' + err.message);
+  });
+}
+
+function setAIStatus(type, msg) {
+  var el = document.getElementById('cm-ai-status');
+  el.style.display = 'block';
+  var colors = { loading: 'var(--gold)', ok: 'var(--green)', err: 'var(--red)' };
+  el.style.color = colors[type] || 'var(--text2)';
+  el.style.fontSize = '13px';
+  el.style.marginBottom = '10px';
+  el.textContent = msg;
+}
+
+async function recognizeImages(base64List) {
+  var store = curStore.consumables;
+  var storeName = store === 'flagship' ? '旗艦店' : '國圖店';
+  var mKey = getMonthKey();
+
+  // 組成多張圖片的 content
+  var imageContents = base64List.map(function(b64) {
+    return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
+  });
+  var year = mKey.slice(0,4);
+  var pLines = [
+    'Otto2 ARTCLUB ' + storeName + ' ' + mKey,
+    'Identify ALL purchase items. Output ONLY a JSON array.',
+    'Each: {date:YEAR-MM-DD, cat:Chinese category, name:item name, origAmt:number, currency:TWD/CNY/USD/JPY, rate:number, source:platform, note:specs}',
+    'Categories: yan4liao4=顏料 hua4bu4=畫布 zhi3=紙張 bi3=筆刷 shu4=樹脂 rong2=溶劑 bao1=包裝 qing1=清潔 yin4=印刷 other=其他',
+    'CNY rate default 4.4. Split bundled orders. Shipping fee = separate row name 運費. Skip refunds.',
+    'Year if missing: ' + year
+  ];
+  imageContents.push({ type: 'text', text: pLines.join(' | ') });
+
+  var resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: imageContents }]
+    })
+  });
+
+  if (!resp.ok) throw new Error('API 回應錯誤 ' + resp.status);
+  var data = await resp.json();
+  var text = (data.content || []).filter(function(b){ return b.type==='text'; }).map(function(b){ return b.text; }).join('');
+
+  // 清理並解析 JSON
+  var clean = text.replace(/```json|```/g, '').trim();
+  // 找第一個 [ 到最後一個 ]
+  var s = clean.indexOf('['), e = clean.lastIndexOf(']');
+  if (s === -1 || e === -1) throw new Error('無法解析辨識結果');
+  var items = JSON.parse(clean.slice(s, e+1));
+
+  // 計算台幣金額
+  items.forEach(function(x) {
+    var rate = parseFloat(x.rate) || (x.currency === 'CNY' ? 4.4 : 1);
+    x.rate = rate;
+    x.twd = x.currency === 'TWD' ? Math.round(x.origAmt) : Math.round(x.origAmt * rate);
+    if (!x.date) x.date = mKey + '-01';
+  });
+
+  return items;
+}
+
+function renderAIResults(items) {
+  var el = document.getElementById('cm-ai-rows');
+  if (!items.length) { el.innerHTML = '<div class="empty">未辨識到任何品項</div>'; return; }
+
+  var CUR_OPTS = [['TWD','NT$台幣'],['CNY','¥人民幣'],['USD','$美元'],['JPY','¥日圓']];
+  var CAT_OPTS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
+
+  el.innerHTML = '';
+  items.forEach(function(item, i) {
+    var row = document.createElement('div');
+    row.id = 'airow_' + i;
+    row.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;display:grid;grid-template-columns:100px 1fr 70px 80px 70px 70px 70px auto;gap:8px;align-items:center';
+
+    // 日期
+    var dateInp = document.createElement('input');
+    dateInp.type = 'date'; dateInp.value = item.date || '';
+    dateInp.className = 'ai-date';
+    dateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:12px;outline:none;font-family:inherit;width:100%';
+
+    // 品項
+    var nameInp = document.createElement('input');
+    nameInp.type = 'text'; nameInp.value = item.name || '';
+    nameInp.className = 'ai-name';
+    nameInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;outline:none;font-family:inherit;width:100%';
+
+    // 類別
+    var catSel = document.createElement('select');
+    catSel.className = 'ai-cat';
+    catSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 6px;border-radius:5px;font-size:12px;outline:none;font-family:inherit';
+    CAT_OPTS.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      if (c === item.cat) o.selected = true;
+      catSel.appendChild(o);
+    });
+
+    // 原幣金額
+    var amtInp = document.createElement('input');
+    amtInp.type = 'number'; amtInp.value = item.origAmt || 0;
+    amtInp.className = 'ai-amt'; amtInp.step = '0.01'; amtInp.min = '0';
+    amtInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:13px;outline:none;font-family:inherit;text-align:right;width:100%';
+    amtInp.addEventListener('wheel', function(){ this.blur(); });
+    amtInp.addEventListener('input', function(){ recalcAIRow(i); });
+
+    // 幣別
+    var curSel = document.createElement('select');
+    curSel.className = 'ai-cur';
+    curSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 4px;border-radius:5px;font-size:11px;outline:none;font-family:inherit';
+    CUR_OPTS.forEach(function(opt) {
+      var o = document.createElement('option');
+      o.value = opt[0]; o.textContent = opt[1];
+      if (opt[0] === (item.currency||'TWD')) o.selected = true;
+      curSel.appendChild(o);
+    });
+    curSel.addEventListener('change', function(){ recalcAIRow(i); });
+
+    // 匯率
+    var rateInp = document.createElement('input');
+    rateInp.type = 'number'; rateInp.value = item.rate || 1;
+    rateInp.className = 'ai-rate'; rateInp.step = '0.01'; rateInp.min = '0';
+    rateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:12px;outline:none;font-family:inherit;text-align:right;width:100%';
+    rateInp.addEventListener('wheel', function(){ this.blur(); });
+    rateInp.addEventListener('input', function(){ recalcAIRow(i); });
+
+    // 台幣顯示
+    var twdDiv = document.createElement('div');
+    twdDiv.id = 'aitwd_' + i;
+    twdDiv.style.cssText = 'color:var(--gold2);font-weight:600;font-size:13px;text-align:right;white-space:nowrap';
+    twdDiv.textContent = 'NT$' + (item.twd||0).toLocaleString();
+
+    // 刪除
+    var delBtn = document.createElement('button');
+    delBtn.textContent = '✕';
+    delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:5px 9px;border-radius:5px;cursor:pointer;font-size:12px';
+    delBtn.addEventListener('click', function(){ row.remove(); });
+
+    row.appendChild(dateInp);
+    row.appendChild(nameInp);
+    row.appendChild(catSel);
+    row.appendChild(amtInp);
+    row.appendChild(curSel);
+    row.appendChild(rateInp);
+    row.appendChild(twdDiv);
+    row.appendChild(delBtn);
+    el.appendChild(row);
+  });
+
+  // 欄位標題
+  var header = document.createElement('div');
+  header.style.cssText = 'display:grid;grid-template-columns:100px 1fr 70px 80px 70px 70px 70px auto;gap:8px;padding:0 14px;margin-bottom:4px';
+  ['日期','品項','類別','金額','幣別','匯率','台幣',''].forEach(function(t) {
+    var span = document.createElement('span');
+    span.style.cssText = 'font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px';
+    span.textContent = t;
+    header.appendChild(span);
+  });
+  el.insertBefore(header, el.firstChild);
+}
+
+function recalcAIRow(i) {
+  var row = document.getElementById('airow_' + i);
+  if (!row) return;
+  var amt = parseFloat(row.querySelector('.ai-amt').value) || 0;
+  var cur = row.querySelector('.ai-cur').value;
+  var rate = parseFloat(row.querySelector('.ai-rate').value) || 1;
+  var twd = cur === 'TWD' ? Math.round(amt) : Math.round(amt * rate);
+  var twdEl = document.getElementById('aitwd_' + i);
+  if (twdEl) twdEl.textContent = 'NT$' + twd.toLocaleString();
+}
+
+function importAIResults() {
+  var rows = document.querySelectorAll('#cm-ai-rows div[id^="airow_"]');
+  if (!rows.length) { alert('沒有可匯入的項目'); return; }
+
+  var k = getCMKey();
+  if (!S.consumables) S.consumables = {};
+  if (!S.consumables[k]) S.consumables[k] = [];
+  var mKey = getMonthKey();
+  var count = 0;
+
+  rows.forEach(function(row) {
+    var name = row.querySelector('.ai-name').value.trim();
+    if (!name) return;
+    var origAmt = parseFloat(row.querySelector('.ai-amt').value) || 0;
+    var cur = row.querySelector('.ai-cur').value;
+    var rate = parseFloat(row.querySelector('.ai-rate').value) || 1;
+    var twd = cur === 'TWD' ? Math.round(origAmt) : Math.round(origAmt * rate);
+    var dateVal = row.querySelector('.ai-date').value || mKey + '-01';
+    var cat = row.querySelector('.ai-cat').value;
+
+    S.consumables[k].push({
+      id: Date.now() + count,
+      date: dateVal,
+      cat: cat,
+      name: name,
+      currency: cur,
+      origAmt: origAmt,
+      rate: cur !== 'TWD' ? rate : null,
+      amount: twd,
+      source: '—',
+      note: '',
+      details: null
+    });
+    count++;
+  });
+
+  save();
+  clearAIResults();
+  renderConsumables();
+  setAIStatus('ok', '✅ 已匯入 ' + count + ' 筆耗材紀錄。');
+}
+
+function clearAIResults() {
+  document.getElementById('cm-ai-results').style.display = 'none';
+  document.getElementById('cm-ai-rows').innerHTML = '';
+  document.getElementById('cm-photo-preview').innerHTML = '';
+  document.getElementById('cm-photo-input').value = '';
+  cmAIItems = [];
+  var statusEl = document.getElementById('cm-ai-status');
+  statusEl.style.display = 'none';
 }
 
 function toggleDetail(id) {
