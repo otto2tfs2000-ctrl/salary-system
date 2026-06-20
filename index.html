@@ -280,7 +280,7 @@ tr[draggable]{cursor:grab}
   </div>
 
   <div class="info-box">
-    📅 每週一盤點上週庫存 → 系統算出消耗速度與警示 → 星期二照警示訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。
+    📅 每週一盤點上週庫存 → 系統依消耗速度直接算出本週該訂多少 → 星期二照建議訂購量訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。建議訂購量＝補到「安全庫存＋未來4週預估消耗」。
   </div>
 
   <div id="inv-alert-area"></div>
@@ -2560,6 +2560,29 @@ function renderInvItemList() {
   el.innerHTML = html;
 }
 
+// ── 建議訂購量 ──────────────────────────────────────────
+// 邏輯：訂完之後庫存要能撐過「安全庫存」+「未來4週預估消耗」。
+// 未來4週預估消耗 = 近6週平均週消耗 × 4。
+// 若消耗資料不足（從未盤點過消耗速度），則只補到安全庫存，並標註資料不足。
+const INV_LOOKAHEAD_WEEKS = 4;
+function computeOrderQty(itemId, weekKey, safeStock) {
+  var curStock = computeCurrentStock(itemId, weekKey);
+  var avgUsage = computeAvgWeeklyUsage(itemId, weekKey, 6);
+
+  if (curStock === null) {
+    // 從未盤點過，無法判斷，不建議數字
+    return { qty: null, basis: 'none' };
+  }
+  if (!avgUsage || avgUsage <= 0) {
+    // 沒有消耗速度資料，只補到安全庫存
+    var qtySafe = Math.max(0, safeStock - curStock);
+    return { qty: qtySafe, basis: 'safe-only' };
+  }
+  var target = safeStock + avgUsage * INV_LOOKAHEAD_WEEKS;
+  var qty = Math.max(0, Math.ceil(target - curStock));
+  return { qty: qty, basis: 'forecast', avgUsage: avgUsage };
+}
+
 // ── 本週盤點表 ──────────────────────────────────────────
 function renderInvWeekTable() {
   var items = getInvItems();
@@ -2571,7 +2594,7 @@ function renderInvWeekTable() {
     return;
   }
   var html = '<table><thead><tr>';
-  html += '<th>類別</th><th>品項</th><th>單位</th><th>安全庫存</th><th>上週結餘</th><th>本週用掉</th><th>本週盤點實際庫存</th><th>狀態</th>';
+  html += '<th>類別</th><th>品項</th><th>單位</th><th>安全庫存</th><th>上週結餘</th><th>本週用掉</th><th>本週盤點實際庫存</th><th>本週建議訂購量</th>';
   html += '</tr></thead><tbody>';
 
   items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
@@ -2582,12 +2605,19 @@ function renderInvWeekTable() {
     var prevStock = prevStockObj ? prevStockObj.stock : null;
     var curStock = computeCurrentStock(it.id, weekKey);
 
-    var statusHtml = '<span class="muted">—</span>';
-    if (curStock !== null) {
-      if (curStock <= it.safeStock) {
-        statusHtml = '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">⚠️ 低於安全庫存</span>';
+    var order = computeOrderQty(it.id, weekKey, it.safeStock);
+    var orderHtml = '<span class="muted">尚未盤點</span>';
+    if (order.basis === 'safe-only') {
+      if (order.qty > 0) {
+        orderHtml = '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">訂 '+order.qty+' '+it.unit+'</span> <span class="muted">（資料不足，僅補到安全庫存）</span>';
       } else {
-        statusHtml = '<span class="badge b-green">✓ 正常</span>';
+        orderHtml = '<span class="badge b-green">✓ 無需訂購</span> <span class="muted">（消耗資料不足）</span>';
+      }
+    } else if (order.basis === 'forecast') {
+      if (order.qty > 0) {
+        orderHtml = '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">訂 '+order.qty+' '+it.unit+'</span> <span class="muted">（週耗約'+order.avgUsage.toFixed(1)+'）</span>';
+      } else {
+        orderHtml = '<span class="badge b-green">✓ 無需訂購</span>';
       }
     }
 
@@ -2599,7 +2629,7 @@ function renderInvWeekTable() {
     html += '<td class="muted">'+(prevStock !== null ? prevStock : '—')+'</td>';
     html += '<td><input class="in-num" type="number" min="0" placeholder="用量" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()"></td>';
     html += '<td><input class="in-num" type="number" min="0" placeholder="實際數量" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()"></td>';
-    html += '<td id="inv-status-'+it.id+'">'+statusHtml+'</td>';
+    html += '<td id="inv-status-'+it.id+'">'+orderHtml+'</td>';
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -2634,21 +2664,19 @@ function saveInvWeek() {
 function renderInvAlerts() {
   var items = getInvItems();
   var weekKey = invCurWeek;
-  var lowStock = [];
-  var runningOut = [];
+  var lowStock = [];   // 已低於安全庫存
+  var runningOut = []; // 還在安全庫存之上，但照消耗速度該訂貨了
 
   items.forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
     if (curStock === null) return;
+    var order = computeOrderQty(it.id, weekKey, it.safeStock);
+    if (order.qty === null || order.qty <= 0) return;
+
     if (curStock <= it.safeStock) {
-      lowStock.push({ item: it, stock: curStock });
-    }
-    var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
-    if (avgUsage && avgUsage > 0) {
-      var weeksLeft = curStock / avgUsage;
-      if (weeksLeft <= 2 && curStock > it.safeStock) {
-        runningOut.push({ item: it, stock: curStock, weeksLeft: weeksLeft, avgUsage: avgUsage });
-      }
+      lowStock.push({ item: it, stock: curStock, order: order });
+    } else {
+      runningOut.push({ item: it, stock: curStock, order: order });
     }
   });
 
@@ -2661,21 +2689,22 @@ function renderInvAlerts() {
   html += '<div class="card-title" style="color:var(--red)">🚨 庫存要注意</div>';
 
   if (lowStock.length > 0) {
-    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">已低於安全庫存，建議本週訂貨：</div>';
+    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">已低於安全庫存，本週要訂貨：</div>';
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
     lowStock.forEach(function(x) {
+      var basisNote = x.order.basis === 'safe-only' ? '（消耗資料不足，僅補到安全值）' : '（週耗約'+x.order.avgUsage.toFixed(1)+'）';
       html += '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">'+
-        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'（安全值 '+x.item.safeStock+'）</span>';
+        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit+' '+basisNote+'</span>';
     });
     html += '</div>';
   }
 
   if (runningOut.length > 0) {
-    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">照消耗速度，預估快撐不住（提前提醒，目前還在安全庫存之上）：</div>';
+    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">目前還在安全庫存之上，但照消耗速度，建議這週順便訂一些：</div>';
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
     runningOut.forEach(function(x) {
       html += '<span class="badge" style="background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)">'+
-        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'，每週約用 '+x.avgUsage.toFixed(1)+'，預估還能撐 '+x.weeksLeft.toFixed(1)+' 週</span>';
+        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'，週耗約'+x.order.avgUsage.toFixed(1)+' → 建議訂 '+x.order.qty+' '+x.item.unit+'</span>';
     });
     html += '</div>';
   }
@@ -2706,13 +2735,20 @@ function renderInvStats() {
   html += '</div>';
 
   // 各品項消耗趨勢表
-  html += '<table><thead><tr><th>類別</th><th>品項</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>預估還能撐</th></tr></thead><tbody>';
+  html += '<table><thead><tr><th>類別</th><th>品項</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>預估還能撐</th><th>本週建議訂購量</th></tr></thead><tbody>';
   items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
     var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
     var weeksLeftStr = '—';
     if (curStock !== null && avgUsage && avgUsage > 0) {
       weeksLeftStr = (curStock / avgUsage).toFixed(1) + ' 週';
+    }
+    var order = computeOrderQty(it.id, weekKey, it.safeStock);
+    var orderStr = '<span class="muted">—</span>';
+    if (order.qty !== null) {
+      orderStr = order.qty > 0
+        ? '<span style="color:var(--red);font-weight:600">'+order.qty+' '+it.unit+'</span>'
+        : '<span style="color:var(--green)">0</span>';
     }
     html += '<tr>';
     html += '<td><span class="badge b-gold">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</span></td>';
@@ -2721,6 +2757,7 @@ function renderInvStats() {
     html += '<td class="muted">'+it.safeStock+'</td>';
     html += '<td>'+(avgUsage !== null ? avgUsage.toFixed(1)+' '+it.unit : '<span class="muted">資料不足</span>')+'</td>';
     html += '<td>'+weeksLeftStr+'</td>';
+    html += '<td>'+orderStr+'</td>';
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -2742,12 +2779,13 @@ function dlInventoryExcel() {
 
   // 本週盤點工作表
   var sheet1 = [['Otto2 ARTCLUB '+storeName+' 庫存盤點 '+invWeekLabel(weekKey)],[],
-    ['類別','品項','單位','安全庫存','目前庫存','近6週平均週消耗','預估還能撐(週)']];
+    ['類別','品項','單位','安全庫存','目前庫存','近6週平均週消耗','預估還能撐(週)','本週建議訂購量']];
   items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
     var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
     var weeksLeft = (curStock !== null && avgUsage) ? (curStock/avgUsage).toFixed(1) : '';
-    sheet1.push([it.cat, it.name, it.unit, it.safeStock, curStock !== null ? curStock : '', avgUsage !== null ? avgUsage.toFixed(1) : '', weeksLeft]);
+    var order = computeOrderQty(it.id, weekKey, it.safeStock);
+    sheet1.push([it.cat, it.name, it.unit, it.safeStock, curStock !== null ? curStock : '', avgUsage !== null ? avgUsage.toFixed(1) : '', weeksLeft, order.qty !== null ? order.qty : '']);
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet1), '本週庫存狀態');
 
