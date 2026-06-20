@@ -127,6 +127,7 @@ tr[draggable]{cursor:grab}
   <div class="tab active" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" onclick="switchTab('consumables')">🧴 耗材記帳</div>
+  <div class="tab" onclick="switchTab('inventory')">📦 庫存盤點</div>
   <div class="tab" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
   <div class="tab" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
 </div>
@@ -156,6 +157,32 @@ tr[draggable]{cursor:grab}
 </div>
 
 <div id="tab-consumables" class="page">
+  <!-- 耗材專用月份切換 -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--text3)">查看月份</span>
+    <select id="cm-selYear" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit">
+      <option value="2024">2024 年</option>
+      <option value="2025">2025 年</option>
+      <option value="2026" selected>2026 年</option>
+      <option value="2027">2027 年</option>
+    </select>
+    <select id="cm-selMonth" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit">
+      <option value="01">1 月</option>
+      <option value="02">2 月</option>
+      <option value="03">3 月</option>
+      <option value="04">4 月</option>
+      <option value="05">5 月</option>
+      <option value="06" selected>6 月</option>
+      <option value="07">7 月</option>
+      <option value="08">8 月</option>
+      <option value="09">9 月</option>
+      <option value="10">10 月</option>
+      <option value="11">11 月</option>
+      <option value="12">12 月</option>
+    </select>
+    <span style="font-size:12px;color:var(--gold2);font-weight:500" id="cm-month-total"></span>
+  </div>
+
   <div class="store-tabs">
     <button class="store-btn active" onclick="switchStore('consumables','flagship',this)">旗艦店</button>
     <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖店</button>
@@ -241,7 +268,73 @@ tr[draggable]{cursor:grab}
       <span>📋 本月明細</span>
       <button class="btn btn-outline btn-sm" onclick="dlConsumableExcel()">⬇ 匯出 Excel</button>
     </div>
+    <div id="cm-debug" style="margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
     <div id="cm-list-area"></div>
+  </div>
+</div>
+
+<div id="tab-inventory" class="page">
+  <div class="store-tabs">
+    <button class="store-btn active" onclick="switchStore('inventory','flagship',this)">旗艦店</button>
+    <button class="store-btn" onclick="switchStore('inventory','guotu',this)">國圖店</button>
+  </div>
+
+  <div class="info-box">
+    📅 每週一盤點上週庫存 → 系統算出消耗速度與警示 → 星期二照警示訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。
+  </div>
+
+  <div id="inv-alert-area"></div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>📝 本週盤點（<span id="inv-week-label"></span>）</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-sm btn-outline" onclick="invShiftWeek(-1)">← 上週</button>
+        <button class="btn-sm btn-outline" onclick="invShiftWeek(1)">下週 →</button>
+        <button class="btn-sm btn-outline" onclick="invGoToday()">回到本週</button>
+      </div>
+    </div>
+    <div id="inv-week-table"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-gold" onclick="saveInvWeek()">💾 儲存本週盤點</button>
+      <button class="btn btn-outline" onclick="openInvItemModal()">⚙️ 管理品項清單</button>
+    </div>
+  </div>
+
+  <div class="card" id="inv-item-modal" style="display:none">
+    <div class="card-title" style="justify-content:space-between">
+      <span>⚙️ 品項清單管理（<span id="inv-modal-store"></span>）</span>
+      <button class="btn-sm btn-outline" onclick="closeInvItemModal()">✕ 關閉</button>
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>類別</label>
+        <select id="inv-new-cat">
+          <option value="顏料">🎨 顏料</option>
+          <option value="畫布">🖼 畫布/畫板</option>
+          <option value="紙張">📄 紙張/素描本</option>
+          <option value="筆刷">🖌 筆刷/工具</option>
+          <option value="樹脂">💎 樹脂/UV膠</option>
+          <option value="溶劑">🧪 溶劑/調和油</option>
+          <option value="包裝">📦 包裝材料</option>
+          <option value="清潔">🧹 清潔用品</option>
+          <option value="印刷">🖨 印刷/文件</option>
+          <option value="其他">📌 其他</option>
+        </select>
+      </div>
+      <div class="fg"><label>品項名稱</label><input id="inv-new-name" placeholder="例：白色壓克力顏料"></div>
+      <div class="fg"><label>單位</label><input id="inv-new-unit" placeholder="例：瓶、包、捲、張" value="個"></div>
+      <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於此數警示" onwheel="this.blur()"></div>
+    </div>
+    <button class="btn btn-gold" onclick="addInvItem()">+ 新增品項</button>
+    <div style="margin-top:16px" id="inv-item-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>📊 庫存統計與消耗趨勢</span>
+      <button class="btn btn-outline btn-sm" onclick="dlInventoryExcel()">⬇ 匯出 Excel</button>
+    </div>
+    <div id="inv-stats-area"></div>
   </div>
 </div>
 
@@ -403,8 +496,8 @@ function getFBSalesByDay(teacherName, month, day, store) {
   return fbSalesData[key] || 0;
 }
 
-let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{} };
-let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'flagship' };
+let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{}, inventory:{} };
+let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'flagship', inventory:'flagship' };
 let tabUnlocked = { salary:false, settings:false };
 let pendingTab = null;
 let saveTimer = null;
@@ -437,6 +530,7 @@ async function loadData() {
     }
     localStorage.setItem('otto2_v7', JSON.stringify(S));
     setSync('ok','已同步');
+    injectMayData();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -445,6 +539,25 @@ async function loadData() {
   document.getElementById('loading-overlay').style.display = 'none';
   loadFirebaseSales();
   renderAll();
+}
+
+
+// ── 初始化歷史耗材資料 ────────────────────────────────────
+function injectMayData() {
+  var MAY_KEY = '2026-05_flagship';
+  var MAY_VER = 'v2'; // 版本號，改這裡強制重新注入
+  if (!S.consumables) S.consumables = {};
+  // 已有正確版本就跳過
+  if (S.consumables[MAY_KEY] && S.consumables[MAY_KEY].length > 0 && S.consumables['__may_ver'] === MAY_VER) return;
+  S.consumables['__may_ver'] = MAY_VER;
+  S.consumables[MAY_KEY] = [{"date": "2025-05-04", "cat": "其他", "name": "廣惠珊退費（先支出待還款）", "amount": 2000, "currency": "TWD", "origAmt": 2000, "rate": null, "source": "實體店", "note": "已廢單，待收回", "id": 1746086400000, "details": null}, {"date": "2025-05-01", "cat": "其他", "name": "供花", "amount": 350, "currency": "TWD", "origAmt": 350, "rate": null, "source": "實體店", "note": "Ethan付款", "id": 1746086401000, "details": null}, {"date": "2025-05-01", "cat": "包裝", "name": "捲筒垃圾袋、養生膠帶", "amount": 267, "currency": "TWD", "origAmt": 267, "rate": null, "source": "實體店", "note": "", "id": 1746086402000, "details": null}, {"date": "2025-05-01", "cat": "其他", "name": "拜拜用品", "amount": 946, "currency": "TWD", "origAmt": 946, "rate": null, "source": "實體店", "note": "", "id": 1746086403000, "details": null}, {"date": "2025-04-29", "cat": "其他", "name": "網頁費", "amount": 3890, "currency": "TWD", "origAmt": 3890, "rate": null, "source": "其他網路", "note": "資訊費用", "id": 1746086404000, "details": null}, {"date": "2025-05-11", "cat": "顏料", "name": "厚之漆", "amount": 1668, "currency": "TWD", "origAmt": 1668, "rate": null, "source": "實體店", "note": "", "id": 1746086405000, "details": null}, {"date": "2025-05-11", "cat": "顏料", "name": "礦石", "amount": 200, "currency": "TWD", "origAmt": 200, "rate": null, "source": "實體店", "note": "米雪付款", "id": 1746086406000, "details": null}, {"date": "2025-05-12", "cat": "顏料", "name": "油彩", "amount": 110, "currency": "TWD", "origAmt": 110, "rate": null, "source": "實體店", "note": "蓁蓁付款", "id": 1746086407000, "details": null}, {"date": "2025-05-14", "cat": "其他", "name": "石膏粉＋木螺絲釘", "amount": 213, "currency": "TWD", "origAmt": 213, "rate": null, "source": "實體店", "note": "", "id": 1746086408000, "details": null}, {"date": "2025-05-08", "cat": "樹脂", "name": "水晶碎石", "amount": 454, "currency": "TWD", "origAmt": 454, "rate": null, "source": "實體店", "note": "", "id": 1746086409000, "details": null}, {"date": "2025-05-08", "cat": "樹脂", "name": "水晶碎石", "amount": 240, "currency": "TWD", "origAmt": 240, "rate": null, "source": "實體店", "note": "", "id": 1746086410000, "details": null}, {"date": "2025-05-10", "cat": "包裝", "name": "塑膠手提袋", "amount": 255, "currency": "TWD", "origAmt": 255, "rate": null, "source": "實體店", "note": "", "id": 1746086411000, "details": null}, {"date": "2025-05-12", "cat": "其他", "name": "鏡子", "amount": 1073, "currency": "TWD", "origAmt": 1073, "rate": null, "source": "實體店", "note": "", "id": 1746086412000, "details": null}, {"date": "2025-05-12", "cat": "印刷", "name": "景印紙", "amount": 800, "currency": "TWD", "origAmt": 800, "rate": null, "source": "實體店", "note": "", "id": 1746086413000, "details": null}, {"date": "2025-05-01", "cat": "其他", "name": "商務方案＋簡訊費", "amount": 400, "currency": "TWD", "origAmt": 400, "rate": null, "source": "其他網路", "note": "系統費用", "id": 1746086414000, "details": null}, {"date": "2025-05-19", "cat": "其他", "name": "蛋糕（學員生日慶祝課贈）", "amount": 150, "currency": "TWD", "origAmt": 150, "rate": null, "source": "實體店", "note": "4F", "id": 1746086415000, "details": null}, {"date": "2025-05-07", "cat": "清潔", "name": "濕紙巾", "amount": 1232, "currency": "TWD", "origAmt": 1232, "rate": null, "source": "實體店", "note": "", "id": 1746086416000, "details": null}, {"date": "2025-05-08", "cat": "其他", "name": "台層清板、灑水盤、感應燈、毛巾、抹布", "amount": 972, "currency": "TWD", "origAmt": 972, "rate": null, "source": "實體店", "note": "", "id": 1746086417000, "details": null}, {"date": "2025-05-14", "cat": "畫布", "name": "木板", "amount": 1831, "currency": "TWD", "origAmt": 1831, "rate": null, "source": "實體店", "note": "", "id": 1746086418000, "details": null}, {"date": "2025-05-18", "cat": "包裝", "name": "塑膠袋", "amount": 697, "currency": "TWD", "origAmt": 697, "rate": null, "source": "實體店", "note": "", "id": 1746086419000, "details": null}, {"date": "2025-05-16", "cat": "其他", "name": "小鋸片", "amount": 215, "currency": "TWD", "origAmt": 215, "rate": null, "source": "實體店", "note": "", "id": 1746086420000, "details": null}, {"date": "2025-05-16", "cat": "其他", "name": "噴火槍", "amount": 130, "currency": "TWD", "origAmt": 130, "rate": null, "source": "實體店", "note": "", "id": 1746086421000, "details": null}, {"date": "2025-05-18", "cat": "其他", "name": "羊毛地毯", "amount": 1170, "currency": "TWD", "origAmt": 1170, "rate": null, "source": "實體店", "note": "", "id": 1746086422000, "details": null}, {"date": "2025-05-20", "cat": "顏料", "name": "麗花、地毯覆布、水晶碎石、拖盤、圓鑑、小書架、提袋、木板", "amount": 10956, "currency": "TWD", "origAmt": 10956, "rate": null, "source": "實體店", "note": "課程材料整批", "id": 1746086423000, "details": null}, {"date": "2025-05-19", "cat": "其他", "name": "拖盤、提袋運費", "amount": 3597, "currency": "TWD", "origAmt": 3597, "rate": null, "source": "其他網路", "note": "", "id": 1746086424000, "details": null}, {"date": "2025-05-19", "cat": "其他", "name": "停車費", "amount": 70, "currency": "TWD", "origAmt": 70, "rate": null, "source": "實體店", "note": "Ethan付款", "id": 1746086425000, "details": null}, {"date": "2025-05-19", "cat": "其他", "name": "運費", "amount": 60, "currency": "TWD", "origAmt": 60, "rate": null, "source": "其他網路", "note": "Ethan付款", "id": 1746086426000, "details": null}, {"date": "2025-05-22", "cat": "其他", "name": "支出證明單－關稅", "amount": 184, "currency": "TWD", "origAmt": 184, "rate": null, "source": "其他網路", "note": "", "id": 1746086427000, "details": null}, {"date": "2025-05-25", "cat": "顏料", "name": "指拇材料", "amount": 3180, "currency": "TWD", "origAmt": 3180, "rate": null, "source": "實體店", "note": "", "id": 1746086428000, "details": null}, {"date": "2025-05-25", "cat": "其他", "name": "碳鋅電池、螞蟻藥", "amount": 407, "currency": "TWD", "origAmt": 407, "rate": null, "source": "實體店", "note": "", "id": 1746086429000, "details": null}, {"date": "2025-05-28", "cat": "清潔", "name": "工業油污液", "amount": 224, "currency": "TWD", "origAmt": 224, "rate": null, "source": "實體店", "note": "", "id": 1746086430000, "details": null}, {"date": "2025-05-19", "cat": "樹脂", "name": "海浪膠", "amount": 1914, "currency": "TWD", "origAmt": 1914, "rate": null, "source": "實體店", "note": "", "id": 1746086431000, "details": null}, {"date": "2025-05-21", "cat": "其他", "name": "膠帶", "amount": 624, "currency": "TWD", "origAmt": 624, "rate": null, "source": "實體店", "note": "", "id": 1746086432000, "details": null}, {"date": "2025-05-26", "cat": "畫布", "name": "海洋流動木框", "amount": 534, "currency": "TWD", "origAmt": 534, "rate": null, "source": "實體店", "note": "", "id": 1746086433000, "details": null}, {"date": "2025-05-26", "cat": "其他", "name": "紙膠＋木夾", "amount": 1122, "currency": "TWD", "origAmt": 1122, "rate": null, "source": "實體店", "note": "材料+雜費", "id": 1746086434000, "details": null}, {"date": "2025-05-27", "cat": "畫布", "name": "海洋流動木框", "amount": 880, "currency": "TWD", "origAmt": 880, "rate": null, "source": "實體店", "note": "", "id": 1746086435000, "details": null}, {"date": "2025-05-27", "cat": "其他", "name": "辦公椅", "amount": 714, "currency": "TWD", "origAmt": 714, "rate": null, "source": "實體店", "note": "", "id": 1746086436000, "details": null}];
+  // 直接寫入 Firebase consumables 節點
+  if (fbDb2) {
+    fbDb2.ref('salaryData/consumables').set(S.consumables)
+      .then(function(){ console.log('[Otto2] 五月耗材資料已寫入 Firebase'); })
+      .catch(function(e){ console.error('[Otto2] 寫入失敗:', e); });
+  }
+  console.log('[Otto2] 五月耗材資料已初始化，共 ' + S.consumables[MAY_KEY].length + ' 筆');
 }
 
 async function doSave() {
@@ -519,7 +632,7 @@ function switchTab(tab) {
 
 function doSwitchTab(tab) {
   document.querySelectorAll('.tab').forEach((el,i) => {
-    el.classList.toggle('active', ['daily','monthly','consumables','salary','settings'][i] === tab);
+    el.classList.toggle('active', ['daily','monthly','consumables','inventory','salary','settings'][i] === tab);
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
@@ -527,6 +640,7 @@ function doSwitchTab(tab) {
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();
   if (tab==='consumables') renderConsumables();
+  if (tab==='inventory') renderInventory();
   if (tab==='settings') renderTeacherList();
 }
 
@@ -539,6 +653,7 @@ function switchStore(tab, store, el) {
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();
   if (tab==='consumables') renderConsumables();
+  if (tab==='inventory') renderInventory();
 }
 
 function getTeachers(store) {
@@ -1527,8 +1642,17 @@ const CM_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝',
 const CM_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
 const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','筆刷':'b-purple','樹脂':'b-blue','溶劑':'b-gray','包裝':'b-green','清潔':'b-green','印刷':'b-gray','其他':'b-gray'};
 
+function getCMMonthKey() {
+  var yEl = document.getElementById('cm-selYear');
+  var mEl = document.getElementById('cm-selMonth');
+  if (yEl && mEl && yEl.value && mEl.value) {
+    return yEl.value + '-' + mEl.value;
+  }
+  return getMonthKey(); // fallback 用全域月份
+}
+
 function getCMKey() {
-  return getMonthKey() + '_' + curStore.consumables;
+  return getCMMonthKey() + '_' + curStore.consumables;
 }
 
 function getConsumables() {
@@ -1742,8 +1866,24 @@ function delConsumable(id) {
 
 function renderConsumables() {
   var items = getConsumables();
-  var mKey = getMonthKey();
+  var mKey = getCMMonthKey();
   var store = curStore.consumables;
+  
+  // DEBUG 顯示
+  var debugEl = document.getElementById('cm-debug');
+  if (debugEl) {
+    var allKeys = S.consumables ? Object.keys(S.consumables).filter(function(k){ return k !== '__may_ver'; }) : [];
+    var curKey = getCMKey();
+    debugEl.style.display = 'block';
+    debugEl.innerHTML = '<span style="color:#686460;font-size:11px">查詢key: <b style="color:#c9a84c">' + curKey + '</b> &nbsp;|&nbsp; Firebase有: <b style="color:#c9a84c">' + (allKeys.length ? allKeys.join(', ') : '無') + '</b> &nbsp;|&nbsp; 筆數: <b style="color:#4caf7d">' + items.length + '</b></span>';
+  }
+
+  // 更新月份總計
+  var totalEl = document.getElementById('cm-month-total');
+  if (totalEl) {
+    var t = items.reduce(function(s,x){ return s+x.amount; }, 0);
+    totalEl.textContent = t > 0 ? '本月共 NT$' + t.toLocaleString() : '';
+  }
 
   // 設定日期預設值
   var dateEl = document.getElementById('cm-date');
@@ -2086,7 +2226,7 @@ function importAIResults() {
   var k = getCMKey();
   if (!S.consumables) S.consumables = {};
   if (!S.consumables[k]) S.consumables[k] = [];
-  var mKey = getMonthKey();
+  var mKey = getCMMonthKey();
   var count = 0;
 
   rows.forEach(function(row) {
@@ -2096,7 +2236,7 @@ function importAIResults() {
     var cur = row.querySelector('.ai-cur').value;
     var rate = parseFloat(row.querySelector('.ai-rate').value) || 1;
     var twd = cur === 'TWD' ? Math.round(origAmt) : Math.round(origAmt * rate);
-    var dateVal = row.querySelector('.ai-date').value || mKey + '-01';
+    var dateVal = row.querySelector('.ai-date').value || getCMMonthKey() + '-01';
     var cat = row.querySelector('.ai-cat').value;
 
     S.consumables[k].push({
@@ -2178,10 +2318,460 @@ function dlConsumableExcel() {
   XLSX.writeFile(wb, 'Otto2_耗材_'+storeName+'_'+mKey+'.xlsx');
 }
 
+
+// ══════════════════════════════════════════════════════════
+// 庫存盤點系統
+// ══════════════════════════════════════════════════════════
+const INV_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
+const INV_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
+
+// 常用耗材起手清單（依分類），第一次開啟某分店時自動帶入，之後可自行增刪
+const INV_DEFAULT_ITEMS = [
+  {cat:'顏料', name:'壓克力顏料（白）', unit:'瓶', safeStock:10},
+  {cat:'顏料', name:'壓克力顏料（黑）', unit:'瓶', safeStock:8},
+  {cat:'顏料', name:'壓克力顏料（基本色一套）', unit:'套', safeStock:5},
+  {cat:'顏料', name:'水彩顏料組', unit:'組', safeStock:5},
+  {cat:'顏料', name:'金漆/銀漆', unit:'瓶', safeStock:4},
+  {cat:'畫布', name:'畫布（10號）', unit:'張', safeStock:10},
+  {cat:'畫布', name:'畫布（小尺寸）', unit:'張', safeStock:15},
+  {cat:'畫布', name:'木板底材', unit:'片', safeStock:10},
+  {cat:'紙張', name:'素描本', unit:'本', safeStock:10},
+  {cat:'紙張', name:'水彩紙', unit:'張', safeStock:20},
+  {cat:'紙張', name:'影印紙', unit:'包', safeStock:3},
+  {cat:'筆刷', name:'平頭筆刷', unit:'支', safeStock:10},
+  {cat:'筆刷', name:'圓頭筆刷', unit:'支', safeStock:10},
+  {cat:'筆刷', name:'海綿/刮刀工具', unit:'個', safeStock:8},
+  {cat:'樹脂', name:'UV膠', unit:'瓶', safeStock:6},
+  {cat:'樹脂', name:'水晶碎石', unit:'包', safeStock:8},
+  {cat:'樹脂', name:'矽膠模具', unit:'個', safeStock:5},
+  {cat:'溶劑', name:'松節油/調和油', unit:'瓶', safeStock:5},
+  {cat:'溶劑', name:'洗筆液', unit:'瓶', safeStock:5},
+  {cat:'包裝', name:'塑膠提袋', unit:'個', safeStock:30},
+  {cat:'包裝', name:'氣泡膜/包裝紙', unit:'捲', safeStock:3},
+  {cat:'包裝', name:'封箱膠帶', unit:'捲', safeStock:5},
+  {cat:'清潔', name:'濕紙巾', unit:'包', safeStock:5},
+  {cat:'清潔', name:'垃圾袋', unit:'捲', safeStock:5},
+  {cat:'清潔', name:'抹布/毛巾', unit:'條', safeStock:10},
+  {cat:'印刷', name:'A4影印紙', unit:'包', safeStock:3},
+  {cat:'印刷', name:'墨水匣/碳粉', unit:'個', safeStock:2}
+];
+
+// ── 週期 key 工具：用「該週週一」的 YYYY-MM-DD 當代表 ──────
+function invMonday(d) {
+  var dt = new Date(d);
+  var day = dt.getDay(); // 0=Sun..6=Sat
+  var diff = (day === 0 ? -6 : 1) - day; // 移到週一
+  dt.setDate(dt.getDate() + diff);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+function invFmtDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function invWeekKey(d) { return invFmtDate(invMonday(d)); }
+function invWeekLabel(weekKey) {
+  var mon = new Date(weekKey + 'T00:00:00');
+  var sun = new Date(mon); sun.setDate(mon.getDate()+6);
+  var fmt = function(d){ return (d.getMonth()+1)+'/'+d.getDate(); };
+  return fmt(mon) + ' ～ ' + fmt(sun);
+}
+
+let invCurWeek = invWeekKey(new Date());
+
+function invShiftWeek(dir) {
+  var d = new Date(invCurWeek + 'T00:00:00');
+  d.setDate(d.getDate() + dir*7);
+  invCurWeek = invWeekKey(d);
+  renderInventory();
+}
+function invGoToday() {
+  invCurWeek = invWeekKey(new Date());
+  renderInventory();
+}
+
+// ── 資料存取 ────────────────────────────────────────────
+function getInvStore() {
+  if (!S.inventory) S.inventory = {};
+  var store = curStore.inventory;
+  if (!S.inventory[store]) S.inventory[store] = { items: [], weeks: {} };
+  if (!S.inventory[store].items) S.inventory[store].items = [];
+  if (!S.inventory[store].weeks) S.inventory[store].weeks = {};
+  // 第一次使用該分店：帶入起手清單
+  if (S.inventory[store].items.length === 0 && !S.inventory[store].__seeded) {
+    S.inventory[store].__seeded = true;
+    INV_DEFAULT_ITEMS.forEach(function(it, i) {
+      S.inventory[store].items.push({
+        id: Date.now() + i,
+        cat: it.cat,
+        name: it.name,
+        unit: it.unit,
+        safeStock: it.safeStock
+      });
+    });
+    save();
+  }
+  return S.inventory[store];
+}
+
+function getInvItems() {
+  return getInvStore().items;
+}
+
+// 取得某品項在某週的紀錄；若無則回傳 null
+function getInvWeekRecord(itemId, weekKey) {
+  var st = getInvStore();
+  if (!st.weeks[weekKey]) return null;
+  return st.weeks[weekKey][itemId] || null;
+}
+
+// 取得某品項「最近一筆有實際盤點值」的週（在指定週之前，含指定週）
+function getInvLatestStockBefore(itemId, weekKey) {
+  var st = getInvStore();
+  var keys = Object.keys(st.weeks).filter(function(k){ return k <= weekKey; }).sort();
+  for (var i = keys.length - 1; i >= 0; i--) {
+    var rec = st.weeks[keys[i]][itemId];
+    if (rec && typeof rec.stock === 'number') return { week: keys[i], stock: rec.stock };
+  }
+  return null;
+}
+
+// 計算某品項目前的「庫存量」：從最近一次有盤點實際值的那週開始，
+// 逐週累減之後每週填的「用掉量」，一路滾算到目標週。
+// 若目標週本身就有盤點實際值，直接採用該值（最準）。
+function computeCurrentStock(itemId, weekKey) {
+  var st = getInvStore();
+  var rec = getInvWeekRecord(itemId, weekKey);
+  if (rec && typeof rec.stock === 'number') return rec.stock;
+
+  var anchor = getInvLatestStockBefore(itemId, weekKey);
+  if (!anchor) return null; // 從未盤點過，無法推算
+
+  var stock = anchor.stock;
+  var cursor = new Date(anchor.week + 'T00:00:00');
+  var target = new Date(weekKey + 'T00:00:00');
+  cursor.setDate(cursor.getDate() + 7); // 從盤點週的下一週開始累減
+
+  while (cursor <= target) {
+    var ck = invWeekKey(cursor);
+    var crec = st.weeks[ck] ? st.weeks[ck][itemId] : null;
+    if (crec) {
+      if (typeof crec.stock === 'number') {
+        stock = crec.stock; // 中途有盤點值，重新校準
+      } else if (typeof crec.used === 'number') {
+        stock = Math.max(0, stock - crec.used);
+      }
+    }
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return stock;
+}
+
+// 計算品項過去 N 週的平均消耗量。
+// 做法：用 computeCurrentStock 算出每一週「週末庫存」，
+// 再取相鄰兩週的差值當作該週消耗量（若中途有手動填 used，直接採用該值，更準確）。
+function computeAvgWeeklyUsage(itemId, uptoWeekKey, lookbackWeeks) {
+  var st = getInvStore();
+  var allWeeks = Object.keys(st.weeks).filter(function(k){ return k <= uptoWeekKey; }).sort();
+  if (allWeeks.length === 0) return null;
+  var n = lookbackWeeks || 6;
+  var recent = allWeeks.slice(-1 * n);
+
+  var usages = [];
+  var prevWeekStock = null;
+  var prevWeekKeyVal = null;
+  recent.forEach(function(wk) {
+    var rec = st.weeks[wk][itemId];
+    if (!rec) return;
+    if (typeof rec.used === 'number' && rec.used >= 0) {
+      usages.push(rec.used);
+    } else if (prevWeekStock !== null) {
+      var stockNow = computeCurrentStock(itemId, wk);
+      if (stockNow !== null) {
+        var diff = prevWeekStock - stockNow;
+        if (diff >= 0) usages.push(diff);
+      }
+    }
+    var sNow = computeCurrentStock(itemId, wk);
+    if (sNow !== null) { prevWeekStock = sNow; prevWeekKeyVal = wk; }
+  });
+  if (usages.length === 0) return null;
+  var sum = usages.reduce(function(a,b){ return a+b; }, 0);
+  return sum / usages.length;
+}
+
+// ── 品項管理 ────────────────────────────────────────────
+function openInvItemModal() {
+  document.getElementById('inv-item-modal').style.display = 'block';
+  document.getElementById('inv-modal-store').textContent = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
+  renderInvItemList();
+}
+function closeInvItemModal() {
+  document.getElementById('inv-item-modal').style.display = 'none';
+}
+
+function addInvItem() {
+  var cat = document.getElementById('inv-new-cat').value;
+  var name = document.getElementById('inv-new-name').value.trim();
+  var unit = document.getElementById('inv-new-unit').value.trim() || '個';
+  var safe = parseFloat(document.getElementById('inv-new-safe').value) || 0;
+  if (!name) { alert('請填入品項名稱'); return; }
+  var st = getInvStore();
+  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe });
+  save();
+  document.getElementById('inv-new-name').value = '';
+  document.getElementById('inv-new-safe').value = '';
+  renderInvItemList();
+  renderInventory();
+}
+
+function delInvItem(id) {
+  if (!confirm('刪除這個品項？歷史盤點紀錄會保留但不再顯示。')) return;
+  var st = getInvStore();
+  st.items = st.items.filter(function(x){ return x.id !== id; });
+  save();
+  renderInvItemList();
+  renderInventory();
+}
+
+function updateInvItemField(id, field, value) {
+  var st = getInvStore();
+  var item = st.items.find(function(x){ return x.id === id; });
+  if (!item) return;
+  if (field === 'safeStock') item[field] = parseFloat(value) || 0;
+  else item[field] = value;
+  save();
+}
+
+function renderInvItemList() {
+  var el = document.getElementById('inv-item-list');
+  var items = getInvItems();
+  if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
+  var html = '<table><thead><tr><th>類別</th><th>品項名稱</th><th>單位</th><th>安全庫存量</th><th></th></tr></thead><tbody>';
+  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+    html += '<tr>';
+    html += '<td><span class="badge b-gold">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</span></td>';
+    html += '<td><input class="in-num" style="width:100%;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
+    html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
+    html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
+    html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ── 本週盤點表 ──────────────────────────────────────────
+function renderInvWeekTable() {
+  var items = getInvItems();
+  var weekKey = invCurWeek;
+  document.getElementById('inv-week-label').textContent = invWeekLabel(weekKey);
+  var el = document.getElementById('inv-week-table');
+  if (items.length === 0) {
+    el.innerHTML = '<div class="empty">尚無品項，請先點「管理品項清單」新增</div>';
+    return;
+  }
+  var html = '<table><thead><tr>';
+  html += '<th>類別</th><th>品項</th><th>單位</th><th>安全庫存</th><th>上週結餘</th><th>本週用掉</th><th>本週盤點實際庫存</th><th>狀態</th>';
+  html += '</tr></thead><tbody>';
+
+  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+    var rec = getInvWeekRecord(it.id, weekKey) || {};
+    var prevMonday = new Date(weekKey + 'T00:00:00'); prevMonday.setDate(prevMonday.getDate()-7);
+    var prevKey = invWeekKey(prevMonday);
+    var prevStockObj = getInvLatestStockBefore(it.id, prevKey);
+    var prevStock = prevStockObj ? prevStockObj.stock : null;
+    var curStock = computeCurrentStock(it.id, weekKey);
+
+    var statusHtml = '<span class="muted">—</span>';
+    if (curStock !== null) {
+      if (curStock <= it.safeStock) {
+        statusHtml = '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">⚠️ 低於安全庫存</span>';
+      } else {
+        statusHtml = '<span class="badge b-green">✓ 正常</span>';
+      }
+    }
+
+    html += '<tr>';
+    html += '<td><span class="badge b-gold">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</span></td>';
+    html += '<td>'+it.name+'</td>';
+    html += '<td class="muted">'+it.unit+'</td>';
+    html += '<td class="muted">'+it.safeStock+'</td>';
+    html += '<td class="muted">'+(prevStock !== null ? prevStock : '—')+'</td>';
+    html += '<td><input class="in-num" type="number" min="0" placeholder="用量" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()"></td>';
+    html += '<td><input class="in-num" type="number" min="0" placeholder="實際數量" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()"></td>';
+    html += '<td id="inv-status-'+it.id+'">'+statusHtml+'</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function saveInvWeek() {
+  var items = getInvItems();
+  var weekKey = invCurWeek;
+  var st = getInvStore();
+  if (!st.weeks[weekKey]) st.weeks[weekKey] = {};
+  var savedCount = 0;
+  items.forEach(function(it) {
+    var usedEl = document.getElementById('inv-used-'+it.id);
+    var stockEl = document.getElementById('inv-stock-'+it.id);
+    var used = usedEl && usedEl.value !== '' ? parseFloat(usedEl.value) : null;
+    var stock = stockEl && stockEl.value !== '' ? parseFloat(stockEl.value) : null;
+    if (used === null && stock === null) return;
+    st.weeks[weekKey][it.id] = {
+      used: used,
+      stock: stock,
+      savedAt: Date.now()
+    };
+    savedCount++;
+  });
+  save();
+  renderInventory();
+  alert('已儲存 ' + savedCount + ' 筆本週盤點紀錄');
+}
+
+// ── 統計與警示 ──────────────────────────────────────────
+function renderInvAlerts() {
+  var items = getInvItems();
+  var weekKey = invCurWeek;
+  var lowStock = [];
+  var runningOut = [];
+
+  items.forEach(function(it) {
+    var curStock = computeCurrentStock(it.id, weekKey);
+    if (curStock === null) return;
+    if (curStock <= it.safeStock) {
+      lowStock.push({ item: it, stock: curStock });
+    }
+    var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
+    if (avgUsage && avgUsage > 0) {
+      var weeksLeft = curStock / avgUsage;
+      if (weeksLeft <= 2 && curStock > it.safeStock) {
+        runningOut.push({ item: it, stock: curStock, weeksLeft: weeksLeft, avgUsage: avgUsage });
+      }
+    }
+  });
+
+  var el = document.getElementById('inv-alert-area');
+  if (lowStock.length === 0 && runningOut.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  var html = '<div class="card" style="border-color:rgba(224,85,85,0.3)">';
+  html += '<div class="card-title" style="color:var(--red)">🚨 庫存要注意</div>';
+
+  if (lowStock.length > 0) {
+    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">已低於安全庫存，建議本週訂貨：</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
+    lowStock.forEach(function(x) {
+      html += '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">'+
+        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'（安全值 '+x.item.safeStock+'）</span>';
+    });
+    html += '</div>';
+  }
+
+  if (runningOut.length > 0) {
+    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">照消耗速度，預估快撐不住（提前提醒，目前還在安全庫存之上）：</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    runningOut.forEach(function(x) {
+      html += '<span class="badge" style="background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)">'+
+        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'，每週約用 '+x.avgUsage.toFixed(1)+'，預估還能撐 '+x.weeksLeft.toFixed(1)+' 週</span>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderInvStats() {
+  var items = getInvItems();
+  var weekKey = invCurWeek;
+  var st = getInvStore();
+  var allWeeks = Object.keys(st.weeks).sort();
+
+  var el = document.getElementById('inv-stats-area');
+  if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項資料</div>'; return; }
+
+  var totalItems = items.length;
+  var lowCount = 0;
+  items.forEach(function(it){
+    var s = computeCurrentStock(it.id, weekKey);
+    if (s !== null && s <= it.safeStock) lowCount++;
+  });
+
+  var html = '<div class="stat-grid">';
+  html += '<div class="stat-card"><div class="lbl">品項總數</div><div class="val">'+totalItems+'</div></div>';
+  html += '<div class="stat-card"><div class="lbl">已累積盤點週數</div><div class="val">'+allWeeks.length+'</div></div>';
+  html += '<div class="stat-card"><div class="lbl">目前低於安全庫存</div><div class="val" style="color:'+(lowCount>0?'var(--red)':'var(--gold2)')+'">'+lowCount+'</div></div>';
+  html += '</div>';
+
+  // 各品項消耗趨勢表
+  html += '<table><thead><tr><th>類別</th><th>品項</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>預估還能撐</th></tr></thead><tbody>';
+  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+    var curStock = computeCurrentStock(it.id, weekKey);
+    var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
+    var weeksLeftStr = '—';
+    if (curStock !== null && avgUsage && avgUsage > 0) {
+      weeksLeftStr = (curStock / avgUsage).toFixed(1) + ' 週';
+    }
+    html += '<tr>';
+    html += '<td><span class="badge b-gold">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</span></td>';
+    html += '<td>'+it.name+'</td>';
+    html += '<td>'+(curStock !== null ? curStock+' '+it.unit : '<span class="muted">未盤點</span>')+'</td>';
+    html += '<td class="muted">'+it.safeStock+'</td>';
+    html += '<td>'+(avgUsage !== null ? avgUsage.toFixed(1)+' '+it.unit : '<span class="muted">資料不足</span>')+'</td>';
+    html += '<td>'+weeksLeftStr+'</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderInventory() {
+  renderInvAlerts();
+  renderInvWeekTable();
+  renderInvStats();
+}
+
+function dlInventoryExcel() {
+  var items = getInvItems();
+  var st = getInvStore();
+  var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
+  var weekKey = invCurWeek;
+  var wb = XLSX.utils.book_new();
+
+  // 本週盤點工作表
+  var sheet1 = [['Otto2 ARTCLUB '+storeName+' 庫存盤點 '+invWeekLabel(weekKey)],[],
+    ['類別','品項','單位','安全庫存','目前庫存','近6週平均週消耗','預估還能撐(週)']];
+  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+    var curStock = computeCurrentStock(it.id, weekKey);
+    var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
+    var weeksLeft = (curStock !== null && avgUsage) ? (curStock/avgUsage).toFixed(1) : '';
+    sheet1.push([it.cat, it.name, it.unit, it.safeStock, curStock !== null ? curStock : '', avgUsage !== null ? avgUsage.toFixed(1) : '', weeksLeft]);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet1), '本週庫存狀態');
+
+  // 歷史盤點明細
+  var allWeeks = Object.keys(st.weeks).sort();
+  var sheet2 = [['歷史盤點紀錄 — '+storeName],[],['週次','品項','本週用掉','盤點實際庫存']];
+  allWeeks.forEach(function(wk) {
+    Object.keys(st.weeks[wk]).forEach(function(itemId) {
+      var item = items.find(function(x){ return String(x.id) === String(itemId); });
+      var rec = st.weeks[wk][itemId];
+      sheet2.push([invWeekLabel(wk), item ? item.name : ('(已刪除#'+itemId+')'), rec.used !== null && rec.used !== undefined ? rec.used : '', rec.stock !== null && rec.stock !== undefined ? rec.stock : '']);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet2), '歷史盤點明細');
+
+  XLSX.writeFile(wb, 'Otto2_庫存盤點_'+storeName+'_'+weekKey+'.xlsx');
+}
+
 // ── Init ────────────────────────────────────────────────
 function renderAll() {
   renderDaily();
   renderMonthly();
+  renderConsumables();
+  renderInventory();
   if (tabUnlocked.salary) renderSalary();
   if (tabUnlocked.settings) renderTeacherList();
 }
