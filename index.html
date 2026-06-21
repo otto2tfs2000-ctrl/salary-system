@@ -309,8 +309,10 @@ tr[draggable]{cursor:grab}
     <div class="form-grid">
       <div class="fg"><label>類別</label>
         <select id="inv-new-cat">
+          <option value="畫布">🖼 畫布(F/P號)</option>
+          <option value="框木板">🪞 框/木板</option>
+          <option value="飾品配件">⏰ 飾品配件</option>
           <option value="顏料">🎨 顏料</option>
-          <option value="畫布">🖼 畫布/畫板</option>
           <option value="紙張">📄 紙張/素描本</option>
           <option value="筆刷">🖌 筆刷/工具</option>
           <option value="樹脂">💎 樹脂/UV膠</option>
@@ -325,7 +327,10 @@ tr[draggable]{cursor:grab}
       <div class="fg"><label>單位</label><input id="inv-new-unit" placeholder="例：瓶、包、捲、張" value="個"></div>
       <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於此數警示" onwheel="this.blur()"></div>
     </div>
-    <button class="btn btn-gold" onclick="addInvItem()">+ 新增品項</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn btn-gold" onclick="addInvItem()">+ 新增品項</button>
+      <button class="btn-sm" style="background:transparent;border:1px solid rgba(224,85,85,0.4);color:var(--red)" onclick="resetInvStoreData()">🗑️ 重置本店庫存資料</button>
+    </div>
     <div style="margin-top:16px" id="inv-item-list"></div>
   </div>
 
@@ -2322,39 +2327,9 @@ function dlConsumableExcel() {
 // ══════════════════════════════════════════════════════════
 // 庫存盤點系統
 // ══════════════════════════════════════════════════════════
-const INV_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
-const INV_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
-
-// 常用耗材起手清單（依分類），第一次開啟某分店時自動帶入，之後可自行增刪
-const INV_DEFAULT_ITEMS = [
-  {cat:'顏料', name:'壓克力顏料（白）', unit:'瓶', safeStock:10},
-  {cat:'顏料', name:'壓克力顏料（黑）', unit:'瓶', safeStock:8},
-  {cat:'顏料', name:'壓克力顏料（基本色一套）', unit:'套', safeStock:5},
-  {cat:'顏料', name:'水彩顏料組', unit:'組', safeStock:5},
-  {cat:'顏料', name:'金漆/銀漆', unit:'瓶', safeStock:4},
-  {cat:'畫布', name:'畫布（10號）', unit:'張', safeStock:10},
-  {cat:'畫布', name:'畫布（小尺寸）', unit:'張', safeStock:15},
-  {cat:'畫布', name:'木板底材', unit:'片', safeStock:10},
-  {cat:'紙張', name:'素描本', unit:'本', safeStock:10},
-  {cat:'紙張', name:'水彩紙', unit:'張', safeStock:20},
-  {cat:'紙張', name:'影印紙', unit:'包', safeStock:3},
-  {cat:'筆刷', name:'平頭筆刷', unit:'支', safeStock:10},
-  {cat:'筆刷', name:'圓頭筆刷', unit:'支', safeStock:10},
-  {cat:'筆刷', name:'海綿/刮刀工具', unit:'個', safeStock:8},
-  {cat:'樹脂', name:'UV膠', unit:'瓶', safeStock:6},
-  {cat:'樹脂', name:'水晶碎石', unit:'包', safeStock:8},
-  {cat:'樹脂', name:'矽膠模具', unit:'個', safeStock:5},
-  {cat:'溶劑', name:'松節油/調和油', unit:'瓶', safeStock:5},
-  {cat:'溶劑', name:'洗筆液', unit:'瓶', safeStock:5},
-  {cat:'包裝', name:'塑膠提袋', unit:'個', safeStock:30},
-  {cat:'包裝', name:'氣泡膜/包裝紙', unit:'捲', safeStock:3},
-  {cat:'包裝', name:'封箱膠帶', unit:'捲', safeStock:5},
-  {cat:'清潔', name:'濕紙巾', unit:'包', safeStock:5},
-  {cat:'清潔', name:'垃圾袋', unit:'捲', safeStock:5},
-  {cat:'清潔', name:'抹布/毛巾', unit:'條', safeStock:10},
-  {cat:'印刷', name:'A4影印紙', unit:'包', safeStock:3},
-  {cat:'印刷', name:'墨水匣/碳粉', unit:'個', safeStock:2}
-];
+const INV_CATS = ['畫布','框木板','飾品配件','顏料','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
+const INV_CAT_ICONS = {'畫布':'🖼','框木板':'🪞','飾品配件':'⏰','顏料':'🎨','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
+// 品項清單從空白開始，不自動帶入任何預設品項，請在「管理品項清單」自行新增。
 
 // ── 週期 key 工具：用「該週週一」的 YYYY-MM-DD 當代表 ──────
 function invMonday(d) {
@@ -2396,20 +2371,6 @@ function getInvStore() {
   if (!S.inventory[store]) S.inventory[store] = { items: [], weeks: {} };
   if (!S.inventory[store].items) S.inventory[store].items = [];
   if (!S.inventory[store].weeks) S.inventory[store].weeks = {};
-  // 第一次使用該分店：帶入起手清單
-  if (S.inventory[store].items.length === 0 && !S.inventory[store].__seeded) {
-    S.inventory[store].__seeded = true;
-    INV_DEFAULT_ITEMS.forEach(function(it, i) {
-      S.inventory[store].items.push({
-        id: Date.now() + i,
-        cat: it.cat,
-        name: it.name,
-        unit: it.unit,
-        safeStock: it.safeStock
-      });
-    });
-    save();
-  }
   return S.inventory[store];
 }
 
@@ -2499,6 +2460,19 @@ function computeAvgWeeklyUsage(itemId, uptoWeekKey, lookbackWeeks) {
   return sum / usages.length;
 }
 
+// 統一的品項顯示順序：依 order 欄位排序（小到大），整張表當一條序列，不受分類限制。
+// 若品項是舊資料、還沒有 order 欄位，fallback 用「分類順序+id」算一個初始值，避免突然排序錯亂。
+function getInvItemOrder(it) {
+  if (typeof it.order === 'number') return it.order;
+  var ca = INV_CATS.indexOf(it.cat); if (ca === -1) ca = 999;
+  return ca * 1e15 + it.id;
+}
+function sortInvItems(items) {
+  return items.slice().sort(function(a, b) {
+    return getInvItemOrder(a) - getInvItemOrder(b);
+  });
+}
+
 // ── 品項管理 ────────────────────────────────────────────
 function openInvItemModal() {
   document.getElementById('inv-item-modal').style.display = 'block';
@@ -2509,6 +2483,23 @@ function closeInvItemModal() {
   document.getElementById('inv-item-modal').style.display = 'none';
 }
 
+// 重置本店庫存資料：清空品項清單與所有週次盤點記錄，重新帶入最新起手清單。
+// 二次確認要求輸入分店名稱，避免手滑誤觸（這個動作無法復原）。
+function resetInvStoreData() {
+  var store = curStore.inventory;
+  var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[store];
+  var typed = prompt('即將清空「' + storeName + '」的全部品項清單與所有週次盤點記錄，且無法復原。\n請輸入「' + storeName + '」以確認：');
+  if (typed !== storeName) {
+    if (typed !== null) alert('輸入不符，已取消重置。');
+    return;
+  }
+  S.inventory[store] = { items: [], weeks: {} };
+  save();
+  closeInvItemModal();
+  renderInventory();
+  alert(storeName + ' 庫存資料已清空，請自行新增品項。');
+}
+
 function addInvItem() {
   var cat = document.getElementById('inv-new-cat').value;
   var name = document.getElementById('inv-new-name').value.trim();
@@ -2516,10 +2507,33 @@ function addInvItem() {
   var safe = parseFloat(document.getElementById('inv-new-safe').value) || 0;
   if (!name) { alert('請填入品項名稱'); return; }
   var st = getInvStore();
-  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe });
+  var maxOrder = st.items.reduce(function(m, it){ return Math.max(m, getInvItemOrder(it)); }, -1);
+  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe, order: maxOrder + 1 });
   save();
   document.getElementById('inv-new-name').value = '';
   document.getElementById('inv-new-safe').value = '';
+  renderInvItemList();
+  renderInventory();
+}
+
+// 品項排序上移/下移：跟序列中相鄰的品項互換 order 值，整張表當一條序列、不受分類限制。
+function moveInvItem(id, dir) {
+  var st = getInvStore();
+  var sorted = sortInvItems(st.items);
+  var idx = sorted.findIndex(function(x){ return x.id === id; });
+  if (idx === -1) return;
+  var targetIdx = idx + dir;
+  if (targetIdx < 0 || targetIdx >= sorted.length) return; // 已經在頂端/底端
+
+  var cur = sorted[idx];
+  var target = sorted[targetIdx];
+  var curOrder = getInvItemOrder(cur);
+  var targetOrder = getInvItemOrder(target);
+
+  // 確保兩者都有明確的 order 欄位（避免 fallback 值重複造成排序不穩定）
+  cur.order = targetOrder;
+  target.order = curOrder;
+  save();
   renderInvItemList();
   renderInventory();
 }
@@ -2546,9 +2560,13 @@ function renderInvItemList() {
   var el = document.getElementById('inv-item-list');
   var items = getInvItems();
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
-  var html = '<table><thead><tr><th>類別</th><th>品項名稱</th><th>單位</th><th>安全庫存量</th><th></th></tr></thead><tbody>';
-  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+  var sorted = sortInvItems(items);
+  var html = '<table><thead><tr><th>順序</th><th>類別</th><th>品項名稱</th><th>單位</th><th>安全庫存量</th><th></th></tr></thead><tbody>';
+  sorted.forEach(function(it, idx) {
+    var upDisabled = idx === 0 ? 'disabled style="opacity:0.3;cursor:default"' : '';
+    var downDisabled = idx === sorted.length - 1 ? 'disabled style="opacity:0.3;cursor:default"' : '';
     html += '<tr>';
+    html += '<td style="white-space:nowrap"><button class="btn-sm btn-outline" '+upDisabled+' onclick="moveInvItem('+it.id+',-1)" style="padding:2px 8px;margin-right:4px">↑</button><button class="btn-sm btn-outline" '+downDisabled+' onclick="moveInvItem('+it.id+',1)" style="padding:2px 8px">↓</button></td>';
     html += '<td><span class="badge b-gold">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</span></td>';
     html += '<td><input class="in-num" style="width:100%;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
     html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
@@ -2597,7 +2615,7 @@ function renderInvWeekTable() {
   html += '<th>類別</th><th>品項</th><th>單位</th><th>安全庫存</th><th>上週結餘</th><th>本週用掉</th><th>本週盤點實際庫存</th><th>本週建議訂購量</th>';
   html += '</tr></thead><tbody>';
 
-  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+  sortInvItems(items).forEach(function(it) {
     var rec = getInvWeekRecord(it.id, weekKey) || {};
     var prevMonday = new Date(weekKey + 'T00:00:00'); prevMonday.setDate(prevMonday.getDate()-7);
     var prevKey = invWeekKey(prevMonday);
@@ -2736,7 +2754,7 @@ function renderInvStats() {
 
   // 各品項消耗趨勢表
   html += '<table><thead><tr><th>類別</th><th>品項</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>預估還能撐</th><th>本週建議訂購量</th></tr></thead><tbody>';
-  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+  sortInvItems(items).forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
     var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
     var weeksLeftStr = '—';
@@ -2780,7 +2798,7 @@ function dlInventoryExcel() {
   // 本週盤點工作表
   var sheet1 = [['Otto2 ARTCLUB '+storeName+' 庫存盤點 '+invWeekLabel(weekKey)],[],
     ['類別','品項','單位','安全庫存','目前庫存','近6週平均週消耗','預估還能撐(週)','本週建議訂購量']];
-  items.slice().sort(function(a,b){ return a.cat.localeCompare(b.cat); }).forEach(function(it) {
+  sortInvItems(items).forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
     var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
     var weeksLeft = (curStock !== null && avgUsage) ? (curStock/avgUsage).toFixed(1) : '';
