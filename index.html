@@ -3319,39 +3319,58 @@ function renderInvAlerts() {
     el.innerHTML = '';
     return;
   }
+
+  // 依類別排序（照畫布→框木板→...的固定順序），同類別放一起，訂貨時照分類處理比較順手
+  function byCat(a, b) {
+    var ca = INV_CATS.indexOf(a.item.cat); if (ca === -1) ca = 999;
+    var cb = INV_CATS.indexOf(b.item.cat); if (cb === -1) cb = 999;
+    return ca - cb;
+  }
+  lowStock.sort(byCat);
+  caution.sort(byCat);
+  runningOut.sort(byCat);
+
+  // 同一層級的清單依類別分段，每段前面放一個類別小標題，段內只放精簡的一行文字
+  function renderGroupedList(list, badgeStyle, lineFn) {
+    var out = '';
+    var lastCat = null;
+    list.forEach(function(x) {
+      if (x.item.cat !== lastCat) {
+        if (lastCat !== null) out += '</div>';
+        lastCat = x.item.cat;
+        out += '<div style="margin:10px 0 6px;font-size:12px;color:var(--text3)">'+(INV_CAT_ICONS[lastCat]||'📌')+' '+lastCat+'</div>';
+        out += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      }
+      out += '<span class="badge" style="'+badgeStyle+'">'+lineFn(x)+'</span>';
+    });
+    if (lastCat !== null) out += '</div>';
+    return out;
+  }
+
   var html = '<div class="card" style="border-color:rgba(224,85,85,0.3)">';
   html += '<div class="card-title" style="color:var(--red)">🚨 庫存要注意</div>';
 
   if (lowStock.length > 0) {
-    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">已低於安全庫存，本週要訂貨：</div>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
-    lowStock.forEach(function(x) {
-      var basisNote = x.order.basis === 'safe-only' ? '（消耗資料不足，僅補到安全值）' : '（週耗約'+x.order.avgUsage.toFixed(1)+'）';
-      html += '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">'+
-        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit+' '+basisNote+'</span>';
+    html += '<div style="margin-bottom:0;font-size:13px;color:var(--text2)">已低於安全庫存，本週要訂貨：</div>';
+    html += renderGroupedList(lowStock, 'background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)', function(x) {
+      return x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit;
     });
-    html += '</div>';
   }
 
   if (caution.length > 0) {
-    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">還沒低於安全庫存，但已經逼近，可以提早留意：</div>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
-    caution.forEach(function(x) {
-      html += '<span class="badge" style="background:rgba(224,158,77,0.15);color:#e09e4d;border:1px solid rgba(224,158,77,0.35)">'+
-        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'（安全庫存 '+x.item.safeStock+'，注意線 '+x.cautionLine+'）</span>';
+    html += '<div style="margin:14px 0 0;font-size:13px;color:var(--text2)">還沒低於安全庫存，但已經逼近，可以提早留意：</div>';
+    html += renderGroupedList(caution, 'background:rgba(224,158,77,0.15);color:#e09e4d;border:1px solid rgba(224,158,77,0.35)', function(x) {
+      return x.item.name+'：剩 '+x.stock+' '+x.item.unit+'（安全庫存 '+x.item.safeStock+'，注意線 '+x.cautionLine+'）';
     });
-    html += '</div>';
   }
 
   if (runningOut.length > 0) {
-    html += '<div style="margin-bottom:10px;font-size:13px;color:var(--text2)">目前還在安全庫存之上，但照消耗速度，建議這週順便訂一些：</div>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-    runningOut.forEach(function(x) {
-      html += '<span class="badge" style="background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)">'+
-        (INV_CAT_ICONS[x.item.cat]||'📌')+' '+x.item.name+'：剩 '+x.stock+' '+x.item.unit+'，週耗約'+x.order.avgUsage.toFixed(1)+' → 建議訂 '+x.order.qty+' '+x.item.unit+'</span>';
+    html += '<div style="margin:14px 0 0;font-size:13px;color:var(--text2)">目前還在安全庫存之上，但照消耗速度，建議這週順便訂一些：</div>';
+    html += renderGroupedList(runningOut, 'background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)', function(x) {
+      return x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit;
     });
-    html += '</div>';
   }
+
   html += '</div>';
   el.innerHTML = html;
 }
