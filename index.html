@@ -284,10 +284,66 @@ tr[draggable]{cursor:grab}
   </div>
 
   <div class="info-box">
-    📅 每週一盤點上週庫存 → 系統依消耗速度直接算出本週該訂多少 → 星期二照建議訂購量訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。建議訂購量＝補到「安全庫存＋未來4週預估消耗」。
+    📅 每週一盤點上週庫存 → 系統依消耗速度直接算出本週該訂多少 → 星期二照建議訂購量訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。建議訂購量＝補到「安全庫存＋未來4週預估消耗」。🚚 材料中途到貨不用等下週一，直接在上方「進貨登記」記一筆，系統會立刻把貨加回目前庫存。
   </div>
 
   <div id="inv-alert-area"></div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>🚚 進貨登記（材料到貨當天就能記，不用等下週一盤點）</span>
+      <button class="btn-sm btn-outline" onclick="toggleInvRestockLog()"><span id="inv-restock-toggle-label">顯示最近進貨明細</span></button>
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>品項</label>
+        <select id="inv-restock-item"></select>
+      </div>
+      <div class="fg"><label>進貨日期</label>
+        <input id="inv-restock-date" type="date">
+      </div>
+      <div class="fg"><label>進貨數量</label>
+        <input id="inv-restock-qty" type="number" min="0" step="any" placeholder="例：12" onwheel="this.blur()">
+      </div>
+      <div class="fg"><label>備註（選填）</label>
+        <input id="inv-restock-note" placeholder="例：廠商A / 訂單編號">
+      </div>
+    </div>
+    <button class="btn btn-gold" onclick="submitInvRestock()">+ 登記進貨</button>
+    <span id="inv-restock-hint" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
+    <div id="inv-restock-log" style="margin-top:16px;display:none"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>📋 批次登記（貼上文字 / 上傳截圖，一次處理多筆）</span>
+      <button class="btn-sm btn-outline" onclick="toggleBatchRestockBox()"><span id="batch-restock-toggle-label">展開</span></button>
+    </div>
+    <div id="batch-restock-box" style="display:none">
+      <div class="info-box">
+        貼上像 LINE 對話那種一整段訂貨明細（例如「4F-20張」「30P-3張」），或上傳截圖讓系統嘗試自動辨識文字。<br>
+        ⚠️ 截圖辨識用的是瀏覽器端 OCR，中文小字辨識不一定 100% 準確，辨識完一定會先讓你檢查、修改，確認無誤才會送出，不會自動寫入庫存。
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="fg">
+          <label>📷 上傳截圖（自動辨識文字到下方文字框，僅供參考）</label>
+          <input type="file" id="batch-restock-img" accept="image/*" onchange="handleBatchRestockImage(event)">
+          <div id="batch-ocr-status" style="font-size:12px;color:var(--text3);margin-top:6px"></div>
+        </div>
+      </div>
+      <div class="fg">
+        <label>📝 貼上文字（每行一項，例：4F-20張）</label>
+        <textarea id="batch-restock-text" rows="6" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:7px;font-size:13px;outline:none;font-family:inherit;resize:vertical" placeholder="60*30厚3,木框要五個&#10;4F-20張&#10;30F-3張&#10;30P-3張"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+        <button class="btn btn-gold" onclick="parseBatchRestockText()">🔍 解析文字</button>
+        <div class="fg" style="margin:0">
+          <input id="batch-restock-date" type="date" style="width:auto">
+        </div>
+        <span class="muted">↑ 這個日期會套用到下方所有解析出來的項目（可個別調整）</span>
+      </div>
+      <div id="batch-restock-preview" style="margin-top:16px"></div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
@@ -2405,6 +2461,7 @@ function getInvStore() {
   if (!S.inventory[store]) S.inventory[store] = { items: [], weeks: {} };
   if (!S.inventory[store].items) S.inventory[store].items = [];
   if (!S.inventory[store].weeks) S.inventory[store].weeks = {};
+  if (!S.inventory[store].restocks) S.inventory[store].restocks = {}; // 進貨登記，獨立於 weeks，不影響既有盤點資料
   return S.inventory[store];
 }
 
@@ -2418,6 +2475,7 @@ function getInvStoreByName(store) {
   if (!S.inventory[store]) S.inventory[store] = { items: [], weeks: {} };
   if (!S.inventory[store].items) S.inventory[store].items = [];
   if (!S.inventory[store].weeks) S.inventory[store].weeks = {};
+  if (!S.inventory[store].restocks) S.inventory[store].restocks = {};
   return S.inventory[store];
 }
 
@@ -2479,40 +2537,138 @@ function getInvLatestStockBefore(itemId, weekKey) {
   return null;
 }
 
-// 計算某品項目前的「庫存量」：從最近一次有盤點實際值的那週開始，
-// 逐週累減之後每週填的「用掉量」，一路滾算到目標週。
-// 若目標週本身就有盤點實際值，直接採用該值（最準）。
+// ── 進貨登記 ────────────────────────────────────────────
+// 跟「週盤點」完全分開存放，存在 st.restocks，格式：{ "2026-06-25": [{itemId, qty, note, savedAt}, ...], ... }
+// 任何一天到貨都能即時記錄，不用等到下週一盤點才回補，computeCurrentStock 會在算庫存時把它加回去。
+function getInvRestockDateKey(d) {
+  var dt = (d instanceof Date) ? d : new Date(d + 'T00:00:00');
+  return invFmtDate(dt);
+}
+
+function addInvRestock(itemId, qty, dateStr, note) {
+  if (!qty || qty <= 0) return false;
+  var st = getInvStore();
+  var dateKey = dateStr || invFmtDate(new Date());
+  if (!st.restocks[dateKey]) st.restocks[dateKey] = [];
+  st.restocks[dateKey].push({
+    itemId: itemId,
+    qty: parseFloat(qty),
+    note: note || '',
+    savedAt: Date.now()
+  });
+  save();
+  return true;
+}
+
+function deleteInvRestock(dateKey, idx) {
+  var st = getInvStore();
+  if (!st.restocks[dateKey]) return;
+  st.restocks[dateKey].splice(idx, 1);
+  if (st.restocks[dateKey].length === 0) delete st.restocks[dateKey];
+  save();
+}
+
+// 取得某品項在「某個時間點之後」登記的進貨總量（給「盤點完後又有新到貨」這種情境用）
+// toDateKeyExclusive 選填：只算到某個日期之前（不含），沒填就算到現在為止全部
+function getInvRestockQtyAfterTimestamp(itemId, sinceTimestamp, toDateKeyExclusive) {
+  var st = getInvStore();
+  var total = 0;
+  Object.keys(st.restocks).forEach(function(dateKey) {
+    if (toDateKeyExclusive && dateKey >= toDateKeyExclusive) return;
+    st.restocks[dateKey].forEach(function(r) {
+      if (String(r.itemId) === String(itemId) && (r.savedAt || 0) > (sinceTimestamp || 0)) total += r.qty;
+    });
+  });
+  return total;
+}
+
+// 取得某品項在「某週一」到「下一個週一前一天」這段區間內，總共進貨多少
+// rangeStartMonday：含；exclusiveEndMonday：不含（即下一週的週一）
+function getInvRestockQtyInRange(itemId, rangeStartMonday, exclusiveEndMonday) {
+  var st = getInvStore();
+  var total = 0;
+  Object.keys(st.restocks).forEach(function(dateKey) {
+    if (dateKey < rangeStartMonday || dateKey >= exclusiveEndMonday) return;
+    st.restocks[dateKey].forEach(function(r) {
+      if (String(r.itemId) === String(itemId)) total += r.qty;
+    });
+  });
+  return total;
+}
+
+// 列出某段日期區間內的所有進貨明細（給 UI 顯示用，依日期新到舊排序）
+function listInvRestocks(fromDateKey, toDateKey) {
+  var st = getInvStore();
+  var out = [];
+  Object.keys(st.restocks).forEach(function(dateKey) {
+    if (fromDateKey && dateKey < fromDateKey) return;
+    if (toDateKey && dateKey > toDateKey) return;
+    st.restocks[dateKey].forEach(function(r, idx) {
+      out.push({ dateKey: dateKey, idx: idx, itemId: r.itemId, qty: r.qty, note: r.note, savedAt: r.savedAt });
+    });
+  });
+  out.sort(function(a,b){ return a.dateKey < b.dateKey ? 1 : (a.dateKey > b.dateKey ? -1 : b.savedAt - a.savedAt); });
+  return out;
+}
+
+// 計算某品項目前的「庫存量」。
+// 統一邏輯：找到「目標週或之前，最近一筆有實際盤點值」當基準（含 savedAt 時間戳記），
+// 之後依時間序往前滾算：
+//   - 每一週若有填「用掉量」，扣掉；若中途又出現新的盤點實際值，直接校準取代基準。
+//   - 同時，任何「在基準 savedAt 之後、且發生時間落在目標週週日之前」的進貨，全部加回去——
+//     不分是哪一週、不論該週有沒有填寫盤點資料，只看時間先後，避免重複或漏算。
 function computeCurrentStock(itemId, weekKey) {
   var st = getInvStore();
+  var targetMonday = new Date(weekKey + 'T00:00:00');
+  var targetNextMonday = new Date(targetMonday); targetNextMonday.setDate(targetNextMonday.getDate()+7);
+  var targetBoundary = invFmtDate(targetNextMonday); // 目標週週日24:00（=下週一00:00）之前都算
+
   var rec = getInvWeekRecord(itemId, weekKey);
-  if (rec && typeof rec.stock === 'number') return rec.stock;
+  if (rec && typeof rec.stock === 'number') {
+    // 目標週本身就有盤點實際值：採用該值，再加上盤點完成之後（同一週內）新登記的進貨
+    return rec.stock + getInvRestockQtyAfterTimestamp(itemId, rec.savedAt || 0, targetBoundary);
+  }
 
   var anchor = getInvLatestStockBefore(itemId, weekKey);
-  if (!anchor) return null; // 從未盤點過，無法推算
+  if (!anchor) {
+    // 從未盤點過，但若已經有進貨登記，至少能呈現「目前累積進貨量」，比完全沒有資料好
+    var totalRestock = getInvRestockQtyAfterTimestamp(itemId, 0, targetBoundary);
+    return totalRestock > 0 ? totalRestock : null;
+  }
+  var anchorRec = getInvWeekRecord(itemId, anchor.week);
+  var anchorSavedAt = (anchorRec && anchorRec.savedAt) || 0;
 
   var stock = anchor.stock;
   var cursor = new Date(anchor.week + 'T00:00:00');
   var target = new Date(weekKey + 'T00:00:00');
-  cursor.setDate(cursor.getDate() + 7); // 從盤點週的下一週開始累減
+  cursor.setDate(cursor.getDate() + 7); // 從盤點基準週的下一週開始累減「用掉量」
+
+  // 記錄目前滾算到哪一個時間點了，用來界定「下一段要加回去的進貨」範圍（避免重複計算）
+  var lastSavedAt = anchorSavedAt;
 
   while (cursor <= target) {
     var ck = invWeekKey(cursor);
     var crec = st.weeks[ck] ? st.weeks[ck][itemId] : null;
-    if (crec) {
-      if (typeof crec.stock === 'number') {
-        stock = crec.stock; // 中途有盤點值，重新校準
-      } else if (typeof crec.used === 'number') {
-        stock = Math.max(0, stock - crec.used);
-      }
+    if (crec && typeof crec.stock === 'number') {
+      stock = crec.stock; // 中途有盤點實際值，重新校準（取代累減，不需再疊加進貨）
+      lastSavedAt = crec.savedAt || lastSavedAt;
+    } else if (crec && typeof crec.used === 'number') {
+      stock = Math.max(0, stock - crec.used);
     }
     cursor.setDate(cursor.getDate() + 7);
   }
+
+  // 把「lastSavedAt 之後、目標週週日之前」登記的所有進貨，一次性加回去——
+  // 不論落在哪一週，時間軸上只算一次，不會跟前面任何一段重疊。
+  stock += getInvRestockQtyAfterTimestamp(itemId, lastSavedAt, targetBoundary);
   return stock;
 }
 
 // 計算品項過去 N 週的平均消耗量。
 // 做法：用 computeCurrentStock 算出每一週「週末庫存」，
 // 再取相鄰兩週的差值當作該週消耗量（若中途有手動填 used，直接採用該值，更準確）。
+// 注意：若某週內有登記「進貨」，這週直接跳過不納入平均，避免進貨量混進消耗速度，
+// 導致未來「建議訂購量」被低估或亂跳。
 function computeAvgWeeklyUsage(itemId, uptoWeekKey, lookbackWeeks) {
   var st = getInvStore();
   var allWeeks = Object.keys(st.weeks).filter(function(k){ return k <= uptoWeekKey; }).sort();
@@ -2526,6 +2682,14 @@ function computeAvgWeeklyUsage(itemId, uptoWeekKey, lookbackWeeks) {
   recent.forEach(function(wk) {
     var rec = st.weeks[wk][itemId];
     if (!rec) return;
+    var prevMon = new Date(wk + 'T00:00:00'); prevMon.setDate(prevMon.getDate()-7);
+    var hadRestockThisWeek = getInvRestockQtyInRange(itemId, invFmtDate(prevMon), wk) > 0;
+    if (hadRestockThisWeek) {
+      // 這週有進貨，消耗量無法單純用差值或 used 推算得乾淨，跳過、但仍更新 prevWeekStock 當下一週的基準
+      var sSkip = computeCurrentStock(itemId, wk);
+      if (sSkip !== null) { prevWeekStock = sSkip; prevWeekKeyVal = wk; }
+      return;
+    }
     if (typeof rec.used === 'number' && rec.used >= 0) {
       usages.push(rec.used);
     } else if (prevWeekStock !== null) {
@@ -3279,6 +3443,287 @@ function saveInvWeek() {
   alert('已儲存 ' + savedCount + ' 筆本週盤點紀錄');
 }
 
+// ── 進貨登記 UI ─────────────────────────────────────────
+var invRestockLogOpen = false;
+
+function toggleInvRestockLog() {
+  invRestockLogOpen = !invRestockLogOpen;
+  renderInvRestockLog();
+}
+
+function renderInvRestockItemSelect() {
+  var sel = document.getElementById('inv-restock-item');
+  if (!sel) return;
+  var items = sortInvItems(getInvItems());
+  var keepVal = sel.value;
+  if (items.length === 0) {
+    sel.innerHTML = '<option value="">請先到「管理品項清單」新增品項</option>';
+    return;
+  }
+  sel.innerHTML = items.map(function(it){
+    return '<option value="'+it.id+'">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.name+'（'+it.unit+'）</option>';
+  }).join('');
+  if (keepVal && items.some(function(it){ return String(it.id) === keepVal; })) sel.value = keepVal;
+}
+
+function submitInvRestock() {
+  var sel = document.getElementById('inv-restock-item');
+  var dateEl = document.getElementById('inv-restock-date');
+  var qtyEl = document.getElementById('inv-restock-qty');
+  var noteEl = document.getElementById('inv-restock-note');
+  var hint = document.getElementById('inv-restock-hint');
+
+  var itemId = sel ? sel.value : '';
+  var qty = qtyEl && qtyEl.value !== '' ? parseFloat(qtyEl.value) : null;
+  var dateStr = dateEl && dateEl.value ? dateEl.value : invFmtDate(new Date());
+
+  if (!itemId) { if (hint){ hint.textContent = '請先選品項'; hint.style.color = 'var(--red)'; } return; }
+  if (!qty || qty <= 0) { if (hint){ hint.textContent = '請輸入大於 0 的進貨數量'; hint.style.color = 'var(--red)'; } return; }
+
+  var items = getInvItems();
+  var it = items.find(function(x){ return String(x.id) === String(itemId); });
+
+  addInvRestock(itemId, qty, dateStr, noteEl ? noteEl.value : '');
+
+  if (qtyEl) qtyEl.value = '';
+  if (noteEl) noteEl.value = '';
+  if (hint) {
+    hint.textContent = '✓ 已登記：'+(it?it.name:'')+' +'+qty+(it?it.unit:'')+'（'+dateStr+'）目前庫存已更新';
+    hint.style.color = 'var(--green)';
+    setTimeout(function(){ hint.textContent = ''; }, 3000);
+  }
+
+  renderInventory(); // 目前庫存、警示燈、建議訂購量立刻反映這筆進貨
+  if (invRestockLogOpen) renderInvRestockLog();
+}
+
+function removeInvRestock(dateKey, idx) {
+  if (!confirm('確定要刪除這筆進貨紀錄嗎？這不會動到任何盤點資料。')) return;
+  deleteInvRestock(dateKey, idx);
+  renderInventory();
+  renderInvRestockLog();
+}
+
+function renderInvRestockLog() {
+  var wrap = document.getElementById('inv-restock-log');
+  var toggleLabel = document.getElementById('inv-restock-toggle-label');
+  if (!wrap) return;
+  if (!invRestockLogOpen) {
+    wrap.style.display = 'none';
+    if (toggleLabel) toggleLabel.textContent = '顯示最近進貨明細';
+    return;
+  }
+  wrap.style.display = 'block';
+  if (toggleLabel) toggleLabel.textContent = '隱藏進貨明細';
+
+  var items = getInvItems();
+  var list = listInvRestocks(); // 全部明細，新到舊
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="empty">尚無進貨紀錄</div>';
+    return;
+  }
+  var html = '<table><thead><tr><th>日期</th><th>品項</th><th>進貨數量</th><th>備註</th><th></th></tr></thead><tbody>';
+  list.slice(0, 50).forEach(function(r) {
+    var it = items.find(function(x){ return String(x.id) === String(r.itemId); });
+    html += '<tr>';
+    html += '<td>'+r.dateKey+'</td>';
+    html += '<td>'+(it?it.name:'(已刪除品項#'+r.itemId+')')+'</td>';
+    html += '<td><span style="color:var(--green);font-weight:600">+'+r.qty+(it?(' '+it.unit):'')+'</span></td>';
+    html += '<td class="muted">'+(r.note||'—')+'</td>';
+    html += '<td><button class="btn-sm btn-del" onclick="removeInvRestock(\''+r.dateKey+'\','+r.idx+')">刪除</button></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  if (list.length > 50) html += '<div class="muted" style="margin-top:8px">僅顯示最近 50 筆，完整紀錄已全部保存在資料庫中。</div>';
+  wrap.innerHTML = html;
+}
+
+// ── 批次登記：文字解析 ──────────────────────────────────
+var batchRestockOpen = false;
+var batchParsedRows = []; // {raw, code, qty, unit, matchedItemId, dateKey}
+
+function toggleBatchRestockBox() {
+  batchRestockOpen = !batchRestockOpen;
+  var box = document.getElementById('batch-restock-box');
+  var label = document.getElementById('batch-restock-toggle-label');
+  if (box) box.style.display = batchRestockOpen ? 'block' : 'none';
+  if (label) label.textContent = batchRestockOpen ? '收合' : '展開';
+  var dateEl = document.getElementById('batch-restock-date');
+  if (dateEl && !dateEl.value) dateEl.value = invFmtDate(new Date());
+}
+
+// 中文數字（一～九十九）轉阿拉伯數字，給「木框要五個」這種沒寫阿拉伯數字的格式用
+var CN_NUM_MAP = {'零':0,'〇':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+function cnNumToInt(s) {
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  if (s.length === 1 && CN_NUM_MAP[s] !== undefined) return CN_NUM_MAP[s];
+  if (s === '十') return 10;
+  var m = s.match(/^([一二三四五六七八九]?)十([一二三四五六七八九]?)$/);
+  if (m) {
+    var tens = m[1] ? CN_NUM_MAP[m[1]] : 1;
+    var ones = m[2] ? CN_NUM_MAP[m[2]] : 0;
+    return tens*10 + ones;
+  }
+  return null;
+}
+
+// 解析單行文字，回傳 {raw, code, qty, unit}；qty 解析不出來時為 null（需人工填）
+function parseRestockLine(line) {
+  line = line.trim();
+  if (!line) return null;
+
+  // 格式A：代號-數量單位，例如「4F-20張」「30P-3張」
+  var mA = line.match(/^([A-Za-z0-9]+)[\s\-－:：—]+(\d+(?:\.\d+)?)\s*([\u4e00-\u9fa5A-Za-z]{0,4})\s*$/);
+  if (mA) {
+    return { raw: line, code: mA[1], qty: parseFloat(mA[2]), unit: mA[3] || '' };
+  }
+
+  // 格式B：自由文字＋中文或阿拉伯數字＋單位，例如「木框要五個」「白色顏料3瓶」
+  var mB = line.match(/([一二三四五六七八九十]+|\d+(?:\.\d+)?)\s*(個|支|片|塊|組|份|張|瓶|包|捲|盒|台|罐|條)/);
+  if (mB) {
+    var qty = cnNumToInt(mB[1]);
+    if (qty !== null) {
+      var codeGuess = line.replace(mB[0], '').replace(/[,，。.]/g, ' ').trim();
+      return { raw: line, code: codeGuess || line, qty: qty, unit: mB[2] };
+    }
+  }
+
+  return { raw: line, code: line, qty: null, unit: '' };
+}
+
+// 用代號去比對現有品項清單：先試完全比對（去空白/底線/破折號後相同），再試互相包含
+function normalizeCodeStr(s) {
+  return (s || '').toUpperCase().replace(/[\s\-－_]/g, '');
+}
+function matchItemByCode(items, code) {
+  var nc = normalizeCodeStr(code);
+  if (!nc) return null;
+  var exact = items.find(function(it){ return normalizeCodeStr(it.name) === nc; });
+  if (exact) return exact;
+  var sub = items.find(function(it){
+    var nn = normalizeCodeStr(it.name);
+    return nn.indexOf(nc) !== -1 || nc.indexOf(nn) !== -1;
+  });
+  return sub || null;
+}
+
+function parseBatchRestockText() {
+  var textEl = document.getElementById('batch-restock-text');
+  var dateEl = document.getElementById('batch-restock-date');
+  var text = textEl ? textEl.value : '';
+  var defaultDate = (dateEl && dateEl.value) ? dateEl.value : invFmtDate(new Date());
+  var items = getInvItems();
+
+  var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(function(l){ return l; });
+  if (lines.length === 0) {
+    alert('請先貼上文字內容');
+    return;
+  }
+
+  batchParsedRows = lines.map(function(line) {
+    var parsed = parseRestockLine(line);
+    if (!parsed) return null;
+    var matched = matchItemByCode(items, parsed.code);
+    return {
+      raw: parsed.raw,
+      codeGuess: parsed.code,
+      qty: parsed.qty,
+      unit: parsed.unit,
+      matchedItemId: matched ? matched.id : '',
+      dateKey: defaultDate,
+      include: true
+    };
+  }).filter(Boolean);
+
+  renderBatchRestockPreview();
+}
+
+function renderBatchRestockPreview() {
+  var wrap = document.getElementById('batch-restock-preview');
+  if (!wrap) return;
+  if (batchParsedRows.length === 0) {
+    wrap.innerHTML = '';
+    return;
+  }
+  var items = sortInvItems(getInvItems());
+  var itemOptions = '<option value="">— 未對應，請手動選 —</option>' + items.map(function(it){
+    return '<option value="'+it.id+'">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.name+'（'+it.unit+'）</option>';
+  }).join('');
+
+  var html = '<div class="info-box">請檢查每一行解析結果，品項對不對、數量對不對，確認沒問題再按下方「確認登記」。沒被勾選的行不會被登記。</div>';
+  html += '<table><thead><tr><th style="width:34px"></th><th>原始文字</th><th style="width:220px">對應品項</th><th style="width:90px">數量</th><th style="width:120px">日期</th></tr></thead><tbody>';
+  batchParsedRows.forEach(function(row, idx) {
+    html += '<tr>';
+    html += '<td><input type="checkbox" '+(row.include?'checked':'')+' onchange="batchParsedRows['+idx+'].include=this.checked"></td>';
+    html += '<td class="muted">'+row.raw+'</td>';
+    html += '<td><select onchange="batchParsedRows['+idx+'].matchedItemId=this.value">' +
+      itemOptions.replace('value="'+row.matchedItemId+'"', 'value="'+row.matchedItemId+'" selected') + '</select></td>';
+    html += '<td><input type="number" class="in-num" value="'+(row.qty!==null?row.qty:'')+'" min="0" step="any" onwheel="this.blur()" oninput="batchParsedRows['+idx+'].qty=this.value!==\'\'?parseFloat(this.value):null"></td>';
+    html += '<td><input type="date" value="'+row.dateKey+'" onchange="batchParsedRows['+idx+'].dateKey=this.value"></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<button class="btn btn-gold" style="margin-top:14px" onclick="confirmBatchRestock()">✓ 確認登記以上項目</button>';
+  wrap.innerHTML = html;
+}
+
+function confirmBatchRestock() {
+  var toSave = batchParsedRows.filter(function(r){ return r.include; });
+  var problems = toSave.filter(function(r){ return !r.matchedItemId || !r.qty || r.qty <= 0; });
+  if (problems.length > 0) {
+    if (!confirm('有 '+problems.length+' 行沒選品項或數量無效，這些行會被跳過，其他正常的行繼續登記，確定要送出嗎？')) return;
+  }
+  var savedCount = 0;
+  toSave.forEach(function(r) {
+    if (!r.matchedItemId || !r.qty || r.qty <= 0) return;
+    addInvRestock(r.matchedItemId, r.qty, r.dateKey, '批次登記：'+r.raw);
+    savedCount++;
+  });
+  batchParsedRows = [];
+  document.getElementById('batch-restock-text').value = '';
+  document.getElementById('batch-restock-preview').innerHTML = '';
+  renderInventory();
+  if (invRestockLogOpen) renderInvRestockLog();
+  alert('已登記 '+savedCount+' 筆進貨紀錄');
+}
+
+// ── 截圖 OCR（瀏覽器端，純前端，無需金鑰）─────────────────
+var tesseractLoaded = false;
+function loadTesseractScript() {
+  return new Promise(function(resolve, reject) {
+    if (tesseractLoaded && window.Tesseract) { resolve(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = function(){ tesseractLoaded = true; resolve(); };
+    s.onerror = function(){ reject(new Error('OCR 函式庫載入失敗，請檢查網路連線')); };
+    document.head.appendChild(s);
+  });
+}
+
+function handleBatchRestockImage(event) {
+  var file = event.target.files && event.target.files[0];
+  var statusEl = document.getElementById('batch-ocr-status');
+  if (!file) return;
+  if (statusEl) { statusEl.textContent = '⏳ 載入辨識引擎中（第一次使用會比較久）...'; statusEl.style.color = 'var(--gold2)'; }
+
+  loadTesseractScript().then(function() {
+    if (statusEl) statusEl.textContent = '⏳ 辨識中，請稍候...';
+    return window.Tesseract.recognize(file, 'chi_tra+eng');
+  }).then(function(result) {
+    var text = (result && result.data && result.data.text) || '';
+    var textEl = document.getElementById('batch-restock-text');
+    if (textEl) {
+      textEl.value = (textEl.value ? textEl.value + '\n' : '') + text.trim();
+    }
+    if (statusEl) {
+      statusEl.textContent = '✓ 辨識完成，請務必檢查下方文字是否正確（OCR 不保證 100% 準確），確認無誤再按「解析文字」';
+      statusEl.style.color = 'var(--green)';
+    }
+  }).catch(function(err) {
+    if (statusEl) { statusEl.textContent = '✗ 辨識失敗：' + err.message + '（你仍可以直接手動把文字打進下面的文字框）'; statusEl.style.color = 'var(--red)'; }
+  });
+}
+
 // ── 統計與警示 ──────────────────────────────────────────
 // 安全庫存的「注意」緩衝線：安全庫存的1.3倍（無條件捨去）。
 // 用捨去而不是進位，是因為安全庫存很小（1~3）時，30%緩衝根本不到1罐，
@@ -3439,8 +3884,10 @@ function renderInvStats() {
 
 function renderInventory() {
   renderInvAlerts();
+  renderInvRestockItemSelect();
   renderInvWeekTable();
   renderInvStats();
+  if (invRestockLogOpen) renderInvRestockLog();
 }
 
 function dlInventoryExcel() {
@@ -3474,6 +3921,14 @@ function dlInventoryExcel() {
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet2), '歷史盤點明細');
 
+  // 進貨明細
+  var sheet3 = [['進貨登記明細 — '+storeName],[],['日期','品項','進貨數量','單位','備註']];
+  listInvRestocks().forEach(function(r) {
+    var item = items.find(function(x){ return String(x.id) === String(r.itemId); });
+    sheet3.push([r.dateKey, item ? item.name : ('(已刪除#'+r.itemId+')'), r.qty, item ? item.unit : '', r.note || '']);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet3), '進貨明細');
+
   XLSX.writeFile(wb, 'Otto2_庫存盤點_'+storeName+'_'+weekKey+'.xlsx');
 }
 
@@ -3485,6 +3940,8 @@ function renderAll() {
   renderInventory();
   if (tabUnlocked.salary) renderSalary();
   if (tabUnlocked.settings) renderTeacherList();
+  var rDate = document.getElementById('inv-restock-date');
+  if (rDate && !rDate.value) rDate.value = invFmtDate(new Date());
 }
 
 initMonth();
