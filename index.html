@@ -34,6 +34,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px}
 .card-title{font-size:14px;font-weight:600;color:var(--gold2);margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.cm-add-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media (max-width:720px){.cm-add-grid{grid-template-columns:repeat(2,1fr)}}
 .fg label{display:block;font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
 .fg input,.fg select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 11px;border-radius:7px;font-size:13px;outline:none;transition:border-color 0.15s;font-family:inherit}
 .fg input:focus,.fg select:focus{border-color:var(--gold)}
@@ -56,6 +58,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .b-purple{background:rgba(155,114,207,0.12);color:#c0a0f0;border:1px solid rgba(155,114,207,0.25)}
 .b-green{background:rgba(76,175,125,0.12);color:#70e0a8;border:1px solid rgba(76,175,125,0.25)}
 .b-gray{background:rgba(160,156,150,0.08);color:var(--text2);border:1px solid var(--border)}
+.b-red{background:rgba(224,85,85,0.1);color:var(--red);border:1px solid rgba(224,85,85,0.3)}
 .in-num{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;width:70px;font-size:13px;text-align:center;outline:none;font-family:inherit;transition:border-color 0.15s}
 .in-num:focus{border-color:var(--gold)}
 .in-num.md{width:90px}.in-num.lg{width:110px}
@@ -215,7 +218,7 @@ tr[draggable]{cursor:grab}
   </div>
   <div class="card">
     <div class="card-title">➕ 新增耗材支出</div>
-    <div class="form-grid">
+    <div class="cm-add-grid">
       <div class="fg"><label>日期</label><input id="cm-date" type="date"></div>
       <div class="fg"><label>類別</label>
         <select id="cm-cat">
@@ -232,17 +235,8 @@ tr[draggable]{cursor:grab}
         </select>
       </div>
       <div class="fg"><label>品項名稱</label><input id="cm-name" placeholder="例：白色壓克力顏料"></div>
-      <div class="fg"><label>幣別</label>
-        <select id="cm-currency" onchange="updateCMPreview()">
-          <option value="TWD">台幣 NT$</option>
-          <option value="CNY">人民幣 ¥</option>
-          <option value="USD">美元 $</option>
-          <option value="JPY">日圓 ¥</option>
-        </select>
-      </div>
-      <div class="fg"><label>金額（原幣）</label><input id="cm-amount" type="number" placeholder="0" min="0" onwheel="this.blur()" oninput="updateCMPreview()"></div>
-      <div class="fg" id="cm-rate-wrap" style="display:none"><label>匯率（×台幣）</label><input id="cm-rate" type="number" placeholder="4.4" step="0.01" min="0" onwheel="this.blur()" oninput="updateCMPreview()"></div>
-      <div class="fg" id="cm-twd-wrap" style="display:none"><label>換算台幣</label><div id="cm-twd-preview" style="background:var(--bg3);border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 11px;border-radius:7px;font-size:14px;font-weight:600">—</div></div>
+      <div class="fg"><label>購買人員</label><input id="cm-buyer" list="cm-buyer-list" placeholder="例：大熊老師"></div>
+      <div class="fg"><label>金額</label><input id="cm-amount" type="number" placeholder="0" min="0" onwheel="this.blur()"></div>
       <div class="fg"><label>購買來源</label>
         <select id="cm-source">
           <option value="實體店">實體店</option>
@@ -256,6 +250,7 @@ tr[draggable]{cursor:grab}
       </div>
       <div class="fg"><label>用途/備註</label><input id="cm-note" placeholder="選填，例：水彩課消耗"></div>
     </div>
+    <datalist id="cm-buyer-list"></datalist>
     <!-- 多筆明細區塊 -->
     <div style="margin-top:14px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -268,9 +263,20 @@ tr[draggable]{cursor:grab}
   </div>
   <div id="cm-stats-area"></div>
   <div class="card">
+    <div class="card-title">💰 零用金結餘登記</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">本期結算後填寫「本期結餘」，下個月匯出時會自動帶入「上期餘額」。</div>
+    <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--text2)">上期餘額（自動帶入）：<span id="cm-opening-balance" class="auto-val">—</span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:12px;color:var(--text3)">本期結餘</label>
+        <input id="cm-balance-input" type="number" class="in-num lg" placeholder="0" onwheel="this.blur()" onchange="setCMBalance(this.value)">
+      </div>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span>📋 本月明細</span>
-      <button class="btn btn-outline btn-sm" onclick="dlConsumableExcel()">⬇ 匯出 Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="dlConsumableExcel()">⬇ 匯出零用金支出明細表</button>
     </div>
     <div id="cm-debug" style="margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
     <div id="cm-list-area"></div>
@@ -585,7 +591,7 @@ function getFBSalesByDay(teacherName, month, day, store) {
   return fbSalesData[key] || 0;
 }
 
-let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{}, inventory:{} };
+let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{}, inventory:{}, cmBalance:{} };
 let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'flagship', inventory:'flagship' };
 let tabUnlocked = { salary:false, settings:false };
 let pendingTab = null;
@@ -615,7 +621,7 @@ async function loadData() {
     const snap = await fbDb2.ref('salaryData').once('value');
     const data = snap.val();
     if (data && typeof data === 'object') {
-      S = Object.assign({ teachers:[], daily:{}, salaryBase:{} }, data);
+      S = Object.assign({ teachers:[], daily:{}, salaryBase:{}, cmBalance:{} }, data);
     }
     localStorage.setItem('otto2_v7', JSON.stringify(S));
     setSync('ok','已同步');
@@ -1747,6 +1753,35 @@ function getCMKey() {
   return getCMMonthKey() + '_' + curStore.consumables;
 }
 
+// ── 零用金結餘（上期餘額自動帶入）────────────────────────
+function getPrevCMMonthKey(monthKey) {
+  var parts = monthKey.split('-');
+  var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+  m -= 1;
+  if (m === 0) { m = 12; y -= 1; }
+  return y + '-' + String(m).padStart(2,'0');
+}
+
+function getCMOpeningBalance(monthKey, store) {
+  var prevKey = getPrevCMMonthKey(monthKey) + '_' + store;
+  if (S.cmBalance && S.cmBalance[prevKey] !== undefined && S.cmBalance[prevKey] !== null && S.cmBalance[prevKey] !== '') {
+    return S.cmBalance[prevKey];
+  }
+  return null;
+}
+
+function setCMBalance(val) {
+  var k = getCMKey();
+  if (!S.cmBalance) S.cmBalance = {};
+  if (val === '' || val === null || isNaN(parseFloat(val))) {
+    delete S.cmBalance[k];
+  } else {
+    S.cmBalance[k] = parseFloat(val);
+  }
+  save();
+  renderConsumables();
+}
+
 function getConsumables() {
   var k = getCMKey();
   if (!S.consumables) S.consumables = {};
@@ -1757,33 +1792,12 @@ function getConsumables() {
 // 匯率預設值
 var CM_RATES = { TWD: 1, CNY: 4.4, USD: 32, JPY: 0.22 };
 
-function updateCMPreview() {
-  var currency = document.getElementById('cm-currency').value;
-  var rateWrap = document.getElementById('cm-rate-wrap');
-  var twdWrap = document.getElementById('cm-twd-wrap');
-  var rateEl = document.getElementById('cm-rate');
-  var preview = document.getElementById('cm-twd-preview');
-  var amt = parseFloat(document.getElementById('cm-amount').value) || 0;
-
-  if (currency === 'TWD') {
-    rateWrap.style.display = 'none';
-    twdWrap.style.display = 'none';
-    preview.textContent = '—';
-    return;
-  }
-  rateWrap.style.display = '';
-  twdWrap.style.display = '';
-  if (!rateEl.value) rateEl.value = CM_RATES[currency] || 1;
-  var rate = parseFloat(rateEl.value) || CM_RATES[currency] || 1;
-  var twd = Math.round(amt * rate);
-  preview.textContent = twd > 0 ? 'NT$' + twd.toLocaleString() : '—';
-}
-
 var cmDetailCount = 0;
-function addCMDetailRow(name, amt, currency, rate) {
+function addCMDetailRow(name, amt, currency, rate, containerId) {
   cmDetailCount++;
   var id = 'cmdr_' + cmDetailCount;
-  var wrap = document.getElementById('cm-detail-rows');
+  var wrap = document.getElementById(containerId || 'cm-detail-rows');
+  if (!wrap) return;
 
   var div = document.createElement('div');
   div.id = id;
@@ -1881,8 +1895,8 @@ function calcDetailTWD(amtEl) {
   }
 }
 
-function getCMDetails() {
-  var rows = document.querySelectorAll('#cm-detail-rows div[id^="cmdr_"]');
+function getCMDetails(containerId) {
+  var rows = document.querySelectorAll('#'+(containerId || 'cm-detail-rows')+' div[id^="cmdr_"]');
   var result = [];
   rows.forEach(function(row) {
     var name = row.querySelector('.cmdr-name').value.trim();
@@ -1895,33 +1909,33 @@ function getCMDetails() {
   return result;
 }
 
+function addInlineDetailRow(itemId) {
+  addCMDetailRow(null, null, null, null, 'cme-detail-rows-' + itemId);
+}
+
 function addConsumable() {
   var dateVal = document.getElementById('cm-date').value;
   var cat = document.getElementById('cm-cat').value;
   var name = document.getElementById('cm-name').value.trim();
-  var currency = document.getElementById('cm-currency').value;
-  var origAmt = parseFloat(document.getElementById('cm-amount').value) || 0;
-  var rateEl = document.getElementById('cm-rate');
-  var rate = parseFloat(rateEl && rateEl.value) || CM_RATES[currency] || 1;
+  var buyer = document.getElementById('cm-buyer').value.trim();
+  var amount = parseFloat(document.getElementById('cm-amount').value) || 0;
   var source = document.getElementById('cm-source').value;
   var note = document.getElementById('cm-note').value.trim();
   var details = getCMDetails();
 
   if (!name) { alert('請填入品項名稱'); return; }
-  if (!origAmt) { alert('請填入金額'); return; }
-
-  // 換算台幣
-  var twdAmt = currency === 'TWD' ? Math.round(origAmt) : Math.round(origAmt * rate);
+  if (!amount) { alert('請填入金額'); return; }
 
   var item = {
     id: Date.now(),
-    date: dateVal || getMonthKey() + '-01',
+    date: dateVal || getCMMonthKey() + '-01',
     cat: cat,
     name: name,
-    currency: currency,
-    origAmt: origAmt,
-    rate: currency !== 'TWD' ? rate : null,
-    amount: twdAmt,
+    buyer: buyer,
+    currency: 'TWD',
+    origAmt: Math.round(amount),
+    rate: null,
+    amount: Math.round(amount),
     source: source,
     note: note,
     details: details.length > 0 ? details : null
@@ -1935,16 +1949,151 @@ function addConsumable() {
 
   // 清空輸入
   document.getElementById('cm-name').value = '';
+  document.getElementById('cm-buyer').value = '';
   document.getElementById('cm-amount').value = '';
   document.getElementById('cm-note').value = '';
-  document.getElementById('cm-currency').value = 'TWD';
-  if (rateEl) rateEl.value = '';
-  document.getElementById('cm-rate-wrap').style.display = 'none';
-  document.getElementById('cm-twd-wrap').style.display = 'none';
-  document.getElementById('cm-twd-preview').textContent = '—';
   document.getElementById('cm-detail-rows').innerHTML = '';
   cmDetailCount = 0;
 
+  renderConsumables();
+}
+
+function escAttr(s) {
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+var CM_SOURCE_LIST = ['實體店','蝦皮','淘寶','拼多多','PChome','Amazon','其他網路'];
+
+// 本月明細：點「編輯」一律原地展開成完整編輯區，不會跳回上方表單
+function editConsumable(id) {
+  renderConsumables(); // 先還原成乾淨狀態，避免同時有多個編輯中的列
+  var k = getCMKey();
+  var items = (S.consumables && S.consumables[k]) ? S.consumables[k] : [];
+  var x = items.find(function(it){ return it.id === id; });
+  if (!x) { alert('找不到這筆紀錄'); return; }
+
+  var row = document.getElementById('cm-row-'+id);
+  if (!row) return;
+
+  var catOpts = CM_CATS.map(function(c){
+    return '<option value="'+c+'"'+(c===x.cat?' selected':'')+'>'+CM_CAT_ICONS[c]+' '+c+'</option>';
+  }).join('');
+  var srcOpts = CM_SOURCE_LIST.map(function(s){
+    return '<option value="'+s+'"'+(s===x.source?' selected':'')+'>'+s+'</option>';
+  }).join('');
+  var curOpts = [['TWD','台幣 NT$'],['CNY','人民幣 ¥'],['USD','美元 $'],['JPY','日圓 ¥']].map(function(c){
+    return '<option value="'+c[0]+'"'+((x.currency||'TWD')===c[0]?' selected':'')+'>'+c[1]+'</option>';
+  }).join('');
+  var isForeign = !!(x.currency && x.currency !== 'TWD');
+
+  var td = document.createElement('td');
+  td.colSpan = 9;
+  td.innerHTML =
+    '<div class="form-grid" style="margin-bottom:10px">'+
+      '<div class="fg"><label>日期</label><input id="cme-date-'+id+'" type="date" value="'+x.date+'"></div>'+
+      '<div class="fg"><label>類別</label><select id="cme-cat-'+id+'">'+catOpts+'</select></div>'+
+      '<div class="fg"><label>品項名稱</label><input id="cme-name-'+id+'" value="'+escAttr(x.name)+'"></div>'+
+      '<div class="fg"><label>幣別</label><select id="cme-currency-'+id+'" onchange="updateInlinePreview('+id+')">'+curOpts+'</select></div>'+
+      '<div class="fg"><label>金額（原幣）</label><input id="cme-amount-'+id+'" type="number" value="'+x.origAmt+'" min="0" onwheel="this.blur()" oninput="updateInlinePreview('+id+')"></div>'+
+      '<div class="fg" id="cme-rate-wrap-'+id+'" style="display:'+(isForeign?'':'none')+'"><label>匯率（×台幣）</label><input id="cme-rate-'+id+'" type="number" value="'+(x.rate||'')+'" step="0.01" min="0" onwheel="this.blur()" oninput="updateInlinePreview('+id+')"></div>'+
+      '<div class="fg" id="cme-twd-wrap-'+id+'" style="display:'+(isForeign?'':'none')+'"><label>換算台幣</label><div id="cme-twd-preview-'+id+'" style="background:var(--bg3);border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 11px;border-radius:7px;font-size:14px;font-weight:600">'+(isForeign?('NT$'+x.amount.toLocaleString()):'—')+'</div></div>'+
+      '<div class="fg"><label>購買來源</label><select id="cme-source-'+id+'">'+srcOpts+'</select></div>'+
+      '<div class="fg"><label>購買人</label><input id="cme-buyer-'+id+'" list="cm-buyer-list" value="'+escAttr(x.buyer)+'" placeholder="例：大熊老師"></div>'+
+      '<div class="fg"><label>零用金是否撥款</label><select id="cme-paid-'+id+'"><option value="paid"'+(x.paid!==false?' selected':'')+'>已撥款</option><option value="unpaid"'+(x.paid===false?' selected':'')+'>未撥款（代墊中）</option></select></div>'+
+      '<div class="fg"><label>用途/備註</label><input id="cme-note-'+id+'" value="'+escAttr(x.note)+'"></div>'+
+    '</div>'+
+    '<div style="margin-bottom:12px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
+        '<span style="font-size:13px;color:var(--text2)">📎 明細備註（一筆訂單含多品項時使用）</span>'+
+        '<button class="btn btn-outline btn-sm" onclick="addInlineDetailRow('+id+')">＋ 新增明細行</button>'+
+      '</div>'+
+      '<div id="cme-detail-rows-'+id+'"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:10px">'+
+      '<button class="btn btn-gold" onclick="saveInlineEdit('+id+')">💾 儲存修改</button>'+
+      '<button class="btn btn-outline" onclick="renderConsumables()">✕ 取消</button>'+
+    '</div>';
+
+  row.innerHTML = '';
+  row.appendChild(td);
+
+  // 還原多筆明細
+  if (x.details && x.details.length > 0) {
+    x.details.forEach(function(d){ addCMDetailRow(d.name, d.origAmt, d.currency, d.rate, 'cme-detail-rows-'+id); });
+  }
+}
+
+function updateInlinePreview(id) {
+  var currency = document.getElementById('cme-currency-'+id).value;
+  var rateWrap = document.getElementById('cme-rate-wrap-'+id);
+  var twdWrap = document.getElementById('cme-twd-wrap-'+id);
+  var rateEl = document.getElementById('cme-rate-'+id);
+  var preview = document.getElementById('cme-twd-preview-'+id);
+  var amt = parseFloat(document.getElementById('cme-amount-'+id).value) || 0;
+
+  if (currency === 'TWD') {
+    rateWrap.style.display = 'none';
+    twdWrap.style.display = 'none';
+    preview.textContent = '—';
+    return;
+  }
+  rateWrap.style.display = '';
+  twdWrap.style.display = '';
+  if (!rateEl.value) rateEl.value = CM_RATES[currency] || 1;
+  var rate = parseFloat(rateEl.value) || CM_RATES[currency] || 1;
+  var twd = Math.round(amt * rate);
+  preview.textContent = twd > 0 ? 'NT$' + twd.toLocaleString() : '—';
+}
+
+function saveInlineEdit(id) {
+  var k = getCMKey();
+  if (!S.consumables || !S.consumables[k]) return;
+  var idx = S.consumables[k].findIndex(function(x){ return x.id === id; });
+  if (idx === -1) { alert('找不到原始紀錄'); renderConsumables(); return; }
+
+  var dateVal = document.getElementById('cme-date-'+id).value;
+  var cat = document.getElementById('cme-cat-'+id).value;
+  var name = document.getElementById('cme-name-'+id).value.trim();
+  var currency = document.getElementById('cme-currency-'+id).value;
+  var origAmt = parseFloat(document.getElementById('cme-amount-'+id).value) || 0;
+  var rateEl = document.getElementById('cme-rate-'+id);
+  var rate = parseFloat(rateEl && rateEl.value) || CM_RATES[currency] || 1;
+  var source = document.getElementById('cme-source-'+id).value;
+  var buyer = document.getElementById('cme-buyer-'+id).value.trim();
+  var paid = document.getElementById('cme-paid-'+id).value !== 'unpaid';
+  var note = document.getElementById('cme-note-'+id).value.trim();
+  var details = getCMDetails('cme-detail-rows-'+id);
+
+  if (!name) { alert('請填入品項名稱'); return; }
+  if (!origAmt) { alert('請填入金額'); return; }
+
+  var twdAmt = currency === 'TWD' ? Math.round(origAmt) : Math.round(origAmt * rate);
+
+  var x = S.consumables[k][idx];
+  x.date = dateVal || x.date;
+  x.cat = cat;
+  x.name = name;
+  x.currency = currency;
+  x.origAmt = origAmt;
+  x.rate = currency !== 'TWD' ? rate : null;
+  x.amount = twdAmt;
+  x.source = source;
+  x.buyer = buyer;
+  x.paid = paid;
+  x.note = note;
+  x.details = details.length > 0 ? details : null;
+
+  save();
+  renderConsumables();
+}
+
+function setPaidStatus(id, val) {
+  var k = getCMKey();
+  if (!S.consumables || !S.consumables[k]) return;
+  var x = S.consumables[k].find(function(it){ return it.id === id; });
+  if (!x) return;
+  x.paid = (val !== 'unpaid');
+  save();
   renderConsumables();
 }
 
@@ -1956,10 +2105,22 @@ function delConsumable(id) {
   renderConsumables();
 }
 
+
 function renderConsumables() {
   var items = getConsumables();
   var mKey = getCMMonthKey();
   var store = curStore.consumables;
+
+  // 零用金結餘區塊
+  var openBal = getCMOpeningBalance(mKey, store);
+  var obEl = document.getElementById('cm-opening-balance');
+  if (obEl) obEl.textContent = (openBal !== null) ? ('NT$ '+openBal.toLocaleString()) : '無資料（請依紙本核對後填寫）';
+  var biEl = document.getElementById('cm-balance-input');
+  if (biEl) {
+    var balKey = getCMKey();
+    var savedBal = (S.cmBalance && S.cmBalance[balKey] !== undefined) ? S.cmBalance[balKey] : '';
+    if (document.activeElement !== biEl) biEl.value = savedBal;
+  }
   
   // DEBUG 顯示
   var debugEl = document.getElementById('cm-debug');
@@ -2063,6 +2224,13 @@ function renderConsumables() {
   statsHtml += '</div>';
   document.getElementById('cm-stats-area').innerHTML = statsHtml;
 
+  // 購買人 datalist（從老師名單彙整，供快速選取，仍可自行輸入其他名字）
+  var buyerListEl = document.getElementById('cm-buyer-list');
+  if (buyerListEl) {
+    var names = Array.from(new Set((S.teachers||[]).map(function(t){ return t.name; }).filter(Boolean)));
+    buyerListEl.innerHTML = names.map(function(n){ return '<option value="'+n+'">'; }).join('');
+  }
+
   // 渲染明細表
   var listEl = document.getElementById('cm-list-area');
   if (items.length === 0) {
@@ -2076,19 +2244,29 @@ function renderConsumables() {
   var rows = sorted.map(function(x){
     var icon = CM_CAT_ICONS[x.cat]||'📌';
     var badgeClass = CM_CAT_COLORS[x.cat]||'b-gray';
-    return '<tr>'+
+    var isPaid = x.paid !== false;
+    var paidSelectCss = isPaid
+      ? 'background:rgba(76,175,125,0.12);color:var(--green);border:1px solid rgba(76,175,125,0.3)'
+      : 'background:rgba(224,85,85,0.1);color:var(--red);border:1px solid rgba(224,85,85,0.3)';
+    var paidSelect = '<select onchange="setPaidStatus('+x.id+',this.value)" style="'+paidSelectCss+';padding:4px 8px;border-radius:20px;font-size:11px;font-weight:500;font-family:inherit;outline:none;cursor:pointer">'+
+      '<option value="paid"'+(isPaid?' selected':'')+'>已撥款</option>'+
+      '<option value="unpaid"'+(!isPaid?' selected':'')+'>未撥款</option>'+
+      '</select>';
+    return '<tr id="cm-row-'+x.id+'">'+
       '<td style="font-size:12px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
       '<td><span class="badge '+badgeClass+'">'+icon+' '+x.cat+'</span></td>'+
       '<td style="font-weight:500">'+x.name+'</td>'+
       '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
       '<td style="font-size:12px;color:var(--text3)">'+x.source+'</td>'+
-      '<td style="font-size:12px;color:var(--text3)">'+x.note+'</td>'+
-      '<td><button class="btn btn-del btn-sm" onclick="delConsumable('+x.id+')">刪除</button></td>'+
+      '<td style="font-size:12px;color:var(--text2)">'+(x.buyer||'—')+'</td>'+
+      '<td>'+paidSelect+'</td>'+
+      '<td style="font-size:12px;color:var(--text3)">'+(x.note||'')+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editConsumable('+x.id+')">編輯</button> <button class="btn btn-del btn-sm" onclick="delConsumable('+x.id+')">刪除</button></td>'+
       '</tr>';
   }).join('');
 
   listEl.innerHTML = '<table><thead><tr>'+
-    '<th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>來源</th><th>備註</th><th></th>'+
+    '<th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>來源</th><th>購買人</th><th>零用金</th><th>備註</th><th></th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
@@ -2370,44 +2548,88 @@ function toggleDetail(id) {
 
 function dlConsumableExcel() {
   var items = getConsumables();
-  var mKey = getMonthKey();
+  var mKey = getCMMonthKey();
   var store = curStore.consumables;
   var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[store];
-  var wb = XLSX.utils.book_new();
-
-  // 明細工作表
+  var deptName = ({'flagship':'旗艦館','guotu':'國圖店'}[store]) + 'Otto2 ART CLUB';
   var CUR_NAMES = { TWD:'台幣', CNY:'人民幣', USD:'美元', JPY:'日圓' };
-  var detail = [['Otto2 ARTCLUB '+storeName+' 耗材明細 '+mKey],[],['日期','類別','品項','台幣金額','原幣金額','幣別','匯率','來源','備註','明細備註']];
-  items.slice().sort(function(a,b){ return a.date.localeCompare(b.date); }).forEach(function(x){
-    var origInfo = (x.currency && x.currency !== 'TWD') ? x.origAmt : '';
-    var curName = (x.currency && x.currency !== 'TWD') ? (CUR_NAMES[x.currency]||x.currency) : '';
-    var rateInfo = (x.currency && x.currency !== 'TWD') ? x.rate : '';
-    var detailStr = '';
-    if (x.details && x.details.length > 0) {
-      detailStr = x.details.map(function(d){
-        var dOrig = (d.currency && d.currency !== 'TWD') ? d.origAmt+'('+d.currency+'×'+d.rate+')=NT$'+d.twd : 'NT$'+d.twd;
-        return d.name+': '+dOrig;
-      }).join(' | ');
+
+  var ym = mKey.split('-');
+  var y = parseInt(ym[0],10), m = parseInt(ym[1],10);
+  var lastDay = getDaysInMonth(y, m);
+  var mm = String(m).padStart(2,'0');
+  var periodStr = y+'年'+mm+'月01日　～　'+y+'年'+mm+'月'+String(lastDay).padStart(2,'0')+'日';
+
+  var openBal = getCMOpeningBalance(mKey, store);
+  var openBalStr = (openBal !== null) ? openBal.toLocaleString() : '';
+
+  var sorted = items.slice().sort(function(a,b){ return a.date.localeCompare(b.date) || a.id-b.id; });
+  var totalExpense = items.reduce(function(s,x){ return s+x.amount; }, 0);
+
+  // 把幣別換算 / 多明細 / 備註 / 購買管道 / 撥款狀態等資訊，整合進「品明細項」描述，避免資料遺失
+  function buildDesc(x) {
+    var parts = [x.name];
+    if (x.currency && x.currency !== 'TWD') {
+      parts.push((CUR_NAMES[x.currency]||x.currency)+' '+x.origAmt+' ×'+x.rate);
     }
-    detail.push([x.date, x.cat, x.name, x.amount, origInfo, curName, rateInfo, x.source, x.note, detailStr]);
-  });
-  detail.push([],[]);
-  detail.push(['總計','','',items.reduce(function(s,x){ return s+x.amount; },0)]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detail), '耗材明細');
+    if (x.details && x.details.length > 0) {
+      parts.push(x.details.map(function(d){
+        var dOrig = (d.currency && d.currency !== 'TWD') ? d.origAmt+'('+d.currency+'×'+d.rate+')=NT$'+d.twd : 'NT$'+d.twd;
+        return d.name+':'+dOrig;
+      }).join('、'));
+    }
+    // 有填購買人時，付款人欄改顯示購買人，購買管道改放進這裡避免遺失
+    if (x.buyer && x.source) parts.push('購買管道:'+x.source);
+    if (x.paid === false) parts.push('⚠零用金尚未撥款，代墊中');
+    if (x.note) parts.push(x.note);
+    return parts.join('｜');
+  }
 
-  // 類別匯總工作表
-  var byCat = {};
-  CM_CATS.forEach(function(c){ byCat[c]=0; });
-  items.forEach(function(x){ byCat[x.cat]=(byCat[x.cat]||0)+x.amount; });
-  var total = items.reduce(function(s,x){ return s+x.amount; },0);
-  var summary = [['類別匯總 — '+mKey+' '+storeName],[],['類別','金額','佔比']];
-  CM_CATS.forEach(function(c){
-    if (byCat[c]>0) summary.push([c, byCat[c], total>0 ? (byCat[c]/total*100).toFixed(1)+'%' : '0%']);
-  });
-  summary.push(['合計', total, '100%']);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), '類別匯總');
+  var rIdx = {
+    title:0, period:1, dept:2, balanceBox:3, header:4,
+    dataStart:5
+  };
+  var dataCount = sorted.length;
+  rIdx.total   = rIdx.dataStart + dataCount;
+  rIdx.blank1  = rIdx.total + 1;
+  rIdx.apply   = rIdx.blank1 + 1;
+  rIdx.acct    = rIdx.apply + 1;
+  rIdx.blank2  = rIdx.acct + 1;
+  rIdx.sign    = rIdx.blank2 + 1;
 
-  XLSX.writeFile(wb, 'Otto2_耗材_'+storeName+'_'+mKey+'.xlsx');
+  var rows = [];
+  rows.push(['美林藝術文創(股)公司','','','','','','']);
+  rows.push([periodStr,'','','','','','']);
+  rows.push(['部門-'+deptName,'','','','','','']);
+  rows.push(['上期餘額：'+openBalStr,'','','撥入金額：','','','']);
+  rows.push(['日期','類別','品明細項','撥入金額','支出金額','付款人','領款人簽名']);
+  sorted.forEach(function(x){
+    var payerCell = x.buyer || x.source || '';
+    rows.push([x.date, x.cat, buildDesc(x), '', x.amount, payerCell, '']);
+  });
+  rows.push(['','','合計','', totalExpense, '', '']);
+  rows.push(['','','','','','','']);
+  rows.push(['本次申請撥補金額：','','','','','','']);
+  rows.push(['本次撥補金額(會計填)：','','','','','','']);
+  rows.push(['','','','','','','']);
+  rows.push(['執行長：　　　會簽單位：　　　單位主管：　　　會計：　　　申請人：','','','','','','']);
+
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:12},{wch:10},{wch:34},{wch:10},{wch:10},{wch:10},{wch:12}];
+  ws['!merges'] = [
+    {s:{r:rIdx.title,c:0}, e:{r:rIdx.title,c:6}},
+    {s:{r:rIdx.period,c:0}, e:{r:rIdx.period,c:6}},
+    {s:{r:rIdx.dept,c:0}, e:{r:rIdx.dept,c:6}},
+    {s:{r:rIdx.balanceBox,c:0}, e:{r:rIdx.balanceBox,c:2}},
+    {s:{r:rIdx.balanceBox,c:3}, e:{r:rIdx.balanceBox,c:6}},
+    {s:{r:rIdx.apply,c:0}, e:{r:rIdx.apply,c:6}},
+    {s:{r:rIdx.acct,c:0}, e:{r:rIdx.acct,c:6}},
+    {s:{r:rIdx.sign,c:0}, e:{r:rIdx.sign,c:6}}
+  ];
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '零用金支出明細表');
+  XLSX.writeFile(wb, 'Otto2_'+storeName+'_零用金支出明細表_'+mKey+'.xlsx');
 }
 
 
