@@ -191,8 +191,10 @@ tr[draggable]{cursor:grab}
   </div>
 
   <div class="store-tabs">
-    <button class="store-btn active" onclick="switchStore('consumables','flagship',this)">旗艦店</button>
-    <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖店</button>
+    <button class="store-btn active" onclick="switchStore('consumables','4f',this)">四樓</button>
+    <button class="store-btn" onclick="switchStore('consumables','2f',this)">二樓</button>
+    <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖</button>
+    <button class="store-btn" onclick="switchStore('consumables','hq',this)">總部</button>
   </div>
 
   <!-- AI 照片辨識區塊 -->
@@ -592,7 +594,7 @@ function getFBSalesByDay(teacherName, month, day, store) {
 }
 
 let S = { teachers:[], daily:{}, salaryBase:{}, consumables:{}, inventory:{}, cmBalance:{} };
-let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'flagship', inventory:'flagship' };
+let curStore = { daily:'flagship', monthly:'flagship', salary:'flagship', consumables:'4f', inventory:'flagship' };
 let tabUnlocked = { salary:false, settings:false };
 let pendingTab = null;
 let saveTimer = null;
@@ -626,6 +628,7 @@ async function loadData() {
     localStorage.setItem('otto2_v7', JSON.stringify(S));
     setSync('ok','已同步');
     injectMayData();
+    migrateFlagshipConsumablesToFloor4();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -653,6 +656,41 @@ function injectMayData() {
       .catch(function(e){ console.error('[Otto2] 寫入失敗:', e); });
   }
   console.log('[Otto2] 五月耗材資料已初始化，共 ' + S.consumables[MAY_KEY].length + ' 筆');
+}
+
+// ── 一次性搬移：耗材記帳「旗艦店」舊資料 → 統一併入「四樓」────────────
+// 大熊確認：分樓層之前的旗艦店資料，本來就是四樓的支出，直接併過去，之後就不再有「旗艦店」這個分類
+var CM_MIGRATE_VER = 'flagship_to_4f_v1';
+function migrateFlagshipConsumablesToFloor4() {
+  if (!S.consumables) S.consumables = {};
+  if (S.consumables['__cm_migrate_ver'] === CM_MIGRATE_VER) return; // 已搬過，不重複搬
+  var movedCount = 0, movedMonths = [];
+  Object.keys(S.consumables).forEach(function(key){
+    if (key.slice(-9) !== '_flagship') return; // 只動 "YYYY-MM_flagship" 這種格式的 key
+    var monthKey = key.slice(0, -9);
+    var newKey = monthKey + '_4f';
+    var oldItems = S.consumables[key] || [];
+    var existing = S.consumables[newKey] || [];
+    S.consumables[newKey] = existing.concat(oldItems);
+    movedCount += oldItems.length;
+    movedMonths.push(monthKey);
+    delete S.consumables[key];
+  });
+  // 零用金「上期餘額」紀錄也一起搬，避免下個月對不到舊的結餘
+  if (S.cmBalance) {
+    Object.keys(S.cmBalance).forEach(function(key){
+      if (key.slice(-9) !== '_flagship') return;
+      var monthKey = key.slice(0, -9);
+      var newKey = monthKey + '_4f';
+      if (S.cmBalance[newKey] === undefined) S.cmBalance[newKey] = S.cmBalance[key];
+      delete S.cmBalance[key];
+    });
+  }
+  S.consumables['__cm_migrate_ver'] = CM_MIGRATE_VER;
+  if (movedCount > 0) {
+    console.log('[Otto2] 旗艦店耗材舊資料已併入四樓，共 ' + movedCount + ' 筆（月份：' + movedMonths.join('、') + '）');
+  }
+  save();
 }
 
 async function doSave() {
@@ -1740,6 +1778,11 @@ const CM_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝',
 const CM_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
 const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','筆刷':'b-purple','樹脂':'b-blue','溶劑':'b-gray','包裝':'b-green','清潔':'b-green','印刷':'b-gray','其他':'b-gray'};
 
+// 耗材記帳的店別/樓層名稱對照（只影響耗材記帳，不影響每日/月結/薪資/庫存）
+// flagship 為「分樓層之前」的舊資料，獨立保留，不會被自動分配到四樓/二樓，避免資料張冠李戴
+const CM_STORE_NAMES = { '4f':'四樓', '2f':'二樓', 'guotu':'國圖', 'hq':'總部' };
+const CM_STORE_DEPT = { '4f':'旗艦館(4F)Otto2 ART CLUB', '2f':'旗艦館(2F)Otto2 ART CLUB', 'guotu':'國圖店Otto2 ART CLUB', 'hq':'總部Otto2 ART CLUB' };
+
 function getCMMonthKey() {
   var yEl = document.getElementById('cm-selYear');
   var mEl = document.getElementById('cm-selMonth');
@@ -2125,7 +2168,7 @@ function renderConsumables() {
   // DEBUG 顯示
   var debugEl = document.getElementById('cm-debug');
   if (debugEl) {
-    var allKeys = S.consumables ? Object.keys(S.consumables).filter(function(k){ return k !== '__may_ver'; }) : [];
+    var allKeys = S.consumables ? Object.keys(S.consumables).filter(function(k){ return k !== '__may_ver' && k !== '__cm_migrate_ver'; }) : [];
     var curKey = getCMKey();
     debugEl.style.display = 'block';
     debugEl.innerHTML = '<span style="color:#686460;font-size:11px">查詢key: <b style="color:#c9a84c">' + curKey + '</b> &nbsp;|&nbsp; Firebase有: <b style="color:#c9a84c">' + (allKeys.length ? allKeys.join(', ') : '無') + '</b> &nbsp;|&nbsp; 筆數: <b style="color:#4caf7d">' + items.length + '</b></span>';
@@ -2329,8 +2372,8 @@ function setAIStatus(type, msg) {
 
 async function recognizeImages(base64List) {
   var store = curStore.consumables;
-  var storeName = store === 'flagship' ? '旗艦店' : '國圖店';
-  var mKey = getMonthKey();
+  var storeName = CM_STORE_NAMES[store] || store;
+  var mKey = getCMMonthKey();
 
   // 組成多張圖片的 content
   var imageContents = base64List.map(function(b64) {
@@ -2550,8 +2593,8 @@ function dlConsumableExcel() {
   var items = getConsumables();
   var mKey = getCMMonthKey();
   var store = curStore.consumables;
-  var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[store];
-  var deptName = ({'flagship':'旗艦館','guotu':'國圖店'}[store]) + 'Otto2 ART CLUB';
+  var storeName = CM_STORE_NAMES[store] || store;
+  var deptName = CM_STORE_DEPT[store] || (storeName + 'Otto2 ART CLUB');
   var CUR_NAMES = { TWD:'台幣', CNY:'人民幣', USD:'美元', JPY:'日圓' };
 
   var ym = mKey.split('-');
