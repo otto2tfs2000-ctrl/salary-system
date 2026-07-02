@@ -835,14 +835,22 @@ function getDayAgg(store, mKey, day) {
     r.newCust += e.newCust || 0;
     r.oldCust += e.oldCust || 0;
     Object.keys(e.teachers||{}).forEach(tid => {
-      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0 };
+      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
       const td = e.teachers[tid];
+      // 人次/場次一律正常累計（獎金、講師費照算，不因總部代課而扣除）
       r.teachers[tid].count        += parseFloat(td.count)        || 0;
       r.teachers[tid].outsideCount += parseFloat(td.outsideCount) || 0;
       r.teachers[tid].master       += td.master       || 0;
       r.teachers[tid].assist       += td.assist       || 0;
       r.teachers[tid].junior       += td.junior       || 0;
       r.teachers[tid].sales        += td.sales        || 0;
+      if (td.hq) {
+        // 總部代課旗標：僅作日期紀錄用，不影響任何薪資計算
+        r.teachers[tid].hqCount  += parseFloat(td.count) || 0;
+        r.teachers[tid].hqMaster += td.master || 0;
+        r.teachers[tid].hqAssist += td.assist || 0;
+        r.teachers[tid].hqJunior += td.junior || 0;
+      }
     });
   });
   return r;
@@ -887,6 +895,7 @@ function openEditEntry(store, mKey, day, idx) {
       '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:12px;outline:none;font-family:inherit" id="ee_n_' + t.id + '" value="' + (td.note||'') + '"></td>' +
+      (store==='guotu' ? '<td style="text-align:center"><input type="checkbox" id="ee_hq_' + t.id + '"' + (td.hq?' checked':'') + ' style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"></td>' : '') +
       '</tr>';
   });
 
@@ -901,7 +910,7 @@ function openEditEntry(store, mKey, day, idx) {
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
-    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th></tr></thead>' +
+    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="display:flex;gap:10px;margin-top:16px">' +
     '<button class="btn btn-gold" onclick="saveEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
@@ -931,7 +940,9 @@ function saveEditEntry(store, mKey, day, idx) {
     var n = document.getElementById('ee_n_' + t.id)?.value || '';
     var s = getFBSalesByDay(getSalesKey(t.name), selM_edit, day, store);
     if (c||o||m||a||j) {
-      entry.teachers[t.id] = {count:c, outsideCount:o, master:m, assist:a, junior:j, note:n, sales:s};
+      var prev = entry.teachers?.[t.id] || {};
+      var hq = document.getElementById('ee_hq_' + t.id) ? (document.getElementById('ee_hq_' + t.id).checked ? 1 : 0) : (prev.hq || 0);
+      entry.teachers[t.id] = {count:c, outsideCount:o, master:m, assist:a, junior:j, note:n, sales:s, trainingFee:prev.trainingFee||0, hq:hq};
     }
   });
 
@@ -1025,6 +1036,7 @@ function renderDayForm() {
       '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0" onwheel="this.blur()"></td>' +
       salesCell +
       '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
+      (store==='guotu' ? '<td style="text-align:center"><input type="checkbox" id="inp_hq_' + t.id + '" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"></td>' : '') +
       '</tr>';
   });
 
@@ -1041,7 +1053,7 @@ function renderDayForm() {
         var t = teachers.find(function(x){ return x.id===tid; });
         var td = entry.teachers[tid];
         var parts = [];
-        if (td.count) parts.push(td.count + '人次');
+        if (td.count) parts.push(td.count + '人次' + (td.hq?'（總部代課）':''));
         if (td.outsideCount) parts.push('外派' + td.outsideCount);
         var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
         if (lec) parts.push('講師費$' + lec.toLocaleString());
@@ -1097,6 +1109,7 @@ function renderDayForm() {
     '<th>外派培訓費<br><span style="font-size:10px;color:var(--text3)">記錄用</span></th>' +
     '<th>當日業績<br><span style="font-size:10px;color:var(--green)">自動帶入</span></th>' +
     '<th>備註</th>' +
+    (store==='guotu' ? '<th>總部代課<br><span style="font-size:10px;color:var(--text3)">勾＝總部計薪</span></th>' : '') +
     '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="margin-top:16px;display:flex;gap:10px;align-items:center">' +
@@ -1201,7 +1214,8 @@ function submitEntry(store, mKey, day) {
     var n = document.getElementById('inp_n_' + t.id)?.value || '';
     var s = getFBSalesByDay(getSalesKey(t.name), selM_submit, day, store);
     var tf = parseInt(document.getElementById('inp_tf_' + t.id)?.value) || 0;
-    if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf}; }
+    var hq = document.getElementById('inp_hq_' + t.id)?.checked ? 1 : 0;
+    if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf,hq:hq}; }
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
   addEntry(store, mKey, day, entry);
@@ -1216,7 +1230,7 @@ function aggregateMonth(store, mKey) {
   var teachers = getTeachers(store);
   var totals = { newCust:0, oldCust:0, teachers:{} };
   teachers.forEach(function(t) {
-    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0 };
+    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
   });
   for (var d=1; d<=days; d++) {
     var agg = getDayAgg(store, mKey, d);
@@ -1231,6 +1245,10 @@ function aggregateMonth(store, mKey) {
       totals.teachers[t.id].junior       += td.junior       || 0;
       totals.teachers[t.id].sales        += td.sales        || 0;
       totals.teachers[t.id].trainingFee  += td.trainingFee  || 0;
+      totals.teachers[t.id].hqCount      += parseFloat(td.hqCount) || 0;
+      totals.teachers[t.id].hqMaster     += td.hqMaster || 0;
+      totals.teachers[t.id].hqAssist     += td.hqAssist || 0;
+      totals.teachers[t.id].hqJunior     += td.hqJunior || 0;
     });
     // Mixue support hours stored at day level
     var mixue = teachers.find(function(t){ return t.name==='米雪'; });
@@ -1325,9 +1343,20 @@ function renderMonthly() {
     var ptKey = 'pt_' + mKey + '_' + store;
     if (!S.salaryBase) S.salaryBase = {};
     if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
+    var ptKeyHQ = 'pthq_' + mKey + '_' + store;
+    if (!S.salaryBase[ptKeyHQ]) S.salaryBase[ptKeyHQ] = {};
     var ptRows = ptTeachers.map(function(t) {
       var hrs = S.salaryBase[ptKey][t.id] || 0;
       var iconId = 'ptSaved_' + ptKey + '_' + t.id;
+      if (store === 'guotu') {
+        var hqHrs = parseFloat(S.salaryBase[ptKeyHQ][t.id]) || 0;
+        var gtHrs = Math.max(0, hrs - hqHrs);
+        return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
+          '<td><input type="number" class="in-num md" id="pts_hq_' + t.id + '" value="' + hqHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
+          '<td><input type="number" class="in-num md" id="pts_gt_' + t.id + '" value="' + gtHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
+          '<td><span id="pts_total_' + t.id + '" style="font-weight:600;color:var(--gold2)">' + hrs + ' 小時</span> <span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span></td>' +
+          '<td style="color:var(--text3);font-size:12px">獎金依總時數計算；總部時數的時薪費由總部支付</td></tr>';
+      }
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
         '<td style="display:flex;align-items:center;gap:8px">' +
         '<input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()">' +
@@ -1337,7 +1366,7 @@ function renderMonthly() {
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
       '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。</div>' +
-      '<table><thead><tr><th>姓名</th><th>職別</th><th>本月時數（小時）</th><th>說明</th></tr></thead>' +
+      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>說明</th></tr></thead>' +
       '<tbody>' + ptRows + '</tbody></table></div>';
   }
 
@@ -1445,6 +1474,25 @@ function toggleRow(rowId, arrId) {
   if (arr) arr.textContent = hidden ? '▼' : '▶';
 }
 
+// 國圖兼職：總部時數＋國圖時數 兩欄輸入，總時數自動加總儲存
+function setPTSplit(ptKey, ptKeyHQ, tid, iconId) {
+  if (!S.salaryBase) S.salaryBase = {};
+  if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
+  if (!S.salaryBase[ptKeyHQ]) S.salaryBase[ptKeyHQ] = {};
+  var hq = parseFloat(document.getElementById('pts_hq_' + tid)?.value) || 0;
+  var gt = parseFloat(document.getElementById('pts_gt_' + tid)?.value) || 0;
+  S.salaryBase[ptKeyHQ][tid] = hq;
+  S.salaryBase[ptKey][tid] = hq + gt;
+  save();
+  var totalEl = document.getElementById('pts_total_' + tid);
+  if (totalEl) totalEl.textContent = (hq + gt) + ' 小時';
+  var icon = document.getElementById(iconId);
+  if (icon) {
+    icon.style.opacity = '1';
+    setTimeout(function(){ icon.style.opacity = '0'; }, 1500);
+  }
+}
+
 function setPTHours(ptKey, tid, val, iconId) {
   if (!S.salaryBase) S.salaryBase = {};
   if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
@@ -1499,10 +1547,18 @@ function calcSalary(t, store, mKey) {
   var personalTotal = salesAmt;
   var personalBonus = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
   var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
-  var ptBasePay  = t.type==='part' ? (t.base||0)*ptHours : 0;
+  // 國圖兼職：總部支付時數（如米雪特休、米妮代班的星期二）由總部出錢，店內只付剩餘時數
+  // 注意：人次獎金上面已用「總時數＋總人次」算完，不受此拆分影響
+  var hqHours = 0;
+  if (t.type==='part' && store==='guotu') {
+    hqHours = S.salaryBase?.['pthq_' + mKey + '_' + store]?.[t.id] || 0;
+    if (hqHours > ptHours) hqHours = ptHours;
+  }
+  var hqPay      = t.type==='part' ? Math.round((t.base||0)*hqHours) : 0;
+  var ptBasePay  = t.type==='part' ? Math.round((t.base||0)*(ptHours-hqHours)) : 0;
   var sub = countBonus + lectureFee + salesPerf + adminAmt + supFee + ptBasePay;
 
-  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, sub, personalTotal, personalBonus };
+  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, hqHours, hqPay, sub, personalTotal, personalBonus };
 }
 
 function renderSalary() {
@@ -1552,7 +1608,7 @@ function renderSalary() {
       '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
       '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
       (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
-      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+(c.ptHours?' ('+c.ptHours+'h)':''):'—') + '</td>' +
+      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+' ('+(c.ptHours-c.hqHours)+'h)':'—') + (c.hqPay?'<br><span style="font-size:10px;color:var(--text3)">總部另付 $'+c.hqPay.toLocaleString()+' ('+c.hqHours+'h)</span>':'') + '</td>' +
       '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
       '</tr>';
   }).join('');
@@ -1584,6 +1640,63 @@ function renderSalary() {
     (isFlagship?'<th>米雪支援費</th>':'') +
     '<th>兼職時薪費</th><th style="color:var(--gold2)">總薪</th>' +
     '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
+
+  // 國圖：總部支付薪資結算（時數×時薪）＋代課日期紀錄
+  if (store === 'guotu') {
+    var hqPayRows = rows.filter(function(r){ return r.c.hqPay > 0; });
+    var hqRecs = collectHQRecords(store, mKey);
+    if (hqPayRows.length) {
+      var hqPaySum = 0;
+      var payRowsHtml = hqPayRows.map(function(r) {
+        hqPaySum += r.c.hqPay;
+        return '<tr><td><strong>' + r.t.name + '</strong></td><td>' + r.c.hqHours + ' 小時</td>' +
+          '<td>$' + (r.t.base||0).toLocaleString() + '/時</td>' +
+          '<td style="color:var(--gold2);font-weight:600">$' + r.c.hqPay.toLocaleString() + '</td></tr>';
+      }).join('');
+      payRowsHtml += '<tr class="total-row"><td>合計</td><td></td><td></td><td>$' + hqPaySum.toLocaleString() + '</td></tr>';
+      el.innerHTML += '<div class="card" style="border:1px dashed var(--gold)">' +
+        '<div class="card-title" style="color:var(--gold2)">🏢 總部支付薪資 — ' + mKey + '</div>' +
+        '<div class="info-box">總部支付時數的時薪費（未列入上方店內薪資）。人次獎金不受影響，仍依當月總時數與總人次計算。</div>' +
+        '<div style="overflow-x:auto"><table><thead><tr><th>老師</th><th>總部支付時數</th><th>時薪</th><th>總部支付金額</th></tr></thead>' +
+        '<tbody>' + payRowsHtml + '</tbody></table></div></div>';
+    }
+    if (hqRecs.length) {
+      var hqRows = hqRecs.map(function(r) {
+        var lots = [];
+        if (r.master) lots.push('主教×' + r.master);
+        if (r.assist) lots.push('助教×' + r.assist);
+        if (r.junior) lots.push('小老師×' + r.junior);
+        return '<tr><td>' + r.day + ' 日</td><td><strong>' + r.name + '</strong></td>' +
+          '<td>' + (r.count||0) + '</td><td>' + (lots.join('、')||'—') + '</td>' +
+          '<td style="color:var(--text3);font-size:12px">' + (r.note||'') + '</td></tr>';
+      }).join('');
+      el.innerHTML += '<div class="card" style="border:1px dashed var(--gold)">' +
+        '<div class="card-title" style="color:var(--gold2)">📋 總部代課日期紀錄 — ' + mKey + '</div>' +
+        '<div class="info-box">每日登記勾選「總部代課」的日期明細，供回報總部核對用。這些人次已正常計入上方人次獎金，不會扣除。</div>' +
+        '<div style="overflow-x:auto"><table><thead><tr><th>日期</th><th>老師</th><th>人次</th><th>場次</th><th>備註</th></tr></thead>' +
+        '<tbody>' + hqRows + '</tbody></table></div></div>';
+    }
+  }
+}
+
+// 收集當月總部代課明細（日期、老師、人次、場次、備註）
+function collectHQRecords(store, mKey) {
+  var selY = parseInt(document.getElementById('selYear').value);
+  var selM = parseInt(document.getElementById('selMonth').value);
+  var teachers = getTeachers(store);
+  var recs = [];
+  for (var d=1; d<=getDaysInMonth(selY,selM); d++) {
+    getDayEntries(store, mKey, d).forEach(function(e) {
+      Object.keys(e.teachers||{}).forEach(function(tid) {
+        var td = e.teachers[tid];
+        if (!td.hq) return;
+        var t = teachers.find(function(x){ return x.id===tid; });
+        recs.push({ day:d, name:t?t.name:tid, count:parseFloat(td.count)||0,
+          master:td.master||0, assist:td.assist||0, junior:td.junior||0, note:td.note||'' });
+      });
+    });
+  }
+  return recs;
 }
 
 function setSalaryBase(bk, tid, val) {
@@ -1828,21 +1941,41 @@ function dlSalaryExcel(store, mKey) {
       var t=info.t, c=info.c, tt=info.tt;
       var isPart = t.type === 'part';
       var bonusLabel = (t.mode==='over' && t.threshold) ? ('人次獎金（已扣'+t.threshold+'人次）') : '人次獎金';
-      var lr = ws.addRow(['', '姓名',
+      var lr = ws.addRow(['', (isPart && c.hqPay>0) ? '姓名（付款方）' : '姓名',
         isPart ? '累積時數' : '全薪',
         isPart ? ('薪資總和（'+(t.base||0)+'）') : '加班時數',
         '人次', bonusLabel, '講師、客訂費用', '個人業績總額', '個人績效', '團體績效', '行政績效', '總薪', '', '']);
       styleRow(lr, C_LABEL, false);
 
       var note = c.supFee ? ('含支援費 $' + c.supFee.toLocaleString()) : '';
-      var dr = ws.addRow(['', t.name,
-        isPart ? (c.ptHours||0) : (info.base||''),
-        isPart ? (c.ptBasePay||'') : '',
-        parseFloat(tt.count)||0, c.countBonus||'', c.lectureFee||'', c.personalTotal||'', c.salesPerf||'', '', c.adminAmt||'', info.grand, note, '']);
-      styleRow(dr, null, false);
-      numFmt(dr, [3,4,6,7,8,9,10,11,12]);
+      var dr;
+      if (isPart && c.hqPay > 0) {
+        // 有總部代課的兼職：拆成兩列，誰付錢就是誰一列，會計照列付款
+        dr = ws.addRow(['', t.name + '（國圖支付）',
+          (c.ptHours - c.hqHours), c.ptBasePay||'',
+          parseFloat(tt.count)||0, c.countBonus||'', c.lectureFee||'', c.personalTotal||'', c.salesPerf||'', '', c.adminAmt||'', info.grand,
+          note ? note : '國圖支付：國圖時數時薪費＋獎金＋講師費', '']);
+        styleRow(dr, null, false);
+        dr.getCell(3).numFmt = '#,##0.##';
+        numFmt(dr, [4,6,7,8,9,10,11,12]);
+        var hr2 = ws.addRow(['', t.name + '（總部支付）',
+          c.hqHours, c.hqPay, '', '', '', '', '', '', '', c.hqPay,
+          '總部支付：僅代課時數 ' + c.hqHours + ' 小時 × $' + (t.base||0) + '/時，不含獎金與講師費', '']);
+        styleRow(hr2, 'FFFDE7EF', false);
+        hr2.getCell(3).numFmt = '#,##0.##';
+        numFmt(hr2, [4,12]);
+      } else {
+        dr = ws.addRow(['', t.name,
+          isPart ? (c.ptHours||0) : (info.base||''),
+          isPart ? (c.ptBasePay||'') : '',
+          parseFloat(tt.count)||0, c.countBonus||'', c.lectureFee||'', c.personalTotal||'', c.salesPerf||'', '', c.adminAmt||'', info.grand, note, '']);
+        styleRow(dr, null, false);
+        // 第3欄（累積時數/全薪）允許小數顯示，避免 29.5 被顯示成 30
+        dr.getCell(3).numFmt = '#,##0.##';
+        numFmt(dr, [4,6,7,8,9,10,11,12]);
+      }
 
-      // 每區最後一位老師那列，小計欄放整店總薪合計（粉紅底）
+      // 每區最後一位老師那列，小計欄放整店總薪合計（粉紅底）＝店內應付，不含總部
       if (idx === infos.length - 1) {
         var sc = dr.getCell(14);
         sc.value = grandSum;
@@ -1855,6 +1988,35 @@ function dlSalaryExcel(store, mKey) {
 
   addStoreSection('flagship');
   addStoreSection('guotu');
+
+  // 國圖總部支付薪資摘要＋代課日期紀錄
+  var hqTeachers = getTeachers('guotu').filter(function(t){ return t.type==='part'; });
+  var hqSum = 0, hqLines = [];
+  hqTeachers.forEach(function(t) {
+    var c2 = calcSalary(t, 'guotu', mKey);
+    if (c2.hqPay > 0) { hqSum += c2.hqPay; hqLines.push({name:t.name, hours:c2.hqHours, rate:t.base||0, pay:c2.hqPay}); }
+  });
+  if (hqLines.length) {
+    hqLines.forEach(function(l, i) {
+      var row = ws.addRow(['', i===0?'總部支付薪資':'', l.name, l.hours + ' 小時', '$' + l.rate + '/時', l.pay, '', '', '', '', '', '', '總部支付時數之時薪費，未列入店內薪資', '']);
+      styleRow(row, 'FFFDE7EF', false);
+      row.getCell(6).numFmt = '#,##0';
+    });
+    var sumRow = ws.addRow(['', '', '', '', '總部支付合計', hqSum, '', '', '', '', '', '', '', '']);
+    styleRow(sumRow, 'FFFDE7EF', true);
+    sumRow.getCell(6).numFmt = '#,##0';
+  }
+  var hqRecs = (typeof collectHQRecords==='function') ? collectHQRecords('guotu', mKey) : [];
+  if (hqRecs.length) {
+    hqRecs.forEach(function(r, i) {
+      var lots = [];
+      if (r.master) lots.push('主教×' + r.master);
+      if (r.assist) lots.push('助教×' + r.assist);
+      if (r.junior) lots.push('小老師×' + r.junior);
+      var row = ws.addRow(['', i===0?'代課日期紀錄':'', r.day + ' 日', r.name, r.count||0, lots.join('、'), '', '', '', '', '', '', '人次已計入獎金；僅供總部核對日期' + (r.note?('；'+r.note):''), '']);
+      styleRow(row, 'FFFDF3F6', false);
+    });
+  }
 
   wb.xlsx.writeBuffer().then(function(buf) {
     var blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
