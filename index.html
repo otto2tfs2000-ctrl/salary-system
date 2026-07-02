@@ -447,7 +447,7 @@ tr[draggable]{cursor:grab}
           <option value="sales">業務</option>
         </select>
       </div>
-      <div class="fg"><label>底薪／時薪（元）</label><input id="f-base" type="number" placeholder="正職底薪，兼職時薪" onwheel="this.blur()"></div>
+      <div class="fg"><label>全薪／時薪（元）</label><input id="f-base" type="number" placeholder="正職全薪，兼職時薪" onwheel="this.blur()"></div>
       <div class="fg"><label>人次計算方式</label>
         <select id="f-mode">
           <option value="full">完整（每人次×50）</option>
@@ -1518,17 +1518,19 @@ function renderSalary() {
   if (!S.salaryBase) S.salaryBase = {};
   if (!S.salaryBase[bk]) S.salaryBase[bk] = {};
 
-  var tCB=0,tLF=0,tSP=0,tAD=0,tSU=0,tPTB=0,tSUB=0,tBASE=0,tGRAND=0,tPTOT=0,tPBON=0;
+  var tCB=0,tLF=0,tSP=0,tAD=0,tSU=0,tPTB=0,tSUB=0,tBASE=0,tGRAND=0,tPTOT=0,tPBON=0,tCNT=0;
+  var monthTotals = aggregateMonth(store, mKey);
   var rows = teachers.map(function(t) {
     var c = calcSalary(t, store, mKey);
-    // 底薪：本月填過有效數字才用本月的，空白/0/沒填過一律自動帶「老師設定」的底薪
+    var count = parseFloat(monthTotals.teachers[t.id]?.count) || 0;
+    // 全薪：本月填過有效數字才用本月的，空白/0/沒填過一律自動帶「老師設定」的全薪
     var baseVal = getBaseSalary(t, bk);
     var base = t.type==='full' ? (baseVal || '') : 0;
     var grand = c.sub + baseVal;
     tCB+=c.countBonus; tLF+=c.lectureFee; tSP+=c.salesPerf;
     tAD+=c.adminAmt; tSU+=c.supFee; tPTB+=c.ptBasePay; tSUB+=c.sub; tBASE+=baseVal; tGRAND+=grand;
-    tPTOT+=c.personalTotal; tPBON+=c.personalBonus;
-    return { t, c, base, baseVal, grand };
+    tPTOT+=c.personalTotal; tPBON+=c.personalBonus; tCNT+=count;
+    return { t, c, base, baseVal, grand, count };
   });
 
   var statHtml = '<div class="stat-grid">' +
@@ -1542,7 +1544,8 @@ function renderSalary() {
     var t=row.t, c=row.c, base=row.base, baseVal=row.baseVal, grand=row.grand;
     return '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
-      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
+      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入全薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
+      '<td class="' + (row.count?'auto-val':'zero-val') + '">' + row.count.toLocaleString() + '</td>' +
       '<td class="' + (c.countBonus?'auto-val':'zero-val') + '">$' + c.countBonus.toLocaleString() + '</td>' +
       '<td class="' + (c.lectureFee?'auto-val':'zero-val') + '">$' + c.lectureFee.toLocaleString() + '</td>' +
       '<td style="color:var(--text3)" class="' + (c.personalTotal?'auto-val':'zero-val') + '">$' + c.personalTotal.toLocaleString() + '</td>' +
@@ -1557,6 +1560,7 @@ function renderSalary() {
   tRows += '<tr class="total-row">' +
     '<td>合計</td>' +
     '<td>$' + tBASE.toLocaleString() + '</td>' +
+    '<td>' + tCNT.toLocaleString() + '</td>' +
     '<td>$' + tCB.toLocaleString() + '</td>' +
     '<td>$' + tLF.toLocaleString() + '</td>' +
     '<td>$' + tPTOT.toLocaleString() + '</td>' +
@@ -1571,9 +1575,9 @@ function renderSalary() {
     '<div class="card-title" style="justify-content:space-between"><span>💰 ' + STORE_NAME[store] + ' 薪資明細 — ' + mKey + '</span>' +
     '<div style="display:flex;gap:8px"><button class="btn btn-dl btn-sm" onclick="dlSalaryExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel（兩店合併）</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlSalaryPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button></div></div>' +
-    '<div class="info-box">底薪已自動帶入「老師設定」的底薪，僅正職老師顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
+    '<div class="info-box">全薪已自動帶入「老師設定」的全薪，僅正職人員顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>人員</th><th style="color:var(--gold)">底薪（正職填）</th><th>人次獎金</th><th>講師費</th>' +
+    '<th>人員</th><th style="color:var(--gold)">全薪（正職填）</th><th>當月人次</th><th>人次獎金</th><th>講師費</th>' +
     '<th style="color:var(--text3)">個人業績總和<br><span style="font-weight:400;font-size:10px">（參考）</span></th>' +
     '<th>個人績效<br><span style="font-weight:400;font-size:10px">（=業績×2%）</span></th>' +
     '<th>行政績效</th>' +
@@ -1704,7 +1708,7 @@ function renderTeacherList() {
         '<option value="admin"' + (t.role==='admin'?' selected':'') + '>行政</option>' +
         '<option value="sales"' + (t.role==='sales'?' selected':'') + '>業務</option>' +
       '</select></div>' +
-      '<div class="fg"><label>底薪/時薪</label><input type="number" id="eb_' + t.id + '" value="' + (t.base||'') + '" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>全薪/時薪</label><input type="number" id="eb_' + t.id + '" value="' + (t.base||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>人次計算</label><select id="em_' + t.id + '">' +
         '<option value="full"' + (t.mode==='full'?' selected':'') + '>完整（每人次×50）</option>' +
         '<option value="over"' + (t.mode==='over'?' selected':'') + '>超過門檻才計算</option>' +
@@ -1744,7 +1748,7 @@ function renderTeacherList() {
 
   el.innerHTML = '<table><thead><tr>' +
     '<th style="width:30px"></th><th>姓名</th><th>分店</th><th>職別</th><th>職位</th>' +
-    '<th>人次計算</th><th>門檻</th><th>行政績效(旗)</th><th>行政績效(圖)</th><th>底薪/時薪</th><th></th>' +
+    '<th>人次計算</th><th>門檻</th><th>行政績效(旗)</th><th>行政績效(圖)</th><th>全薪/時薪</th><th></th>' +
     '</tr></thead><tbody id="teacher-tbody">' + rows + '</tbody></table>';
 }
 
@@ -1825,7 +1829,7 @@ function dlSalaryExcel(store, mKey) {
       var isPart = t.type === 'part';
       var bonusLabel = (t.mode==='over' && t.threshold) ? ('人次獎金（已扣'+t.threshold+'人次）') : '人次獎金';
       var lr = ws.addRow(['', '姓名',
-        isPart ? '累積時數' : '底薪',
+        isPart ? '累積時數' : '全薪',
         isPart ? ('薪資總和（'+(t.base||0)+'）') : '加班時數',
         '人次', bonusLabel, '講師、客訂費用', '個人業績總額', '個人績效', '團體績效', '行政績效', '總薪', '', '']);
       styleRow(lr, C_LABEL, false);
@@ -1891,7 +1895,7 @@ function dlSalaryPDF(store, mKey) {
   var w = window.open('','_blank');
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:7px}th{background:#f5f5f5}</style></head><body>'+
     '<h2>Otto2 '+STORE_NAME[store]+' 薪資 — '+mKey+'</h2>'+
-    '<table><thead><tr><th>姓名</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>'+(isFlagship?'<th>支援費</th>':'')+'<th>時薪費</th><th>小計</th><th>底薪</th><th>總薪</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<table><thead><tr><th>姓名</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>'+(isFlagship?'<th>支援費</th>':'')+'<th>時薪費</th><th>小計</th><th>全薪</th><th>總薪</th></tr></thead><tbody>'+rows+'</tbody></table>'+
     '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
   w.document.close();
 }
