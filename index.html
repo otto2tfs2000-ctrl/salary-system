@@ -6,6 +6,7 @@
 <title>Otto2 ARTCLUB 成人每日登記</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
@@ -500,9 +501,9 @@ initFB();
 
 const SALES_STAFF_MAP = {
   'Ethan': ['吳忠懋-Ethan', 'Ethan'],
-  '大熊': ['邱宗洲-大熊', '大熊'],
-  '羊羊': ['劉映秀-羊羊', '羊羊'],
-  '77': ['林亭媛-七七', '七七', '77'],
+  '大熊': ['邱宗洲-大熊', '大熊', '邱宗洲'],
+  '羊羊': ['劉映秀-羊羊', '羊羊', '劉映秀'],
+  '77': ['陳亭媛-七七', '七七', '77', '陳亭媛'], // 修正：原本誤寫「林亭媛」，真實姓名應為「陳亭媛」
   '蓁蓁': ['莊宜蓁-蓁蓁', '蓁蓁', '莊宜蓁'],
   '米雪': ['劉芷喬-米雪', '米雪', '劉芷喬'],
   '米妮': ['陳尚潔-米妮', '米妮', '陳尚潔'],
@@ -510,6 +511,7 @@ const SALES_STAFF_MAP = {
 
 // Returns teacher name from salary system given a sales staff string
 function matchStaff(salesStaff) {
+  if (!salesStaff) return null; // 空白業務姓名絕不比對（避免 a.includes('') 永遠成立而誤配到第一位老師）
   for (const [teacherName, aliases] of Object.entries(SALES_STAFF_MAP)) {
     if (aliases.some(a => salesStaff.includes(a) || a.includes(salesStaff))) {
       return teacherName;
@@ -534,6 +536,7 @@ function getSalesKey(teacherName) {
 // Firebase sales data cache
 let fbSalesData = {}; // { 'teacherName_month': amount }
 let fbLoaded = false;
+let fbUnmatched = {}; // { 'month_deptKey': { amt, staffList: Set } } — 業務姓名對不到老師、被排除在業績合計外的金額
 
 function loadFirebaseSales() {
   const url = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/salesData/records.json';
@@ -544,15 +547,26 @@ function loadFirebaseSales() {
       const records = Array.isArray(raw) ? raw : Object.values(raw);
       if (!records.length) return;
       fbSalesData = {};
+      fbUnmatched = {};
       records.forEach(r => {
-        if (!r || r.voided || r.pending) return;
-        const teacherName = matchStaff(r.staff || '');
-        if (!teacherName) return;
+        if (!r || r.voided) return; // 業績合計要算入所有已成立訂單，不管錢有沒有實際入帳（不排除 pending）
         const dept = r.dept || '';
         const storeKey = (dept === '國圖') ? 'guotu' : 'flagship';
         const m = parseInt(r.month) || 0;
         const d = parseInt(r.day) || 0;
         const amt = parseInt(r.amount) || 0;
+        const teacherName = matchStaff(r.staff || '');
+        if (!teacherName) {
+          // 業務姓名沒對到「老師設定」裡任何一位老師 → 這筆錢不會進 fbSalesData，
+          // 為了不讓金額憑空消失、造成報表跟會館業績系統對不起來，另外記一份未比對總表
+          if (dept === '2F' || dept === '4F') {
+            const uKey = m + '_' + dept;
+            if (!fbUnmatched[uKey]) fbUnmatched[uKey] = { amt: 0, staffList: new Set() };
+            fbUnmatched[uKey].amt += amt;
+            fbUnmatched[uKey].staffList.add(r.staff || '（空白）');
+          }
+          return;
+        }
         fbSalesData[teacherName+'_'+m+'_'+storeKey] = (fbSalesData[teacherName+'_'+m+'_'+storeKey]||0) + amt;
         fbSalesData[teacherName+'_'+m] = (fbSalesData[teacherName+'_'+m]||0) + amt;
         fbSalesData[teacherName+'_'+m+'_'+d+'_'+storeKey] = (fbSalesData[teacherName+'_'+m+'_'+d+'_'+storeKey]||0) + amt;
@@ -569,29 +583,37 @@ function loadFirebaseSales() {
     .catch(e => console.error('[FB] fetch error:', e));
 }
 
+// 取得某月某樓層「業務姓名對不到老師」而未列入業績合計的金額與業務姓名清單
+function getUnmatchedSales(month, dept) {
+  const key = parseInt(month) + '_' + dept;
+  return fbUnmatched[key] || { amt: 0, staffList: new Set() };
+}
+
 // Get sales amount from Firebase for a teacher, month, and store
 function getFBSales(teacherName, month, store) {
   if (!fbLoaded) return 0;
-  // 成人每日登記：flagship 只看 4F 部門
-  var deptKey = (store === 'flagship') ? '4F' : store;
-  var key = teacherName + '_' + parseInt(month) + '_' + deptKey;
-  var val = fbSalesData[key];
-  if (val !== undefined) return val;
-  // fallback 到 store 級別（國圖等）
-  key = store ? teacherName + '_' + parseInt(month) + '_' + store : teacherName + '_' + parseInt(month);
+  // 成人每日登記：flagship 只看 4F 部門，絕不 fallback 到混合的 flagship key
+  // （flagship key 是 2F+4F 加總，會把二樓業績誤植到四樓報表）
+  if (store === 'flagship') {
+    var key4f = teacherName + '_' + parseInt(month) + '_4F';
+    return fbSalesData[key4f] || 0;
+  }
+  // 國圖等其他館別沒有樓層混淆問題，保留原本查法
+  var key = store ? teacherName + '_' + parseInt(month) + '_' + store : teacherName + '_' + parseInt(month);
   return fbSalesData[key] || 0;
 }
 
 // Get sales amount from Firebase for a teacher, month, day, and store
 function getFBSalesByDay(teacherName, month, day, store) {
   if (!fbLoaded) return 0;
-  // 成人每日登記：flagship 只看 4F 部門
-  var deptKey = (store === 'flagship') ? '4F' : store;
-  var key = teacherName + '_' + parseInt(month) + '_' + parseInt(day) + '_' + deptKey;
-  var val = fbSalesData[key];
-  if (val !== undefined) return val;
-  // fallback 到 store 級別（國圖等）
-  key = store
+  // 成人每日登記：flagship 只看 4F 部門，絕不 fallback 到混合的 flagship key
+  // （flagship key 是 2F+4F 加總，會把二樓業績誤植到四樓報表，例如 6/11 Ethan 案例）
+  if (store === 'flagship') {
+    var key4fDay = teacherName + '_' + parseInt(month) + '_' + parseInt(day) + '_4F';
+    return fbSalesData[key4fDay] || 0;
+  }
+  // 國圖等其他館別沒有樓層混淆問題，保留原本查法
+  var key = store
     ? teacherName + '_' + parseInt(month) + '_' + parseInt(day) + '_' + store
     : teacherName + '_' + parseInt(month) + '_' + parseInt(day);
   return fbSalesData[key] || 0;
@@ -907,7 +929,7 @@ function saveEditEntry(store, mKey, day, idx) {
     var a = parseInt(document.getElementById('ee_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('ee_j_' + t.id)?.value) || 0;
     var n = document.getElementById('ee_n_' + t.id)?.value || '';
-    var s = getFBSalesByDay(t.name, selM_edit, day, store);
+    var s = getFBSalesByDay(getSalesKey(t.name), selM_edit, day, store);
     if (c||o||m||a||j) {
       entry.teachers[t.id] = {count:c, outsideCount:o, master:m, assist:a, junior:j, note:n, sales:s};
     }
@@ -1250,6 +1272,14 @@ function renderMonthly() {
     '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
     '<div class="stat-card"><div class="lbl">業績合計</div><div class="val">$' + tSales.toLocaleString() + '</div></div>' +
+    (function(){
+      var deptForUnmatched = (store==='flagship') ? '4F' : null;
+      if (!deptForUnmatched) return '';
+      var um = getUnmatchedSales(selM_monthly, deptForUnmatched);
+      if (!um.amt) return '';
+      var names = Array.from(um.staffList).join('、');
+      return '<div class="stat-card" style="border-color:var(--red,#c0392b)"><div class="lbl" style="color:var(--red,#c0392b)">⚠️ 未列入合計</div><div class="val" style="color:var(--red,#c0392b);font-size:16px">$' + um.amt.toLocaleString() + '</div><div style="font-size:11px;color:var(--text3);margin-top:4px">業務姓名「' + names + '」對不到老師設定，這筆錢在會館業績系統裡有算，但這裡沒列入業績合計</div></div>';
+    })() +
     (function(){ var _y=parseInt(document.getElementById('selYear').value); var _m=parseInt(document.getElementById('selMonth').value); var totalRev=0; for(var dd=1;dd<=getDaysInMonth(_y,_m);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card" style="border-color:var(--gold)"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
     '</div>';
 
@@ -1297,8 +1327,12 @@ function renderMonthly() {
     if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
     var ptRows = ptTeachers.map(function(t) {
       var hrs = S.salaryBase[ptKey][t.id] || 0;
+      var iconId = 'ptSaved_' + ptKey + '_' + t.id;
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
-        '<td><input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value)" placeholder="0" onwheel="this.blur()"></td>' +
+        '<td style="display:flex;align-items:center;gap:8px">' +
+        '<input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()">' +
+        '<span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span>' +
+        '</td>' +
         '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算</td></tr>';
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
@@ -1411,14 +1445,30 @@ function toggleRow(rowId, arrId) {
   if (arr) arr.textContent = hidden ? '▼' : '▶';
 }
 
-function setPTHours(ptKey, tid, val) {
+function setPTHours(ptKey, tid, val, iconId) {
   if (!S.salaryBase) S.salaryBase = {};
   if (!S.salaryBase[ptKey]) S.salaryBase[ptKey] = {};
   S.salaryBase[ptKey][tid] = val;
   save();
+  if (iconId) {
+    var icon = document.getElementById(iconId);
+    if (icon) {
+      icon.style.opacity = '1';
+      setTimeout(function(){ icon.style.opacity = '0'; }, 1500);
+    }
+  }
 }
 
 // ── Salary ──────────────────────────────────────────────
+// 底薪取值：本月手動填過「有效數字」才用本月的，否則（空白/0/從沒填過）一律帶「老師設定」的底薪
+function getBaseSalary(t, bk) {
+  if (t.type !== 'full') return 0;
+  var v = S.salaryBase?.[bk]?.[t.id];
+  var n = parseInt(v);
+  if (v === undefined || v === null || v === '' || isNaN(n) || n <= 0) return parseInt(t.base) || 0;
+  return n;
+}
+
 function calcSalary(t, store, mKey) {
   var totals = aggregateMonth(store, mKey);
   var tt = totals.teachers[t.id] || {};
@@ -1445,11 +1495,14 @@ function calcSalary(t, store, mKey) {
   var fbAmt = getFBSales(getSalesKey(t.name), selM, store);
   var salesAmt = fbAmt > 0 ? fbAmt : (tt.sales||0);
   var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
+  // 參考顯示用：個人業績總和 + 個人績效（=業績×2%，不併入總薪資）；業務角色連參考數字都不顯示，避免誤會
+  var personalTotal = salesAmt;
+  var personalBonus = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
   var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
   var ptBasePay  = t.type==='part' ? (t.base||0)*ptHours : 0;
   var sub = countBonus + lectureFee + salesPerf + adminAmt + supFee + ptBasePay;
 
-  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, sub };
+  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, sub, personalTotal, personalBonus };
 }
 
 function renderSalary() {
@@ -1465,14 +1518,16 @@ function renderSalary() {
   if (!S.salaryBase) S.salaryBase = {};
   if (!S.salaryBase[bk]) S.salaryBase[bk] = {};
 
-  var tCB=0,tLF=0,tSP=0,tAD=0,tSU=0,tPTB=0,tSUB=0,tBASE=0,tGRAND=0;
+  var tCB=0,tLF=0,tSP=0,tAD=0,tSU=0,tPTB=0,tSUB=0,tBASE=0,tGRAND=0,tPTOT=0,tPBON=0;
   var rows = teachers.map(function(t) {
     var c = calcSalary(t, store, mKey);
-    var base = t.type==='full' ? (S.salaryBase[bk][t.id]!==undefined ? S.salaryBase[bk][t.id] : '') : 0;
-    var baseVal = t.type==='full' ? (parseInt(base)||0) : 0;
+    // 底薪：本月填過有效數字才用本月的，空白/0/沒填過一律自動帶「老師設定」的底薪
+    var baseVal = getBaseSalary(t, bk);
+    var base = t.type==='full' ? (baseVal || '') : 0;
     var grand = c.sub + baseVal;
     tCB+=c.countBonus; tLF+=c.lectureFee; tSP+=c.salesPerf;
     tAD+=c.adminAmt; tSU+=c.supFee; tPTB+=c.ptBasePay; tSUB+=c.sub; tBASE+=baseVal; tGRAND+=grand;
+    tPTOT+=c.personalTotal; tPBON+=c.personalBonus;
     return { t, c, base, baseVal, grand };
   });
 
@@ -1487,40 +1542,43 @@ function renderSalary() {
     var t=row.t, c=row.c, base=row.base, baseVal=row.baseVal, grand=row.grand;
     return '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
+      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
       '<td class="' + (c.countBonus?'auto-val':'zero-val') + '">$' + c.countBonus.toLocaleString() + '</td>' +
       '<td class="' + (c.lectureFee?'auto-val':'zero-val') + '">$' + c.lectureFee.toLocaleString() + '</td>' +
+      '<td style="color:var(--text3)" class="' + (c.personalTotal?'auto-val':'zero-val') + '">$' + c.personalTotal.toLocaleString() + '</td>' +
       '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
       '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
       (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
       '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+(c.ptHours?' ('+c.ptHours+'h)':''):'—') + '</td>' +
-      '<td style="font-weight:500">$' + c.sub.toLocaleString() + '</td>' +
-      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入底薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
       '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
       '</tr>';
   }).join('');
 
   tRows += '<tr class="total-row">' +
     '<td>合計</td>' +
+    '<td>$' + tBASE.toLocaleString() + '</td>' +
     '<td>$' + tCB.toLocaleString() + '</td>' +
     '<td>$' + tLF.toLocaleString() + '</td>' +
+    '<td>$' + tPTOT.toLocaleString() + '</td>' +
     '<td>$' + tSP.toLocaleString() + '</td>' +
     '<td>$' + tAD.toLocaleString() + '</td>' +
     (isFlagship?'<td>$' + tSU.toLocaleString() + '</td>':'') +
     '<td>$' + tPTB.toLocaleString() + '</td>' +
-    '<td>$' + tSUB.toLocaleString() + '</td>' +
-    '<td>$' + tBASE.toLocaleString() + '</td>' +
     '<td>$' + tGRAND.toLocaleString() + '</td>' +
     '</tr>';
 
   el.innerHTML = statHtml + '<div class="card">' +
     '<div class="card-title" style="justify-content:space-between"><span>💰 ' + STORE_NAME[store] + ' 薪資明細 — ' + mKey + '</span>' +
-    '<div style="display:flex;gap:8px"><button class="btn btn-dl btn-sm" onclick="dlSalaryExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel</button>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-dl btn-sm" onclick="dlSalaryExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel（兩店合併）</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlSalaryPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button></div></div>' +
-    '<div class="info-box">底薪欄位僅正職老師填入，兼職依時薪×時數自動計算。</div>' +
+    '<div class="info-box">底薪已自動帶入「老師設定」的底薪，僅正職老師顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>老師</th><th>人次獎金</th><th>講師費</th><th>業績績效</th><th>行政績效</th>' +
+    '<th>人員</th><th style="color:var(--gold)">底薪（正職填）</th><th>人次獎金</th><th>講師費</th>' +
+    '<th style="color:var(--text3)">個人業績總和<br><span style="font-weight:400;font-size:10px">（參考）</span></th>' +
+    '<th>個人績效<br><span style="font-weight:400;font-size:10px">（=業績×2%）</span></th>' +
+    '<th>行政績效</th>' +
     (isFlagship?'<th>米雪支援費</th>':'') +
-    '<th>兼職時薪費</th><th>小計</th><th style="color:var(--gold)">底薪（正職填）</th><th style="color:var(--gold2)">總薪</th>' +
+    '<th>兼職時薪費</th><th style="color:var(--gold2)">總薪</th>' +
     '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
 }
 
@@ -1721,24 +1779,87 @@ function dlExcel(store, mKey) {
 }
 
 function dlSalaryExcel(store, mKey) {
-  var teachers = getTeachers(store);
-  var bk = mKey+'_'+store;
-  var isFlagship = store==='flagship';
-  var hdr = ['姓名','職別','人次獎金','講師費','業績績效','行政績效'];
-  if(isFlagship) hdr.push('米雪支援費');
-  hdr.push('兼職時薪費','小計','底薪','總薪');
-  var rows = [['Otto2 ARTCLUB ' + STORE_NAME[store] + ' 薪資 - ' + mKey],[],hdr];
-  teachers.forEach(function(t) {
-    var c = calcSalary(t, store, mKey);
-    var base = t.type==='full' ? (S.salaryBase?.[bk]?.[t.id]||0) : 0;
-    var row = [t.name,TYPE_NAME[t.type],c.countBonus,c.lectureFee,c.salesPerf,c.adminAmt];
-    if(isFlagship) row.push(c.supFee);
-    row.push(c.ptBasePay,c.sub,base,c.sub+base);
-    rows.push(row);
-  });
-  var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '薪資明細');
-  XLSX.writeFile(wb, 'Otto2_' + STORE_NAME[store] + '_薪資_' + mKey + '.xlsx');
+  // 不管目前停在哪個分店，一律一次匯出兩間店：旗艦在上、國圖在下，排版照手工報表格式
+  if (typeof ExcelJS === 'undefined') { alert('樣式函式庫尚未載入，請確認網路連線後重新整理再試'); return; }
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet('薪資明細');
+  ws.columns = [8,15,12,15,8,18,15,14,11,11,11,12,32,12].map(function(w){ return { width:w }; });
+
+  var C_FLAG='FFF08080', C_GUOTU='FFFFEB3B', C_LABEL='FFF2CE8F', C_PINK='FFF48FB1';
+  var thin = { style:'thin', color:{argb:'FFBFBFBF'} };
+  function styleRow(row, fill, bold) {
+    for (var i=1; i<=14; i++) {
+      var cell = row.getCell(i);
+      if (fill) cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:fill} };
+      cell.border = { top:thin, left:thin, bottom:thin, right:thin };
+      cell.font = { name:'Microsoft JhengHei', size:11, bold:!!bold };
+    }
+  }
+  function numFmt(row, cols) { cols.forEach(function(c){ row.getCell(c).numFmt='#,##0'; }); }
+
+  function addStoreSection(storeKey) {
+    var teachers = getTeachers(storeKey);
+    if (!teachers.length) return;
+    var bk = mKey + '_' + storeKey;
+    var totals = aggregateMonth(storeKey, mKey);
+    var selY = parseInt(document.getElementById('selYear').value);
+    var selM = parseInt(document.getElementById('selMonth').value);
+    var totalRev=0, totalCount=0;
+    for (var d=1; d<=getDaysInMonth(selY,selM); d++) totalRev += (S.daily[dayKey(storeKey,mKey,d)]?.revenue || 0);
+    teachers.forEach(function(t){ totalCount += parseFloat(totals.teachers[t.id]?.count) || 0; });
+
+    // 區段總覽列（旗艦紅／國圖黃）；現收、團體業績系統沒有這兩個數字，留白給你自己填
+    var hr = ws.addRow([STORE_NAME[storeKey].replace('店',''), '獎金計算區', '現收', '', '營收', totalRev, '人次', totalCount, '團體業績', '', '', '', '備註', '小計']);
+    styleRow(hr, storeKey==='flagship' ? C_FLAG : C_GUOTU, true);
+    numFmt(hr, [6]);
+
+    var infos = teachers.map(function(t) {
+      var c = calcSalary(t, storeKey, mKey);
+      var base = getBaseSalary(t, bk);
+      return { t:t, c:c, tt:(totals.teachers[t.id]||{}), base:base, grand:c.sub+base };
+    });
+    var grandSum = infos.reduce(function(s,i){ return s+i.grand; }, 0);
+
+    infos.forEach(function(info, idx) {
+      var t=info.t, c=info.c, tt=info.tt;
+      var isPart = t.type === 'part';
+      var bonusLabel = (t.mode==='over' && t.threshold) ? ('人次獎金（已扣'+t.threshold+'人次）') : '人次獎金';
+      var lr = ws.addRow(['', '姓名',
+        isPart ? '累積時數' : '底薪',
+        isPart ? ('薪資總和（'+(t.base||0)+'）') : '加班時數',
+        '人次', bonusLabel, '講師、客訂費用', '個人業績總額', '個人績效', '團體績效', '行政績效', '總薪', '', '']);
+      styleRow(lr, C_LABEL, false);
+
+      var note = c.supFee ? ('含支援費 $' + c.supFee.toLocaleString()) : '';
+      var dr = ws.addRow(['', t.name,
+        isPart ? (c.ptHours||0) : (info.base||''),
+        isPart ? (c.ptBasePay||'') : '',
+        parseFloat(tt.count)||0, c.countBonus||'', c.lectureFee||'', c.personalTotal||'', c.salesPerf||'', '', c.adminAmt||'', info.grand, note, '']);
+      styleRow(dr, null, false);
+      numFmt(dr, [3,4,6,7,8,9,10,11,12]);
+
+      // 每區最後一位老師那列，小計欄放整店總薪合計（粉紅底）
+      if (idx === infos.length - 1) {
+        var sc = dr.getCell(14);
+        sc.value = grandSum;
+        sc.numFmt = '#,##0';
+        sc.fill = { type:'pattern', pattern:'solid', fgColor:{argb:C_PINK} };
+        sc.font = { name:'Microsoft JhengHei', size:11, bold:true };
+      }
+    });
+  }
+
+  addStoreSection('flagship');
+  addStoreSection('guotu');
+
+  wb.xlsx.writeBuffer().then(function(buf) {
+    var blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Otto2_薪資_兩店_' + mKey + '.xlsx';
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 3000);
+  }).catch(function(e){ alert('匯出失敗：' + e.message); });
 }
 
 function dlPDF(store, mKey) {
@@ -1764,7 +1885,7 @@ function dlSalaryPDF(store, mKey) {
   var isFlagship = store==='flagship';
   var rows = teachers.map(function(t) {
     var c = calcSalary(t,store,mKey);
-    var base = t.type==='full'?(S.salaryBase?.[bk]?.[t.id]||0):0;
+    var base = getBaseSalary(t, bk);
     return '<tr><td>'+t.name+'</td><td>$'+c.countBonus.toLocaleString()+'</td><td>$'+c.lectureFee.toLocaleString()+'</td><td>$'+c.salesPerf.toLocaleString()+'</td><td>$'+c.adminAmt.toLocaleString()+'</td>'+(isFlagship?'<td>$'+c.supFee.toLocaleString()+'</td>':'')+'<td>$'+c.ptBasePay.toLocaleString()+'</td><td>$'+c.sub.toLocaleString()+'</td><td>$'+base.toLocaleString()+'</td><td><strong>$'+(c.sub+base).toLocaleString()+'</strong></td></tr>';
   }).join('');
   var w = window.open('','_blank');
