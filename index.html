@@ -372,11 +372,15 @@ tr[draggable]{cursor:grab}
     <div id="inv-week-table"></div>
     <div id="inv-save-bar" style="position:sticky;bottom:0;z-index:100;background:rgba(20,20,20,0.95);border-top:1px solid var(--gold);padding:12px 20px;display:flex;gap:10px;align-items:center;margin:0 -22px -20px -22px;border-radius:0 0 12px 12px">
       <button class="btn btn-gold" onclick="saveInvWeek()">💾 儲存本週盤點</button>
+      <button class="btn btn-outline btn-sm" onclick="printInvBlankSheet()">🖨 印空白表</button>
+      <label class="btn btn-outline btn-sm" for="inv-count-photo" style="display:inline-flex;align-items:center;cursor:pointer">📷 上傳盤點照片</label>
+      <input id="inv-count-photo" type="file" accept="image/*" style="display:none" onchange="handleInvCountPhoto(event)">
       <button class="btn btn-del btn-sm" onclick="clearInvWeek()">🗑 清除本週盤點</button>
       <span id="inv-save-hint" style="font-size:12px;color:var(--text3)"></span>
       <div style="flex:1"></div>
       <button class="btn btn-outline" onclick="openInvItemModal()">⚙️ 管理品項清單</button>
     </div>
+    <div id="inv-count-ocr-area" style="margin-top:16px"></div>
   </div>
 
   <div class="card" id="inv-item-modal" style="display:none">
@@ -2708,14 +2712,8 @@ function handleCMPhotos(input) {
   document.getElementById('cm-ai-results').style.display = 'none';
   cmAIItems = [];
 
-  // 轉 base64 並依序送出
-  var promises = files.map(function(file) {
-    return new Promise(function(resolve) {
-      var reader = new FileReader();
-      reader.onload = function(e) { resolve(e.target.result.split(',')[1]); };
-      reader.readAsDataURL(file);
-    });
-  });
+  // 轉 base64（先縮圖再上傳，省流量也加速辨識）
+  var promises = files.map(function(file) { return fileToOCRBase64(file, 1568); });
 
   Promise.all(promises).then(function(base64List) {
     return recognizeImages(base64List);
@@ -2741,45 +2739,47 @@ function setAIStatus(type, msg) {
 }
 
 async function recognizeImages(base64List) {
-  var store = curStore.consumables;
-  var storeName = CM_STORE_NAMES[store] || store;
   var mKey = getCMMonthKey();
 
-  // 組成多張圖片的 content
-  var imageContents = base64List.map(function(b64) {
-    return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
-  });
-  var year = mKey.slice(0,4);
-  var pLines = [
-    'Otto2 ARTCLUB ' + storeName + ' ' + mKey,
-    'Identify ALL purchase items. Output ONLY a JSON array.',
-    'Each: {date:YEAR-MM-DD, cat:Chinese category, name:item name, origAmt:number, currency:TWD/CNY/USD/JPY, rate:number, source:platform, note:specs}',
-    'Categories: yan4liao4=顏料 hua4bu4=畫布 zhi3=紙張 bi3=筆刷 shu4=樹脂 rong2=溶劑 bao1=包裝 qing1=清潔 yin4=印刷 other=其他',
-    'CNY rate default 4.4. Split bundled orders. Shipping fee = separate row name 運費. Skip refunds.',
-    'Year if missing: ' + year
-  ];
-  imageContents.push({ type: 'text', text: pLines.join(' | ') });
+  // 1) 主力：Claude AI 辨識（Railway 後端）。收據、簡體字截圖、手寫都可以。
+  try {
+    setAIStatus('loading', '🤖 Claude AI 辨識中（共 ' + base64List.length + ' 張，約 10~30 秒）...');
+    var res = await claudeOCR(base64List, 'receipt');
+    var aiItems = (res.items || []).map(function(x) {
+      var currency = (x.currency || 'TWD').toUpperCase();
+      if (['TWD','CNY','USD','JPY'].indexOf(currency) === -1) currency = 'TWD';
+      var rate = currency === 'CNY' ? 4.4 : 1;
+      var amt = parseFloat(x.amount) || 0;
+      var name = (x.name || '').trim() || '照片辨識項目';
+      return {
+        date: (x.date && /^\d{4}-\d{2}-\d{2}$/.test(x.date)) ? x.date : (mKey + '-01'),
+        cat: guessCMCategory(name),
+        name: name,
+        origAmt: amt,
+        currency: currency,
+        rate: rate,
+        twd: currency === 'TWD' ? Math.round(amt) : Math.round(amt * rate),
+        source: (x.source || 'AI辨識'),
+        note: 'Claude AI 辨識，請確認'
+      };
+    }).filter(function(x){ return x.origAmt > 0; });
+    if (!aiItems.length) throw new Error('AI 沒有在照片裡找到金額');
+    return aiItems.slice(0, 30);
+  } catch (aiErr) {
+    console.warn('Claude OCR 失敗，改用備援 Tesseract：', aiErr);
+    setAIStatus('loading', '⚠️ AI 服務暫時連不上（' + aiErr.message + '），改用備援辨識（準確度較低）...');
+  }
 
-  var resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: imageContents }]
-    })
-  });
-
-  if (!resp.ok) throw new Error('API 回應錯誤 ' + resp.status);
-  var data = await resp.json();
-  var text = (data.content || []).filter(function(b){ return b.type==='text'; }).map(function(b){ return b.text; }).join('');
-
-  // 清理並解析 JSON
-  var clean = text.replace(/```json|```/g, '').trim();
-  // 找第一個 [ 到最後一個 ]
-  var s = clean.indexOf('['), e = clean.lastIndexOf(']');
-  if (s === -1 || e === -1) throw new Error('無法解析辨識結果');
-  var items = JSON.parse(clean.slice(s, e+1));
+  // 2) 備援：Tesseract 純前端 OCR
+  await loadTesseractScript();
+  var texts = [];
+  for (var i = 0; i < base64List.length; i++) {
+    setAIStatus('loading', '🔍 備援 OCR 辨識中（第 ' + (i+1) + '/' + base64List.length + ' 張）...');
+    var result = await window.Tesseract.recognize('data:image/jpeg;base64,' + base64List[i], 'chi_tra+eng');
+    texts.push((result && result.data && result.data.text) || '');
+  }
+  var items = parseConsumableOCRText(texts.join('\n'), mKey);
+  if (!items.length) throw new Error('有讀到文字，但沒有抓到金額。請確認照片清楚，或先手動輸入這筆支出。');
 
   // 計算台幣金額
   items.forEach(function(x) {
@@ -2790,6 +2790,61 @@ async function recognizeImages(base64List) {
   });
 
   return items;
+}
+
+function guessCMCategory(name) {
+  var s = (name || '').toLowerCase();
+  if (/顏料|paint|壓克力|油畫|水彩|色粉/.test(s)) return '顏料';
+  if (/畫布|canvas|畫框|木框|框|f號|p號/.test(s)) return '畫布';
+  if (/紙|素描|卡紙|影印|列印/.test(s)) return '紙張';
+  if (/筆|刷|排刷|畫刀/.test(s)) return '筆刷';
+  if (/樹脂|uv|膠|ab膠|滴膠/.test(s)) return '樹脂';
+  if (/松節油|調和油|溶劑|酒精/.test(s)) return '溶劑';
+  if (/袋|盒|包裝|膠帶|氣泡/.test(s)) return '包裝';
+  if (/清潔|抹布|拖把|垃圾袋|衛生紙/.test(s)) return '清潔';
+  if (/印刷|海報|貼紙|名片/.test(s)) return '印刷';
+  return '其他';
+}
+
+function parseConsumableOCRText(text, mKey) {
+  var lines = (text || '').split(/\n+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  var year = mKey.slice(0,4);
+  var defaultDate = mKey + '-01';
+  var foundDate = defaultDate;
+  var items = [];
+
+  lines.forEach(function(line) {
+    var dm = line.match(/(20\d{2})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/) || line.match(/(\d{1,2})[\/\-.月](\d{1,2})/);
+    if (dm) {
+      if (dm.length === 4) foundDate = dm[1] + '-' + String(parseInt(dm[2],10)).padStart(2,'0') + '-' + String(parseInt(dm[3],10)).padStart(2,'0');
+      else foundDate = year + '-' + String(parseInt(dm[1],10)).padStart(2,'0') + '-' + String(parseInt(dm[2],10)).padStart(2,'0');
+    }
+  });
+
+  lines.forEach(function(line) {
+    if (/合計|總計|小計|找零|稅額|刷卡|付款|應收|實收|發票|統編/i.test(line)) return;
+    var currency = /¥|￥|RMB|CNY|人民幣|淘寶|淘宝|1688/i.test(line) ? 'CNY' : 'TWD';
+    var matches = line.match(/(?:NT\$|TWD|\$|¥|￥)?\s*-?\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?/g);
+    if (!matches || !matches.length) return;
+    var rawAmt = matches[matches.length - 1].replace(/[^\d.-]/g, '');
+    var amt = parseFloat(rawAmt);
+    if (!amt || amt <= 0) return;
+    var name = line.replace(matches[matches.length - 1], '').replace(/^[\d\-\.\s]+/, '').trim();
+    name = name.replace(/(NT\$|TWD|RMB|CNY|人民幣|¥|￥|\$)/gi, '').trim();
+    if (!name || name.length < 2) name = '照片辨識項目';
+    items.push({
+      date: foundDate,
+      cat: guessCMCategory(name),
+      name: name,
+      origAmt: amt,
+      currency: currency,
+      rate: currency === 'CNY' ? 4.4 : 1,
+      source: /淘寶|淘宝|1688/i.test(line + text) ? '淘寶' : '照片辨識',
+      note: 'OCR辨識，請確認'
+    });
+  });
+
+  return items.slice(0, 30);
 }
 
 function renderAIResults(items) {
@@ -3732,6 +3787,7 @@ function updateInvItemField(id, field, value) {
   var item = st.items.find(function(x){ return x.id === id; });
   if (!item) return;
   if (field === 'safeStock') item[field] = parseFloat(value) || 0;
+  else if (field === 'estUsage') item[field] = value === '' ? null : (parseFloat(value) || 0);
   else item[field] = value;
   save();
   renderInventory();
@@ -3857,7 +3913,7 @@ function renderInvItemList() {
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
   var sorted = sortInvItems(items);
   var html = '<div class="muted" style="margin-bottom:8px;font-size:12px">🖐 直接按住每一列左側的「⠿」拖曳，可任意調整順序（不限分類）</div>';
-  html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>安全庫存量</th><th></th></tr></thead><tbody id="inv-item-tbody">';
+  html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody id="inv-item-tbody">';
   sorted.forEach(function(it) {
     html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
       'ondragstart="invHandleDragStart(event,'+it.id+')" '+
@@ -3888,6 +3944,7 @@ function renderInvItemList() {
     html += '<td>'+imgHtml+'</td>';
     html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
     html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
+    html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
     html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
     html += '</tr>';
   });
@@ -3903,22 +3960,91 @@ function renderInvItemList() {
 // 未來4週預估消耗 = 近6週平均週消耗 × 4。
 // 若消耗資料不足（從未盤點過消耗速度），則只補到安全庫存，並標註資料不足。
 const INV_LOOKAHEAD_WEEKS = 4;
+const INV_MIN_USAGE_SAMPLES_FOR_FORECAST = 4;
+
+function computeWeeklyUsageStats(itemId, uptoWeekKey, lookbackWeeks) {
+  var st = getInvStore();
+  var allWeeks = Object.keys(st.weeks).filter(function(k){ return k <= uptoWeekKey; }).sort();
+  if (allWeeks.length === 0) return { avg: null, samples: 0, values: [] };
+  var n = lookbackWeeks || 6;
+  var recent = allWeeks.slice(-1 * n);
+
+  var usages = [];
+  var prevWeekStock = null;
+  recent.forEach(function(wk) {
+    var rec = st.weeks[wk][itemId];
+    if (!rec) return;
+    var prevMon = new Date(wk + 'T00:00:00'); prevMon.setDate(prevMon.getDate()-7);
+    var hadRestockThisWeek = getInvRestockQtyInRange(itemId, invFmtDate(prevMon), wk) > 0;
+    if (hadRestockThisWeek) {
+      var sSkip = computeCurrentStock(itemId, wk);
+      if (sSkip !== null) prevWeekStock = sSkip;
+      return;
+    }
+    if (typeof rec.used === 'number' && rec.used >= 0) {
+      usages.push(rec.used);
+    } else if (prevWeekStock !== null) {
+      var stockNow = computeCurrentStock(itemId, wk);
+      if (stockNow !== null) {
+        var diff = prevWeekStock - stockNow;
+        if (diff >= 0) usages.push(diff);
+      }
+    }
+    var sNow = computeCurrentStock(itemId, wk);
+    if (sNow !== null) prevWeekStock = sNow;
+  });
+  if (usages.length === 0) return { avg: null, samples: 0, values: [] };
+  var sum = usages.reduce(function(a,b){ return a+b; }, 0);
+  return { avg: sum / usages.length, samples: usages.length, values: usages };
+}
+
+function computeInvRestockStats(itemId, uptoWeekKey) {
+  var end = new Date(uptoWeekKey + 'T00:00:00');
+  end.setDate(end.getDate() + 7);
+  var start = new Date(end);
+  start.setDate(start.getDate() - 90);
+  var fromKey = invFmtDate(start);
+  var toKey = invFmtDate(end);
+  var rows = listInvRestocks(fromKey, toKey).filter(function(r){ return String(r.itemId) === String(itemId); });
+  var qtys = rows.map(function(r){ return r.qty; }).filter(function(q){ return q > 0; });
+  if (qtys.length === 0) return { count90: 0, avgQty: null, monthlyCalls: 0 };
+  var total = qtys.reduce(function(a,b){ return a+b; }, 0);
+  return { count90: qtys.length, avgQty: total / qtys.length, monthlyCalls: qtys.length / 3 };
+}
+
 function computeOrderQty(itemId, weekKey, safeStock) {
   var curStock = computeCurrentStock(itemId, weekKey);
-  var avgUsage = computeAvgWeeklyUsage(itemId, weekKey, 6);
+  var usageStats = computeWeeklyUsageStats(itemId, weekKey, 6);
+  var avgUsage = usageStats.avg;
+  var restockStats = computeInvRestockStats(itemId, weekKey);
+
+  // 人工預估週消耗：實際盤點資料還沒累積夠之前的過渡值。
+  // 累積滿 INV_MIN_USAGE_SAMPLES_FOR_FORECAST 週真實資料後，這個值自動退場，改用真實消耗速度。
+  var itemRec = getInvItems().find(function(x){ return String(x.id) === String(itemId); });
+  var estUsage = (itemRec && itemRec.estUsage != null && parseFloat(itemRec.estUsage) > 0) ? parseFloat(itemRec.estUsage) : null;
 
   if (curStock === null) {
     // 從未盤點過，無法判斷，不建議數字
     return { qty: null, basis: 'none', curStock: null };
   }
+  if (usageStats.samples < INV_MIN_USAGE_SAMPLES_FOR_FORECAST && estUsage) {
+    // 資料不足但老闆有填預估週消耗 → 先照預估值算，邏輯跟正式預測一樣
+    var targetE = safeStock + estUsage * INV_LOOKAHEAD_WEEKS;
+    var qtyE = Math.max(0, Math.ceil(targetE - curStock));
+    return { qty: qtyE, basis: 'estimate', avgUsage: estUsage, samples: usageStats.samples, curStock: curStock, restockStats: restockStats };
+  }
+  if (usageStats.samples > 0 && usageStats.samples < INV_MIN_USAGE_SAMPLES_FOR_FORECAST) {
+    var qtyLearn = Math.max(0, safeStock - curStock);
+    return { qty: qtyLearn, basis: 'learning', avgUsage: avgUsage, samples: usageStats.samples, curStock: curStock, restockStats: restockStats };
+  }
   if (!avgUsage || avgUsage <= 0) {
     // 沒有消耗速度資料，只補到安全庫存
     var qtySafe = Math.max(0, safeStock - curStock);
-    return { qty: qtySafe, basis: 'safe-only', curStock: curStock };
+    return { qty: qtySafe, basis: 'safe-only', curStock: curStock, samples: usageStats.samples, restockStats: restockStats };
   }
   var target = safeStock + avgUsage * INV_LOOKAHEAD_WEEKS;
   var qty = Math.max(0, Math.ceil(target - curStock));
-  return { qty: qty, basis: 'forecast', avgUsage: avgUsage, curStock: curStock };
+  return { qty: qty, basis: 'forecast', avgUsage: avgUsage, samples: usageStats.samples, curStock: curStock, restockStats: restockStats };
 }
 
 // ── 本週盤點表 ──────────────────────────────────────────
@@ -4012,12 +4138,17 @@ function clearInvWeek() {
 // 統一產生「本週建議訂購量」徽章：紅(要訂)/黃(注意)/綠(無需訂購)/灰(尚未盤點)
 // renderInvWeekTable、autoSaveInvItem、renderInvStats 都呼叫這個，避免三色邏輯散落各處。
 function buildOrderStatusHtml(order, it) {
-  if (order.basis !== 'safe-only' && order.basis !== 'forecast') {
+  if (order.basis !== 'safe-only' && order.basis !== 'forecast' && order.basis !== 'learning' && order.basis !== 'estimate') {
     return '<span class="muted">尚未盤點</span>';
   }
   if (order.qty > 0) {
     var usageNote = order.basis === 'forecast' ? ' <span class="muted">(週耗≈'+order.avgUsage.toFixed(1)+')</span>' : '';
+    if (order.basis === 'estimate') usageNote = ' <span class="muted">(人工預估週耗 '+order.avgUsage+')</span>';
+    if (order.basis === 'learning') usageNote = ' <span class="muted">(累積中 '+order.samples+'/'+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+')</span>';
     return '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">訂 '+order.qty+' '+it.unit+'</span>'+usageNote;
+  }
+  if (order.basis === 'learning') {
+    return '<span class="badge b-gray">先累積資料</span> <span class="muted">('+order.samples+'/'+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+')</span>';
   }
   var cautionLine = getInvCautionLine(it.safeStock);
   if (order.curStock !== null && order.curStock > it.safeStock && order.curStock <= cautionLine) {
@@ -4078,6 +4209,134 @@ function saveInvWeek() {
   save();
   renderInventory();
   alert('已儲存 ' + savedCount + ' 筆本週盤點紀錄');
+}
+
+var invCountOCRRows = [];
+
+function printInvBlankSheet() {
+  var items = sortInvItems(getInvItems());
+  if (items.length === 0) { alert('尚無品項，請先新增品項。'); return; }
+  var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
+  var weekKey = invCurWeek;
+  var rows = items.map(function(it, idx) {
+    var code = idx + 1;
+    return '<tr><td>'+code+'</td><td>'+escAttr(it.cat)+'</td><td>'+escAttr(it.name)+'</td><td>'+escAttr(it.unit)+'</td><td></td><td></td></tr>';
+  }).join('');
+  var html = '<!doctype html><html><head><meta charset="utf-8"><title>庫存盤點空白表</title>'+
+    '<style>body{font-family:"Noto Sans TC",Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 6px}p{margin:0 0 14px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #333;padding:8px 10px;text-align:left}th{background:#eee}.box{height:28px}@media print{button{display:none}body{padding:0}}</style></head><body>'+
+    '<button onclick="window.print()" style="margin-bottom:12px;padding:8px 14px">列印</button>'+
+    '<h1>Otto2 ARTCLUB '+storeName+' 庫存盤點</h1>'+
+    '<p>週次：'+invWeekLabel(weekKey)+'　盤點人：＿＿＿＿＿　日期：＿＿＿＿＿</p>'+
+    '<table><thead><tr><th style="width:48px">編號</th><th style="width:90px">類別</th><th>品項</th><th style="width:60px">單位</th><th style="width:120px">目前實際庫存</th><th style="width:120px">本週用掉</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '</body></html>';
+  var w = window.open('', '_blank');
+  if (!w) { alert('瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+}
+
+function parseInvCountOCRText(text) {
+  var items = sortInvItems(getInvItems());
+  var rows = [];
+  var lines = (text || '').split(/\n+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  lines.forEach(function(line) {
+    var nums = line.match(/\d+(?:\.\d+)?/g);
+    if (!nums || nums.length < 2) return;
+    var code = parseInt(nums[0], 10);
+    if (!code || code < 1 || code > items.length) return;
+    var item = items[code - 1];
+    var stock = parseFloat(nums[1]);
+    var used = nums.length >= 3 ? parseFloat(nums[2]) : null;
+    rows.push({ code: code, itemId: item.id, itemName: item.name, unit: item.unit, stock: stock, used: used, include: true, raw: line });
+  });
+  return rows;
+}
+
+function handleInvCountPhoto(event) {
+  var file = event.target.files && event.target.files[0];
+  var area = document.getElementById('inv-count-ocr-area');
+  if (!file || !area) return;
+  area.innerHTML = '<div class="info-box">🤖 Claude AI 讀取手寫盤點表中（約 10~20 秒）。數字會先進預覽表，確認後才回填。</div>';
+
+  var items = sortInvItems(getInvItems());
+
+  fileToOCRBase64(file, 1568).then(function(b64) {
+    return claudeOCR([b64], 'countsheet');
+  }).then(function(res) {
+    var rows = [];
+    (res.rows || []).forEach(function(r) {
+      var code = parseInt(r.code, 10);
+      if (!code || code < 1 || code > items.length) return;
+      var stock = (r.stock === null || r.stock === undefined || r.stock === '') ? null : parseFloat(r.stock);
+      var used = (r.used === null || r.used === undefined || r.used === '') ? null : parseFloat(r.used);
+      if (stock === null && used === null) return; // 整列空白就跳過
+      if (stock !== null && isNaN(stock)) stock = null;
+      if (used !== null && isNaN(used)) used = null;
+      if (stock === null && used === null) return;
+      var item = items[code - 1];
+      rows.push({ code: code, itemId: item.id, itemName: item.name, unit: item.unit,
+        stock: stock !== null ? stock : 0, used: used, include: true,
+        raw: 'AI讀到：編號'+code+'／庫存 '+(stock!==null?stock:'—')+'／用掉 '+(used!==null?used:'—') });
+    });
+    invCountOCRRows = rows;
+    renderInvCountOCRPreview('（Claude AI 直接讀出結構化數字，無原始文字）');
+  }).catch(function(aiErr) {
+    // 備援：Tesseract（印刷體勉強可以，手寫成功率低）
+    console.warn('Claude 盤點辨識失敗，改用備援 Tesseract：', aiErr);
+    area.innerHTML = '<div class="info-box">⚠️ AI 服務暫時連不上（'+escAttr(aiErr.message)+'），改用備援辨識，準確度較低...</div>';
+    return loadTesseractScript().then(function() {
+      return window.Tesseract.recognize(file, 'chi_tra+eng');
+    }).then(function(result) {
+      var text = (result && result.data && result.data.text) || '';
+      invCountOCRRows = parseInvCountOCRText(text);
+      renderInvCountOCRPreview(text);
+    }).catch(function(err) {
+      area.innerHTML = '<div class="info-box" style="color:var(--red)">✗ 盤點照片辨識失敗：'+escAttr(err.message)+'。可以先印空白表，填寫時把「編號」和數字寫清楚再拍一次。</div>';
+    });
+  }).finally(function() {
+    event.target.value = '';
+  });
+}
+
+function renderInvCountOCRPreview(rawText) {
+  var area = document.getElementById('inv-count-ocr-area');
+  if (!area) return;
+  if (!invCountOCRRows.length) {
+    area.innerHTML = '<div class="info-box" style="color:var(--red)">沒有讀到可回填的盤點數字。建議列印空白表後，在每列寫「編號、目前實際庫存、本週用掉」再拍照。</div>'+
+      '<details style="font-size:12px;color:var(--text3)"><summary>查看讀到的文字</summary><pre style="white-space:pre-wrap">'+escAttr(rawText || '')+'</pre></details>';
+    return;
+  }
+  var html = '<div class="info-box">已讀到 '+invCountOCRRows.length+' 筆。請檢查數字，取消勾選的列不會回填。</div>';
+  html += '<table><thead><tr><th style="width:34px"></th><th>編號</th><th>品項</th><th style="width:110px">目前實際庫存</th><th style="width:110px">本週用掉</th><th>原始文字</th></tr></thead><tbody>';
+  invCountOCRRows.forEach(function(r, idx) {
+    html += '<tr>';
+    html += '<td><input type="checkbox" '+(r.include?'checked':'')+' onchange="invCountOCRRows['+idx+'].include=this.checked"></td>';
+    html += '<td>'+r.code+'</td><td>'+escAttr(r.itemName)+' <span class="muted">('+escAttr(r.unit)+')</span></td>';
+    html += '<td><input class="in-num" type="number" min="0" step="any" value="'+r.stock+'" oninput="invCountOCRRows['+idx+'].stock=this.value!==\'\'?parseFloat(this.value):null"></td>';
+    html += '<td><input class="in-num" type="number" min="0" step="any" value="'+(r.used!==null?r.used:'')+'" oninput="invCountOCRRows['+idx+'].used=this.value!==\'\'?parseFloat(this.value):null"></td>';
+    html += '<td class="muted">'+escAttr(r.raw)+'</td></tr>';
+  });
+  html += '</tbody></table><div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-gold" onclick="applyInvCountOCRRows()">✓ 確認回填盤點表</button><button class="btn btn-outline btn-sm" onclick="document.getElementById(\'inv-count-ocr-area\').innerHTML=\'\';invCountOCRRows=[]">清除</button></div>';
+  area.innerHTML = html;
+}
+
+function applyInvCountOCRRows() {
+  var count = 0;
+  invCountOCRRows.forEach(function(r) {
+    if (!r.include || r.stock === null || isNaN(r.stock)) return;
+    var stockEl = document.getElementById('inv-stock-'+r.itemId);
+    var usedEl = document.getElementById('inv-used-'+r.itemId);
+    if (stockEl) stockEl.value = r.stock;
+    if (usedEl && r.used !== null && !isNaN(r.used)) usedEl.value = r.used;
+    autoSaveInvItem(r.itemId);
+    count++;
+  });
+  document.getElementById('inv-count-ocr-area').innerHTML = '';
+  invCountOCRRows = [];
+  renderInventory();
+  alert('已回填並儲存 '+count+' 筆盤點資料。');
 }
 
 // ── 進貨登記 UI ─────────────────────────────────────────
@@ -4324,7 +4583,63 @@ function confirmBatchRestock() {
   alert('已登記 '+savedCount+' 筆進貨紀錄');
 }
 
-// ── 截圖 OCR（瀏覽器端，純前端，無需金鑰）─────────────────
+// ── Claude AI 影像辨識（主力）────────────────────────────
+// 走 Railway 上的 LINE Bot 後端 /api/ocr，用 Claude 視覺模型讀照片，
+// 收據、淘寶截圖（簡體字）、手寫盤點表都讀得懂。
+// Tesseract 降級為備援：AI 服務連不上時才啟用。
+var OCR_API_URL = 'https://line-ai-helper-production.up.railway.app/api/ocr';
+
+// 照片先在瀏覽器端縮到長邊 1568px、JPEG 85%，
+// 上傳量從好幾 MB 降到幾百 KB，辨識速度快、也不會撞到 API 的圖片大小上限。
+function fileToOCRBase64(file, maxSide) {
+  maxSide = maxSide || 1568;
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error('照片讀取失敗')); };
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onerror = function(){ reject(new Error('照片格式無法解析')); };
+      img.onload = function() {
+        var w = img.width, h = img.height;
+        if (w > maxSide || h > maxSide) {
+          var ratio = Math.min(maxSide / w, maxSide / h);
+          w = Math.round(w * ratio); h = Math.round(h * ratio);
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// mode: 'receipt'（記帳收據/購物截圖）或 'countsheet'（手寫盤點表）
+function claudeOCR(base64List, mode) {
+  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function(){ ctl.abort(); }, 90000) : null;
+  return fetch(OCR_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: mode, images: base64List }),
+    signal: ctl ? ctl.signal : undefined
+  }).then(function(r) {
+    if (timer) clearTimeout(timer);
+    if (!r.ok) throw new Error('AI 服務回應 ' + r.status);
+    return r.json();
+  }).then(function(j) {
+    if (j.error) throw new Error(j.error);
+    return j;
+  }).catch(function(err) {
+    if (timer) clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error('AI 辨識逾時（90秒）');
+    throw err;
+  });
+}
+
+// ── 截圖 OCR（瀏覽器端備援，無需金鑰）─────────────────
 var tesseractLoaded = false;
 function loadTesseractScript() {
   return new Promise(function(resolve, reject) {
@@ -4519,18 +4834,31 @@ function renderInvStats() {
   html += '</div>';
 
   // 各品項消耗趨勢表
-  html += '<table><thead><tr><th>類別</th><th>品項</th><th style="width:44px">圖片</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>預估還能撐</th><th>本週建議訂購量</th></tr></thead><tbody>';
+  html += '<table><thead><tr><th>類別</th><th>品項</th><th style="width:44px">圖片</th><th>目前庫存</th><th>安全庫存</th><th>近6週平均週消耗</th><th>近90天叫貨</th><th>預估還能撐</th><th>本週建議訂購量</th></tr></thead><tbody>';
   sortInvItems(items).forEach(function(it) {
     var curStock = computeCurrentStock(it.id, weekKey);
-    var avgUsage = computeAvgWeeklyUsage(it.id, weekKey, 6);
+    var usageStats = computeWeeklyUsageStats(it.id, weekKey, 6);
+    var avgUsage = usageStats.avg;
+    var restockStats = computeInvRestockStats(it.id, weekKey);
+    var estU = (it.estUsage != null && parseFloat(it.estUsage) > 0) ? parseFloat(it.estUsage) : null;
     var weeksLeftStr = '—';
     if (curStock !== null && avgUsage && avgUsage > 0) {
       weeksLeftStr = (curStock / avgUsage).toFixed(1) + ' 週';
+    } else if (curStock !== null && estU && usageStats.samples < INV_MIN_USAGE_SAMPLES_FOR_FORECAST) {
+      weeksLeftStr = (curStock / estU).toFixed(1) + ' 週 <span class="muted">(預估)</span>';
     }
     var order = computeOrderQty(it.id, weekKey, it.safeStock);
     var orderStr = '<span class="muted">—</span>';
     if (order.qty !== null) {
-      if (order.qty > 0) {
+      if (order.basis === 'estimate') {
+        orderStr = order.qty > 0
+          ? '<span style="color:var(--red);font-weight:600">'+order.qty+' '+it.unit+'</span> <span class="muted">依人工預估，實際資料 '+order.samples+'/'+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+'</span>'
+          : '<span style="color:var(--green)">0</span> <span class="muted">依人工預估</span>';
+      } else if (order.basis === 'learning') {
+        orderStr = order.qty > 0
+          ? '<span style="color:var(--red);font-weight:600">'+order.qty+' '+it.unit+'</span> <span class="muted">先補安全庫存，累積中 '+order.samples+'/'+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+'</span>'
+          : '<span class="muted">先累積資料 '+order.samples+'/'+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+'</span>';
+      } else if (order.qty > 0) {
         orderStr = '<span style="color:var(--red);font-weight:600">'+order.qty+' '+it.unit+'</span>';
       } else {
         var cautionLine2 = getInvCautionLine(it.safeStock);
@@ -4546,7 +4874,12 @@ function renderInvStats() {
     html += '<td style="text-align:center">'+imgInline2+'</td>';
     html += '<td>'+(curStock !== null ? curStock+' '+it.unit : '<span class="muted">未盤點</span>')+'</td>';
     html += '<td class="muted">'+it.safeStock+'</td>';
-    html += '<td>'+(avgUsage !== null ? avgUsage.toFixed(1)+' '+it.unit : '<span class="muted">資料不足</span>')+'</td>';
+    var usageCell;
+    if (avgUsage !== null) usageCell = avgUsage.toFixed(1)+' '+it.unit+' <span class="muted">('+usageStats.samples+'筆)</span>';
+    else if (estU) usageCell = '<span style="color:var(--gold2)">'+estU+' '+it.unit+'</span> <span class="muted">(人工預估)</span>';
+    else usageCell = '<span class="muted">資料不足</span>';
+    html += '<td>'+usageCell+'</td>';
+    html += '<td>'+(restockStats.count90 > 0 ? restockStats.monthlyCalls.toFixed(1)+' 次/月，均 '+restockStats.avgQty.toFixed(1)+' '+it.unit : '<span class="muted">尚無</span>')+'</td>';
     html += '<td>'+weeksLeftStr+'</td>';
     html += '<td>'+orderStr+'</td>';
     html += '</tr>';
