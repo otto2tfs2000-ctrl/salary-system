@@ -428,11 +428,12 @@ function getDayAgg(store, mKey, day) {
     r.newCust += e.newCust || 0;
     r.oldCust += e.oldCust || 0;
     Object.keys(e.teachers||{}).forEach(tid => {
-      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
+      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, campCount:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
       const td = e.teachers[tid];
       // 人次/場次一律正常累計（獎金、講師費照算，不因總部代課而扣除）
       r.teachers[tid].count        += parseFloat(td.count)        || 0;
       r.teachers[tid].outsideCount += parseFloat(td.outsideCount) || 0;
+      r.teachers[tid].campCount    += parseFloat(td.campCount)    || 0;
       r.teachers[tid].master       += td.master       || 0;
       r.teachers[tid].assist       += td.assist       || 0;
       r.teachers[tid].junior       += td.junior       || 0;
@@ -484,6 +485,7 @@ function openEditEntry(store, mKey, day, idx) {
       '<td><strong>' + t.name + '</strong></td>' +
       '<td><input type="number" class="in-num" id="ee_c_' + t.id + '" value="' + (td.count||0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_o_' + t.id + '" value="' + (td.outsideCount||0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="ee_p_' + t.id + '" value="' + (td.campCount||0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0" onwheel="this.blur()"></td>' +
@@ -503,7 +505,7 @@ function openEditEntry(store, mKey, day, idx) {
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
-    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
+    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>營隊人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="display:flex;gap:10px;margin-top:16px">' +
     '<button class="btn btn-gold" onclick="saveEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
@@ -527,15 +529,16 @@ function saveEditEntry(store, mKey, day, idx) {
   teachers.forEach(function(t) {
     var c = parseFloat(document.getElementById('ee_c_' + t.id)?.value) || 0;
     var o = parseFloat(document.getElementById('ee_o_' + t.id)?.value) || 0;
+    var p = parseFloat(document.getElementById('ee_p_' + t.id)?.value) || 0;
     var m = parseInt(document.getElementById('ee_m_' + t.id)?.value) || 0;
     var a = parseInt(document.getElementById('ee_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('ee_j_' + t.id)?.value) || 0;
     var n = document.getElementById('ee_n_' + t.id)?.value || '';
     var s = getFBSalesByDay(getSalesKey(t.name), selM_edit, day, store);
-    if (c||o||m||a||j) {
+    if (c||o||p||m||a||j) {
       var prev = entry.teachers?.[t.id] || {};
       var hq = document.getElementById('ee_hq_' + t.id) ? (document.getElementById('ee_hq_' + t.id).checked ? 1 : 0) : (prev.hq || 0);
-      entry.teachers[t.id] = {count:c, outsideCount:o, master:m, assist:a, junior:j, note:n, sales:s, trainingFee:prev.trainingFee||0, hq:hq};
+      entry.teachers[t.id] = {count:c, outsideCount:o, campCount:p, master:m, assist:a, junior:j, note:n, sales:s, trainingFee:prev.trainingFee||0, hq:hq};
     }
   });
 
@@ -623,6 +626,7 @@ function renderDayForm() {
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
       '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_p_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
@@ -648,6 +652,7 @@ function renderDayForm() {
         var parts = [];
         if (td.count) parts.push(td.count + '人次' + (td.hq?'（總部代課）':''));
         if (td.outsideCount) parts.push('外派' + td.outsideCount);
+        if (td.campCount) parts.push('營隊' + td.campCount);
         var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
         if (lec) parts.push('講師費$' + lec.toLocaleString());
         if (td.sales) parts.push('業績$' + td.sales.toLocaleString());
@@ -696,6 +701,7 @@ function renderDayForm() {
     '<th>老師</th>' +
     '<th>一般人次<br><span style="font-size:10px;color:var(--green)">計獎金</span></th>' +
     '<th>外派人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
+    '<th>營隊人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
     '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
     '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
     '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
@@ -801,6 +807,7 @@ function submitEntry(store, mKey, day) {
   teachers.forEach(function(t) {
     var c = parseFloat(document.getElementById('inp_c_' + t.id)?.value) || 0;
     var o = parseFloat(document.getElementById('inp_o_' + t.id)?.value) || 0;
+    var p = parseFloat(document.getElementById('inp_p_' + t.id)?.value) || 0;
     var m = parseInt(document.getElementById('inp_m_' + t.id)?.value) || 0;
     var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
@@ -808,7 +815,7 @@ function submitEntry(store, mKey, day) {
     var s = getFBSalesByDay(getSalesKey(t.name), selM_submit, day, store);
     var tf = parseInt(document.getElementById('inp_tf_' + t.id)?.value) || 0;
     var hq = document.getElementById('inp_hq_' + t.id)?.checked ? 1 : 0;
-    if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf,hq:hq}; }
+    if (c||o||p||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,campCount:p,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf,hq:hq}; }
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
   addEntry(store, mKey, day, entry);
@@ -823,7 +830,7 @@ function aggregateMonth(store, mKey) {
   var teachers = getTeachers(store);
   var totals = { newCust:0, oldCust:0, teachers:{} };
   teachers.forEach(function(t) {
-    totals.teachers[t.id] = { count:0, outsideCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
+    totals.teachers[t.id] = { count:0, outsideCount:0, campCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
   });
   for (var d=1; d<=days; d++) {
     var agg = getDayAgg(store, mKey, d);
@@ -833,6 +840,7 @@ function aggregateMonth(store, mKey) {
       var td = agg.teachers[t.id] || {};
       totals.teachers[t.id].count        += parseFloat(td.count)        || 0;
       totals.teachers[t.id].outsideCount += parseFloat(td.outsideCount) || 0;
+      totals.teachers[t.id].campCount    += parseFloat(td.campCount)    || 0;
       totals.teachers[t.id].master       += td.master       || 0;
       totals.teachers[t.id].assist       += td.assist       || 0;
       totals.teachers[t.id].junior       += td.junior       || 0;
@@ -864,13 +872,14 @@ function renderMonthly() {
   if (!teachers.length) { el.innerHTML = '<div class="card"><div class="empty">此分店尚無老師。</div></div>'; return; }
 
   var totals = aggregateMonth(store, mKey);
-  var tCount=0, tOutside=0, tLec=0, tSales=0;
+  var tCount=0, tOutside=0, tCamp=0, tLec=0, tSales=0;
   var selM_monthly = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
     var tt = totals.teachers[t.id];
     var tLecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
     tCount   += tt.count;
     tOutside += tt.outsideCount;
+    tCamp    += tt.campCount || 0;
     tLec     += Math.round((tt.master*2000 + tt.assist*1500 + tt.junior*1000) * tLecRate);
     var fbAmt = getFBSales(getSalesKey(t.name), selM_monthly, store);
     tSales   += fbAmt > 0 ? fbAmt : (tt.sales||0);
@@ -879,6 +888,7 @@ function renderMonthly() {
   var statHtml = '<div class="stat-grid">' +
     '<div class="stat-card"><div class="lbl">教學人次</div><div class="val">' + tCount + '</div></div>' +
     '<div class="stat-card"><div class="lbl">外派人次</div><div class="val">' + (tOutside||'—') + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">營隊人次</div><div class="val">' + (tCamp||'—') + '</div></div>' +
     '<div class="stat-card"><div class="lbl">新客</div><div class="val">' + totals.newCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
@@ -904,6 +914,7 @@ function renderMonthly() {
       '<td><span class="badge ' + (t.role==='sales'?'b-purple':t.role==='admin'?'b-blue':'b-gray') + '">' + ROLE_NAME[t.role||'teacher'] + '</span></td>' +
       '<td>' + tt.count + '</td>' +
       '<td class="' + (tt.outsideCount?'auto-val':'zero-val') + '">' + (tt.outsideCount||'—') + '</td>' +
+      '<td class="' + (tt.campCount?'auto-val':'zero-val') + '">' + (tt.campCount||'—') + '</td>' +
       '<td>' + (tt.master||'—') + '</td>' +
       '<td>' + (tt.assist||'—') + '</td>' +
       '<td>' + (tt.junior||'—') + '</td>' +
@@ -922,6 +933,7 @@ function renderMonthly() {
     '<td>合計</td><td>—</td>' +
     '<td>' + tCount + '</td>' +
     '<td>' + (tOutside||'—') + '</td>' +
+    '<td>' + (tCamp||'—') + '</td>' +
     '<td>—</td><td>—</td><td>—</td>' +
     '<td>$' + tLec.toLocaleString() + '</td>' +
     '<td>' + (teachers.reduce(function(s,t){return s+(totals.teachers[t.id]?.trainingFee||0);},0)?'$'+teachers.reduce(function(s,t){return s+(totals.teachers[t.id]?.trainingFee||0);},0).toLocaleString():'—') + '</td>' +
@@ -968,24 +980,24 @@ function renderMonthly() {
   var selM = parseInt(document.getElementById('selMonth').value);
   var days = getDaysInMonth(selY, selM);
   var dailyRows = '';
-  var dNewSum=0, dOldSum=0, dCountSum=0, dOutsideSum=0, dLecSum=0, dSalesSum=0;
+  var dNewSum=0, dOldSum=0, dCountSum=0, dOutsideSum=0, dCampSum=0, dLecSum=0, dSalesSum=0;
 
   for (var d=1; d<=days; d++) {
     var agg2 = getDayAgg(store, mKey, d);
     var dd = new Date(selY,selM-1,d);
     var wd = ['日','一','二','三','四','五','六'][dd.getDay()];
     var isWkend = dd.getDay()===0||dd.getDay()===6;
-    var dc=0, do2=0, dl=0, ds=0;
+    var dc=0, do2=0, dp=0, dl=0, ds=0;
     teachers.forEach(function(t) {
       var td = agg2.teachers[t.id]||{};
-      dc += parseFloat(td.count)||0; do2 += parseFloat(td.outsideCount)||0;
+      dc += parseFloat(td.count)||0; do2 += parseFloat(td.outsideCount)||0; dp += parseFloat(td.campCount)||0;
       var dLecRate = (t.lecRate !== undefined && t.lecRate !== null && t.lecRate !== '') ? parseFloat(t.lecRate) : 1;
       dl += Math.round(((td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000) * dLecRate);
       var fbDayAmt = getFBSalesByDay(getSalesKey(t.name), selM, d, store);
       ds += fbDayAmt > 0 ? fbDayAmt : (td.sales||0);
     });
     dNewSum+=agg2.newCust; dOldSum+=agg2.oldCust;
-    dCountSum+=dc; dOutsideSum+=do2; dLecSum+=dl; dSalesSum+=ds;
+    dCountSum+=dc; dOutsideSum+=do2; dCampSum+=dp; dLecSum+=dl; dSalesSum+=ds;
 
     var entries2 = getDayEntries(store, mKey, d);
     var detHtml = '';
@@ -995,12 +1007,13 @@ function renderMonthly() {
       var tl = Math.round(((td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000) * dLecRate2);
       var fbDayAmt2 = getFBSalesByDay(getSalesKey(t.name), selM, d, store);
       var dayDispSales = fbDayAmt2 > 0 ? fbDayAmt2 : (td.sales||0);
-      if (td.count||td.outsideCount||tl||dayDispSales) {
+      if (td.count||td.outsideCount||td.campCount||tl||dayDispSales) {
         detHtml += '<tr style="background:rgba(0,0,0,0.015)">' +
           '<td style="padding-left:28px;color:var(--text2);font-size:12px">└ ' + t.name + '</td>' +
           '<td></td><td></td>' +
           '<td style="font-size:12px;color:var(--text2)">' + (td.count||'—') + '</td>' +
           '<td style="font-size:12px;color:var(--text2)">' + (td.outsideCount||'—') + '</td>' +
+          '<td style="font-size:12px;color:var(--text2)">' + (td.campCount||'—') + '</td>' +
           '<td style="font-size:12px;color:var(--text2)">' + (tl?'$'+tl.toLocaleString():'—') + '</td>' +
           '<td style="font-size:12px;color:var(--text2)">' + (dayDispSales?'$'+dayDispSales.toLocaleString():'—') + '</td>' +
           '</tr>';
@@ -1017,12 +1030,13 @@ function renderMonthly() {
       '<td>' + (agg2.oldCust||0) + '</td>' +
       '<td class="' + (dc?'auto-val':'zero-val') + '">' + (dc||'—') + '</td>' +
       '<td class="' + (do2?'auto-val':'zero-val') + '">' + (do2||'—') + '</td>' +
+      '<td class="' + (dp?'auto-val':'zero-val') + '">' + (dp||'—') + '</td>' +
       '<td class="' + (dl?'auto-val':'zero-val') + '">' + (dl?'$'+dl.toLocaleString():'—') + '</td>' +
       '<td class="' + (ds?'auto-val':'zero-val') + '">' + (ds?'$'+ds.toLocaleString():'—') + '</td>' +
       (function(){ var rv = S.daily[dayKey(store,mKey,d)]?.revenue||0; return '<td class="' + (rv?'auto-val':'zero-val') + '" style="color:var(--gold2)">' + (rv?'$'+rv.toLocaleString():'—') + '</td>'; })() +
       '</tr>';
     if (detHtml) {
-      dailyRows += '<tr id="' + rowId + '" style="display:none"><td colspan="8" style="padding:0">' +
+      dailyRows += '<tr id="' + rowId + '" style="display:none"><td colspan="9" style="padding:0">' +
         '<table style="width:100%;border-collapse:collapse">' + detHtml + '</table></td></tr>';
     }
   }
@@ -1030,6 +1044,7 @@ function renderMonthly() {
     '<td>' + dNewSum + '</td><td>' + dOldSum + '</td>' +
     '<td>' + dCountSum + '</td>' +
     '<td>' + (dOutsideSum||'—') + '</td>' +
+    '<td>' + (dCampSum||'—') + '</td>' +
     '<td>' + (dLecSum?'$'+dLecSum.toLocaleString():'—') + '</td>' +
     '<td>' + (dSalesSum?'$'+dSalesSum.toLocaleString():'—') + '</td>' +
     (function(){ var _y2=parseInt(document.getElementById('selYear').value); var _m2=parseInt(document.getElementById('selMonth').value); var totalRev2=0; for(var dd=1;dd<=getDaysInMonth(_y2,_m2);dd++){totalRev2+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<td style="color:var(--gold2)">' + (totalRev2?'$'+totalRev2.toLocaleString():'—') + '</td>'; })() +
@@ -1043,7 +1058,7 @@ function renderMonthly() {
     '<button class="btn btn-dl btn-sm" onclick="dlPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button>' +
     '</div></div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>老師</th><th>職位</th><th>一般人次</th><th>外派人次</th>' +
+    '<th>老師</th><th>職位</th><th>一般人次</th><th>外派人次</th><th>營隊人次</th>' +
     '<th>外派主教</th><th>外派助教</th><th>小老師場</th>' +
     '<th>講師費</th><th>外派培訓費</th><th>業績金額</th>' +
     (store==='flagship'?'<th>米雪支援時數</th>':'') +
@@ -1052,7 +1067,7 @@ function renderMonthly() {
   var dailyTable = '<div class="card">' +
     '<div class="card-title">📆 每日明細 <span style="font-size:11px;color:var(--text3);font-weight:400">有 ▶ 可點開看老師明細</span></div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>講師費</th><th>業績</th><th style="color:var(--gold2)">營收</th>' +
+    '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>營隊人次</th><th>講師費</th><th>業績</th><th style="color:var(--gold2)">營收</th>' +
     '</tr></thead><tbody>' + dailyRows + '</tbody></table></div></div>';
 
   el.innerHTML = statHtml + ptHtml + summaryTable + dailyTable;
@@ -1467,21 +1482,21 @@ function dlExcel(store, mKey) {
   var days = getDaysInMonth(selY, selM);
   var wb = XLSX.utils.book_new();
   var sumData = [['Otto2 ARTCLUB ' + STORE_NAME[store] + ' 月報 - ' + mKey],[],
-    ['姓名','職位','一般人次','外派人次','外派主教','外派助教','小老師','講師費','業績金額']];
+    ['姓名','職位','一般人次','外派人次','營隊人次','外派主教','外派助教','小老師','講師費','業績金額']];
   teachers.forEach(function(t) {
     var tt = totals.teachers[t.id]||{};
     var lec = (tt.master||0)*2000+(tt.assist||0)*1500+(tt.junior||0)*1000;
-    sumData.push([t.name,ROLE_NAME[t.role||'teacher'],tt.count||0,tt.outsideCount||0,tt.master||0,tt.assist||0,tt.junior||0,lec,tt.sales||0]);
+    sumData.push([t.name,ROLE_NAME[t.role||'teacher'],tt.count||0,tt.outsideCount||0,tt.campCount||0,tt.master||0,tt.assist||0,tt.junior||0,lec,tt.sales||0]);
   });
   sumData.push([],['新客',totals.newCust,'舊客',totals.oldCust]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sumData), '月報');
   var hdr = ['日期','新客','舊客'];
-  teachers.forEach(function(t){ hdr.push(t.name+'人次',t.name+'外派',t.name+'業績'); });
+  teachers.forEach(function(t){ hdr.push(t.name+'人次',t.name+'外派',t.name+'營隊',t.name+'業績'); });
   var dailyData = [hdr];
   for (var d=1;d<=days;d++) {
     var agg = getDayAgg(store, mKey, d);
     var row = [mKey+'-'+String(d).padStart(2,'0'), agg.newCust||0, agg.oldCust||0];
-    teachers.forEach(function(t){ var td=agg.teachers[t.id]||{}; row.push(td.count||0,td.outsideCount||0,td.sales||0); });
+    teachers.forEach(function(t){ var td=agg.teachers[t.id]||{}; row.push(td.count||0,td.outsideCount||0,td.campCount||0,td.sales||0); });
     dailyData.push(row);
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dailyData), '每日明細');
@@ -1627,13 +1642,13 @@ function dlPDF(store, mKey) {
   var rows = teachers.map(function(t) {
     var tt = totals.teachers[t.id]||{};
     var lec = (tt.master||0)*2000+(tt.assist||0)*1500+(tt.junior||0)*1000;
-    return '<tr><td>'+t.name+'</td><td>'+ROLE_NAME[t.role||'teacher']+'</td><td>'+(tt.count||0)+'</td><td>'+(tt.outsideCount||0)+'</td><td>$'+lec.toLocaleString()+'</td><td>$'+(tt.sales||0).toLocaleString()+'</td></tr>';
+    return '<tr><td>'+t.name+'</td><td>'+ROLE_NAME[t.role||'teacher']+'</td><td>'+(tt.count||0)+'</td><td>'+(tt.outsideCount||0)+'</td><td>'+(tt.campCount||0)+'</td><td>$'+lec.toLocaleString()+'</td><td>$'+(tt.sales||0).toLocaleString()+'</td></tr>';
   }).join('');
   var w = window.open('','_blank');
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:8px}th{background:#f5f5f5}</style></head><body>'+
     '<h2>Otto2 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</h2>'+
     '<p>新客：'+totals.newCust+' ｜ 舊客：'+totals.oldCust+'</p>'+
-    '<table><thead><tr><th>姓名</th><th>職位</th><th>人次</th><th>外派</th><th>講師費</th><th>業績</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<table><thead><tr><th>姓名</th><th>職位</th><th>人次</th><th>外派</th><th>營隊</th><th>講師費</th><th>業績</th></tr></thead><tbody>'+rows+'</tbody></table>'+
     '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
   w.document.close();
 }
@@ -1654,5 +1669,3 @@ function dlSalaryPDF(store, mKey) {
     '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');
   w.document.close();
 }
-
-
