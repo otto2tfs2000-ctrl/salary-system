@@ -1123,17 +1123,68 @@ function printInvBlankSheet() {
   if (items.length === 0) { alert('尚無品項，請先新增品項。'); return; }
   var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
   var weekKey = invCurWeek;
-  var rows = items.map(function(it, idx) {
-    var code = idx + 1;
-    return '<tr><td>'+code+'</td><td>'+escAttr(it.cat)+'</td><td>'+escAttr(it.name)+'</td><td>'+escAttr(it.unit)+'</td><td></td><td></td></tr>';
-  }).join('');
+
+  var ROWS = 24;              // 每一欄的列數
+  var PER_PAGE = ROWS * 2;    // 一張 A4 兩大欄
+
+  function row(it, no) {
+    if (!it) return '<tr><td class="no"></td><td class="cat"></td><td class="nm"></td><td class="un"></td><td></td></tr>';
+    return '<tr><td class="no">'+no+'</td><td class="cat">'+escAttr(it.cat)+'</td>'+
+           '<td class="nm">'+escAttr(it.name)+'</td><td class="un">'+escAttr(it.unit)+'</td><td></td></tr>';
+  }
+
+  function block(list, startNo, pad) {
+    var body = '';
+    for (var i = 0; i < list.length; i++) body += row(list[i], startNo + i);
+    for (var j = 0; j < pad; j++) body += row(null, '');
+    return '<table><colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>'+
+      '<thead><tr><th>編號</th><th>類別</th><th>品項</th><th>單位</th><th>實際庫存</th></tr></thead>'+
+      '<tbody>'+body+'</tbody></table>';
+  }
+
+  var pagesHtml = '';
+  for (var p = 0; p * PER_PAGE < items.length; p++) {
+    var chunk = items.slice(p * PER_PAGE, (p + 1) * PER_PAGE);
+    var half = Math.min(ROWS, Math.ceil(chunk.length / 2));
+    var left = chunk.slice(0, half);
+    var right = chunk.slice(half);
+    var isLast = (p + 1) * PER_PAGE >= items.length;
+    var padL = isLast ? 0 : ROWS - left.length;
+    var padR = isLast ? 2 : ROWS - right.length;   // 最後一頁多留 2 列給臨時品項
+    var base = p * PER_PAGE;
+    pagesHtml += '<div class="sheet">'+
+      '<div class="head"><h1>Otto2 ARTCLUB '+storeName+' 庫存盤點</h1>'+
+      '<div class="meta">週次 '+invWeekLabel(weekKey)+'　盤點人 ＿＿＿＿＿　日期 ＿＿＿＿＿'+
+      (p > 0 ? '　（第 '+(p+1)+' 頁）' : '')+'</div></div>'+
+      '<div class="cols">'+block(left, base + 1, padL)+block(right, base + left.length + 1, padR)+'</div>'+
+      '</div>';
+  }
+
+  var css = '@page{size:A4 portrait;margin:11mm 9mm}'+
+    '*{box-sizing:border-box}'+
+    'body{font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;color:#111;background:#fff;margin:0;padding:16px}'+
+    '.sheet{page-break-after:always}.sheet:last-child{page-break-after:auto}'+
+    '.head{border-bottom:2.5px solid #111;padding-bottom:5px;margin-bottom:9px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}'+
+    'h1{font-size:18px;margin:0;letter-spacing:1px}'+
+    '.meta{font-size:12px;color:#444}'+
+    '.cols{display:flex;gap:7mm;align-items:flex-start}'+
+    'table{width:100%;border-collapse:collapse;table-layout:fixed}'+
+    'th,td{border:1px solid #444;text-align:center;overflow:hidden}'+
+    'th{background:#ebebeb;font-size:11px;font-weight:600;padding:5px 0}'+
+    'td{height:26px;font-size:12.5px}'+
+    'tbody tr:nth-child(even) td{background:#f6f6f6}'+
+    '.c1{width:12%}.c2{width:19%}.c3{width:37%}.c4{width:12%}.c5{width:20%}'+
+    '.no{color:#555;font-size:11px}'+
+    '.cat{color:#555;font-size:10.5px}'+
+    '.nm{font-weight:600;font-size:12.5px;border-right:2px solid #111;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}'+
+    '.un{color:#555;font-size:10.5px}'+
+    '@media print{.noprint{display:none}body{padding:0}}';
+
   var html = '<!doctype html><html><head><meta charset="utf-8"><title>庫存盤點空白表</title>'+
-    '<style>body{font-family:"Noto Sans TC",Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 6px}p{margin:0 0 14px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #333;padding:8px 10px;text-align:left}th{background:#eee}.box{height:28px}@media print{button{display:none}body{padding:0}}</style></head><body>'+
-    '<button onclick="window.print()" style="margin-bottom:12px;padding:8px 14px">列印</button>'+
-    '<h1>Otto2 ARTCLUB '+storeName+' 庫存盤點</h1>'+
-    '<p>週次：'+invWeekLabel(weekKey)+'　盤點人：＿＿＿＿＿　日期：＿＿＿＿＿</p>'+
-    '<table><thead><tr><th style="width:48px">編號</th><th style="width:90px">類別</th><th>品項</th><th style="width:60px">單位</th><th style="width:120px">目前實際庫存</th><th style="width:120px">本週用掉</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    '</body></html>';
+    '<style>'+css+'</style></head><body>'+
+    '<button class="noprint" onclick="window.print()" style="margin-bottom:12px;padding:8px 14px">列印</button>'+
+    pagesHtml+'</body></html>';
+
   var w = window.open('', '_blank');
   if (!w) { alert('瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。'); return; }
   w.document.open();
@@ -1198,7 +1249,7 @@ function handleInvCountPhoto(event) {
       invCountOCRRows = parseInvCountOCRText(text);
       renderInvCountOCRPreview(text);
     }).catch(function(err) {
-      area.innerHTML = '<div class="info-box" style="color:var(--red)">✗ 盤點照片辨識失敗：'+escAttr(err.message)+'。可以先印空白表，填寫時把「編號」和數字寫清楚再拍一次。</div>';
+      area.innerHTML = '<div class="info-box" style="color:var(--red)">✗ 盤點照片辨識失敗：'+escAttr(err.message)+'。可以先印空白表，填寫時把「編號」和「實際庫存」的數字寫清楚再拍一次。</div>';
     });
   }).finally(function() {
     event.target.value = '';
@@ -1209,7 +1260,7 @@ function renderInvCountOCRPreview(rawText) {
   var area = document.getElementById('inv-count-ocr-area');
   if (!area) return;
   if (!invCountOCRRows.length) {
-    area.innerHTML = '<div class="info-box" style="color:var(--red)">沒有讀到可回填的盤點數字。建議列印空白表後，在每列寫「編號、目前實際庫存、本週用掉」再拍照。</div>'+
+    area.innerHTML = '<div class="info-box" style="color:var(--red)">沒有讀到可回填的盤點數字。建議列印空白表後，在每列寫清楚「編號」和「實際庫存」再拍照。</div>'+
       '<details style="font-size:12px;color:var(--text3)"><summary>查看讀到的文字</summary><pre style="white-space:pre-wrap">'+escAttr(rawText || '')+'</pre></details>';
     return;
   }
