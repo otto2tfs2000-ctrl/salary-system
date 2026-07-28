@@ -199,7 +199,9 @@ function listInvRestocks(fromDateKey, toDateKey) {
 //   - 每一週若有填「用掉量」，扣掉；若中途又出現新的盤點實際值，直接校準取代基準。
 //   - 同時，任何「在基準 savedAt 之後、且發生時間落在目標週週日之前」的進貨，全部加回去——
 //     不分是哪一週、不論該週有沒有填寫盤點資料，只看時間先後，避免重複或漏算。
-function computeCurrentStock(itemId, weekKey) {
+// 回傳庫存的「組成明細」，讓畫面可以攤開成：基準盤點 －用掉 ＋進料 ＝ 目前庫存。
+// computeCurrentStock 只是取其中的 total，兩者共用同一份算法，不會各算各的。
+function computeStockBreakdown(itemId, weekKey) {
   var st = getInvStore();
   var targetMonday = new Date(weekKey + 'T00:00:00');
   var targetNextMonday = new Date(targetMonday); targetNextMonday.setDate(targetNextMonday.getDate()+7);
@@ -208,19 +210,25 @@ function computeCurrentStock(itemId, weekKey) {
   var rec = getInvWeekRecord(itemId, weekKey);
   if (rec && typeof rec.stock === 'number') {
     // 目標週本身就有盤點實際值：採用該值，再加上盤點完成之後（同一週內）新登記的進貨
-    return rec.stock + getInvRestockQtyAfterTimestamp(itemId, rec.savedAt || 0, targetBoundary);
+    var addNow = getInvRestockQtyAfterTimestamp(itemId, rec.savedAt || 0, targetBoundary);
+    return { total: rec.stock + addNow, base: rec.stock, baseWeek: weekKey,
+             baseLabel: '本週盤點', usedTotal: 0, restock: addNow };
   }
 
   var anchor = getInvLatestStockBefore(itemId, weekKey);
   if (!anchor) {
     // 從未盤點過，但若已經有進貨登記，至少能呈現「目前累積進貨量」，比完全沒有資料好
     var totalRestock = getInvRestockQtyAfterTimestamp(itemId, 0, targetBoundary);
-    return totalRestock > 0 ? totalRestock : null;
+    return { total: totalRestock > 0 ? totalRestock : null, base: null, baseWeek: null,
+             baseLabel: '尚未盤點', usedTotal: 0, restock: totalRestock };
   }
   var anchorRec = getInvWeekRecord(itemId, anchor.week);
   var anchorSavedAt = (anchorRec && anchorRec.savedAt) || 0;
 
   var stock = anchor.stock;
+  var baseVal = anchor.stock;
+  var baseWeek = anchor.week;
+  var usedTotal = 0;
   var cursor = new Date(anchor.week + 'T00:00:00');
   var target = new Date(weekKey + 'T00:00:00');
   cursor.setDate(cursor.getDate() + 7); // 從盤點基準週的下一週開始累減「用掉量」
@@ -233,17 +241,26 @@ function computeCurrentStock(itemId, weekKey) {
     var crec = st.weeks[ck] ? st.weeks[ck][itemId] : null;
     if (crec && typeof crec.stock === 'number') {
       stock = crec.stock; // 中途有盤點實際值，重新校準（取代累減，不需再疊加進貨）
+      baseVal = crec.stock; baseWeek = ck; usedTotal = 0;
       lastSavedAt = crec.savedAt || lastSavedAt;
     } else if (crec && typeof crec.used === 'number') {
+      var before = stock;
       stock = Math.max(0, stock - crec.used);
+      usedTotal += (before - stock);
     }
     cursor.setDate(cursor.getDate() + 7);
   }
 
   // 把「lastSavedAt 之後、目標週週日之前」登記的所有進貨，一次性加回去——
   // 不論落在哪一週，時間軸上只算一次，不會跟前面任何一段重疊。
-  stock += getInvRestockQtyAfterTimestamp(itemId, lastSavedAt, targetBoundary);
-  return stock;
+  var add = getInvRestockQtyAfterTimestamp(itemId, lastSavedAt, targetBoundary);
+  return { total: stock + add, base: baseVal, baseWeek: baseWeek,
+           baseLabel: '盤點 ' + baseWeek.slice(5).replace('-', '/'),
+           usedTotal: usedTotal, restock: add };
+}
+
+function computeCurrentStock(itemId, weekKey) {
+  return computeStockBreakdown(itemId, weekKey).total;
 }
 
 // 計算品項過去 N 週的平均消耗量。
@@ -664,9 +681,23 @@ function moveInvItem(id, dir) {
 }
 
 function delInvItem(id) {
-  if (!confirm('刪除這個品項？歷史盤點紀錄會保留但不再顯示。')) return;
   var st = getInvStore();
+  var it = st.items.find(function(x){ return x.id === id; });
+  var name = it ? it.name : ('#' + id);
+  // 先數一下這個品項底下還掛著幾筆進貨，讓使用者知道會一起清掉什麼
+  var restockCount = 0;
+  Object.keys(st.restocks || {}).forEach(function(dk) {
+    st.restocks[dk].forEach(function(r) { if (String(r.itemId) === String(id)) restockCount++; });
+  });
+  var msg = '刪除品項「' + name + '」？\n盤點歷史會保留但不再顯示。';
+  if (restockCount > 0) msg += '\n另有 ' + restockCount + ' 筆進貨紀錄會一併刪除。';
+  if (!confirm(msg)) return;
+
   st.items = st.items.filter(function(x){ return x.id !== id; });
+  Object.keys(st.restocks || {}).forEach(function(dk) {
+    st.restocks[dk] = st.restocks[dk].filter(function(r){ return String(r.itemId) !== String(id); });
+    if (st.restocks[dk].length === 0) delete st.restocks[dk];
+  });
   save();
   renderInvItemList();
   renderInventory();
@@ -991,15 +1022,25 @@ function renderInvWeekTable() {
 
     if (isOpen) {
       html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
-      html += '<th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:70px">上週結餘</th><th style="width:100px">本週用掉</th><th style="width:120px">本週盤點實際庫存</th><th>本週建議訂購量</th>';
+      html += '<th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th style="width:100px">本週用掉</th><th style="width:120px">本週盤點實際庫存</th><th>本週建議訂購量</th>';
       html += '</tr></thead><tbody>';
 
       grpItems.forEach(function(it) {
         var rec = getInvWeekRecord(it.id, weekKey) || {};
-        var prevMonday = new Date(weekKey + 'T00:00:00'); prevMonday.setDate(prevMonday.getDate()-7);
-        var prevKey = invWeekKey(prevMonday);
-        var prevStockObj = getInvLatestStockBefore(it.id, prevKey);
-        var prevStock = prevStockObj ? prevStockObj.stock : null;
+
+        // 目前庫存：基準盤點 －用掉 ＋進料。進貨一登記，這格立刻反映。
+        var bd = computeStockBreakdown(it.id, weekKey);
+        var curCell;
+        if (bd.total === null) {
+          curCell = '<span class="muted">—</span>';
+        } else {
+          var parts = [];
+          if (bd.base !== null) parts.push(bd.baseLabel + ' ' + bd.base);
+          if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
+          if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
+          curCell = '<div style="font-size:15px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
+                  + '<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
+        }
 
         var order = computeOrderQty(it.id, weekKey, it.safeStock);
         var orderHtml = buildOrderStatusHtml(order, it);
@@ -1010,7 +1051,7 @@ function renderInvWeekTable() {
         html += '<td style="text-align:center">'+imgInline+'</td>';
         html += '<td class="muted">'+it.unit+'</td>';
         html += '<td class="muted">'+it.safeStock+'</td>';
-        html += '<td class="muted">'+(prevStock !== null ? prevStock : '—')+'</td>';
+        html += '<td id="inv-cur-'+it.id+'">'+curCell+'</td>';
         html += '<td><input class="in-num" type="number" min="0" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')"></td>';
         html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')"></td>';
         html += '<td id="inv-status-'+it.id+'">'+orderHtml+'</td>';
@@ -1062,6 +1103,14 @@ function buildOrderStatusHtml(order, it) {
   return '<span class="badge b-green">✓ 無需訂購</span>';
 }
 
+// 盤點時間戳（savedAt）只在「實際庫存數字有變動」時才更新。
+// 若每次存檔都重蓋成現在時間，那麼這段期間登記的進貨會被誤判成「盤點前就已到貨」而被扣掉不算，
+// 造成使用者只是改了「用掉量」，先前登記的進料卻無聲無息消失。
+function invKeepSavedAt(prevRec, newStock) {
+  if (prevRec && typeof prevRec.savedAt === 'number' && prevRec.stock === newStock) return prevRec.savedAt;
+  return Date.now();
+}
+
 function autoSaveInvItem(itemId) {
   var weekKey = invCurWeek;
   var st = getInvStore();
@@ -1074,7 +1123,7 @@ function autoSaveInvItem(itemId) {
     // 兩欄都清空時刪除該筆記錄
     delete st.weeks[weekKey][itemId];
   } else {
-    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: Date.now() };
+    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(st.weeks[weekKey][itemId], stock) };
   }
   save();
   // 即時更新建議訂購量
@@ -1085,6 +1134,20 @@ function autoSaveInvItem(itemId) {
     var statusEl = document.getElementById('inv-status-'+itemId);
     if (statusEl) {
       statusEl.innerHTML = buildOrderStatusHtml(order, it);
+    }
+    // 同步刷新「目前庫存」那一格
+    var curEl = document.getElementById('inv-cur-'+itemId);
+    if (curEl) {
+      var b = computeStockBreakdown(itemId, weekKey);
+      if (b.total === null) { curEl.innerHTML = '<span class="muted">—</span>'; }
+      else {
+        var ps = [];
+        if (b.base !== null) ps.push(b.baseLabel + ' ' + b.base);
+        if (b.usedTotal > 0) ps.push('－用 ' + b.usedTotal);
+        if (b.restock > 0) ps.push('<span style="color:var(--green)">＋進 ' + b.restock + '</span>');
+        curEl.innerHTML = '<div style="font-size:15px;font-weight:600;color:' + (b.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + b.total + '</div>'
+                        + '<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:2px">' + ps.join('<br>') + '</div>';
+      }
     }
   }
   // 提示已存
@@ -1107,7 +1170,7 @@ function saveInvWeek() {
     st.weeks[weekKey][it.id] = {
       used: used,
       stock: stock,
-      savedAt: Date.now()
+      savedAt: invKeepSavedAt(st.weeks[weekKey][it.id], stock)
     };
     savedCount++;
   });
@@ -1296,7 +1359,7 @@ function applyInvCountOCRRows() {
 }
 
 // ── 進貨登記 UI ─────────────────────────────────────────
-var invRestockLogOpen = false;
+var invRestockLogOpen = true; // 預設展開，刪除鍵一眼看得到
 
 function toggleInvRestockLog() {
   invRestockLogOpen = !invRestockLogOpen;
@@ -1850,7 +1913,7 @@ function renderInventory() {
   renderInvRestockItemSelect();
   renderInvWeekTable();
   renderInvStats();
-  if (invRestockLogOpen) renderInvRestockLog();
+  renderInvRestockLog();
 }
 
 function dlInventoryExcel() {

@@ -212,7 +212,10 @@
   </div>
 
   <div class="info-box">
-    📅 每週一盤點上週庫存 → 系統依消耗速度直接算出本週該訂多少 → 星期二照建議訂購量訂貨。盤點時填「目前實際庫存」最準；沒空盤點就填「這週用掉多少」，系統幫你扣。建議訂購量＝補到「安全庫存＋未來4週預估消耗」。🚚 材料中途到貨不用等下週一，直接在上方「進貨登記」記一筆，系統會立刻把貨加回目前庫存。
+    📅 <b>週一順序：先盤點，再讓行政動系統。</b> 盤點填「本週盤點實際庫存」最準，有填就以它為準，「本週用掉」不會再重複扣一次（用掉量只拿去算消耗速度與建議訂購量）。<br>
+    🚚 <b>材料中途到貨不用等下週一</b>，直接在上方「進貨登記」記一筆，左邊「目前庫存」立刻加上去，底下還會攤開給你看是怎麼算的。<br>
+    📆 <b>進貨日期一律填「貨實際到的那天」</b>，不是填登記那天。行政週一補週六到的貨，日期就寫週六。<br>
+    ↩️ 行政要補「上週用掉多少」，請先按上面的「← 上週」切到那一週再填，不要填在本週，否則消耗速度會整整晚一週。
   </div>
 
   <div id="inv-summary-bar"></div>
@@ -222,7 +225,7 @@
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
       <span>🚚 進貨登記（材料到貨當天就能記，不用等下週一盤點）</span>
-      <button class="btn-sm btn-outline" onclick="toggleInvRestockLog()"><span id="inv-restock-toggle-label">顯示最近進貨明細</span></button>
+      <button class="btn-sm btn-outline" onclick="toggleInvRestockLog()"><span id="inv-restock-toggle-label">隱藏進貨明細</span></button>
     </div>
     <div class="form-grid">
       <div class="fg"><label>品項</label>
@@ -240,7 +243,7 @@
     </div>
     <button class="btn btn-gold" onclick="submitInvRestock()">+ 登記進貨</button>
     <span id="inv-restock-hint" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
-    <div id="inv-restock-log" style="margin-top:16px;display:none"></div>
+    <div id="inv-restock-log" style="margin-top:16px"></div>
   </div>
 
   <div class="card">
