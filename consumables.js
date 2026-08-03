@@ -6,8 +6,8 @@ const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','�
 
 // 耗材記帳的店別/樓層名稱對照（只影響耗材記帳，不影響每日/月結/薪資/庫存）
 // flagship 為「分樓層之前」的舊資料，獨立保留，不會被自動分配到四樓/二樓，避免資料張冠李戴
-const CM_STORE_NAMES = { '4f':'四樓', '2f':'二樓', 'guotu':'國圖', 'hq':'總部' };
-const CM_STORE_DEPT = { '4f':'旗艦館(4F)Otto2 ART CLUB', '2f':'旗艦館(2F)Otto2 ART CLUB', 'guotu':'國圖店Otto2 ART CLUB', 'hq':'總部Otto2 ART CLUB' };
+const CM_STORE_NAMES = { '4f':'四樓', '2f':'二樓', 'guotu':'國圖', 'hq':'總部', 'camp':'營隊支出' };
+const CM_STORE_DEPT = { '4f':'旗艦館(4F)Otto2 ART CLUB', '2f':'旗艦館(2F)Otto2 ART CLUB', 'guotu':'國圖店Otto2 ART CLUB', 'hq':'總部Otto2 ART CLUB', 'camp':'旗艦館(4F)Otto2 ART CLUB－營隊' };
 
 function getCMMonthKey() {
   var yEl = document.getElementById('cm-selYear');
@@ -454,7 +454,7 @@ function renderConsumables() {
   }
 
   // 渲染統計卡片
-  var statsHtml = '<div class="card"><div class="card-title">📊 本月耗材概況 — '+mKey+' '+{'flagship':'旗艦店','guotu':'國圖店'}[store]+'</div>';
+  var statsHtml = '<div class="card"><div class="card-title">📊 ' + (store==='camp' ? '本月營隊支出概況' : '本月耗材概況') + ' — '+mKey+' '+(CM_STORE_NAMES[store]||store)+'</div>';
   statsHtml += '<div class="stat-grid">';
   statsHtml += '<div class="stat-card"><div class="lbl">本月總支出</div><div class="val">$'+total.toLocaleString()+'</div>'+diffHtml+'</div>';
   statsHtml += '<div class="stat-card"><div class="lbl">筆數</div><div class="val">'+items.length+'</div></div>';
@@ -1038,4 +1038,3 @@ function dlConsumableExcel() {
 const INV_CATS = ['畫布','框木板','飾品配件','顏料','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
 const INV_CAT_ICONS = {'畫布':'🖼','框木板':'🪞','飾品配件':'⏰','顏料':'🎨','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
 // 品項清單從空白開始，不自動帶入任何預設品項，請在「管理品項清單」自行新增。
-
