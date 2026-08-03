@@ -27,6 +27,65 @@ var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c)
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) };
 
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
+var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
+var SEAT_CAP = 5;                 /* 每位老師可帶人數 */
+var bkCourses = null, bkSched = null;
+
+/* 讀 Google 試算表（跟客人端同一份資料） */
+async function bkGviz(sheet){
+  var url="https://docs.google.com/spreadsheets/d/"+SHEET_ID+
+    "/gviz/tq?sheet="+encodeURIComponent(sheet)+"&tqx=out:json";
+  var t=await (await fetch(url)).text();
+  var a=t.indexOf("{"), b=t.lastIndexOf("}");
+  var j=JSON.parse(t.substring(a,b+1));
+  if(!j.table)throw new Error("找不到工作表「"+sheet+"」");
+  return j.table.rows.map(function(r){ return r.c.map(function(c){
+    return c?(c.f==null?c.v:c.f):"" }) });
+}
+function bkNum(v){
+  var m=String(v==null?"":v).replace(/[^\d.]/g,"");
+  return m?Math.round(parseFloat(m)):0;
+}
+async function bkLoadCourses(){
+  if(bkCourses)return;
+  try{
+    var rows=await bkGviz("課程");
+    if(rows.length&&String(rows[0][0]).trim()==="分類")rows.shift();
+    var out=[];
+    rows.forEach(function(r){
+      var name=String(r[1]||"").trim();
+      var on=String(r[7]||"Y").trim().toUpperCase()!=="N";
+      if(!name||!on)return;
+      var spec=String(r[3]||"").trim();
+      out.push({cat:String(r[0]||"").trim(),name:name,spec:spec,
+        dur:String(r[4]||"").trim(),price:bkNum(r[5]),
+        label:name+(spec?"（"+spec+"）":"")});
+    });
+    bkCourses=out;
+  }catch(e){ bkCourses=[]; }
+}
+async function bkLoadSched(){
+  if(bkSched)return;
+  try{
+    var rows=await bkGviz("班表");
+    if(rows.length&&/日期|週/.test(String(rows[0][0])))rows.shift();
+    var m={};
+    rows.forEach(function(r){
+      var d=String(r[0]||"").trim().replace(/-/g,"/");
+      if(d)m[d]=bkNum(r[1]);
+    });
+    bkSched=m;
+  }catch(e){ bkSched={}; }
+}
+/* 那個時段還剩幾位 */
+function bkLeft(dateStr,slot){
+  var cap=(bkSched&&bkSched[dateStr]!=null?bkSched[dateStr]:1)*SEAT_CAP;
+  var used=bkList.filter(function(b){
+    return b.date===dateStr&&(b.slot===slot||b.slot2===slot)&&
+      b.status!=="cancelled"&&b.status!=="expired";
+  }).reduce(function(s,b){ return s+(+b.people||0) },0);
+  return cap-used;
+}
 
 function ds(d){ var p=function(n){return String(n).padStart(2,"0")};
   return d.getFullYear()+"/"+p(d.getMonth()+1)+"/"+p(d.getDate()) }
@@ -357,23 +416,66 @@ async function bkCancel(id){
   bkRefresh();
 }
 
-/* ══ 手動登記 ══ */
+/* ══ 手動登記（代客人預約）══ */
 async function bkManual(){
-  bkSheet('<h3>手動登記預約</h3><div class="bk-sh2">現場／電話／臨時加開</div>'+
+  bkSheet('<h3>手動登記預約</h3><div class="bk-sh2">代客人預約、現場加開</div>'+
    '<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
      '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>'+
-   '<div class="bk-f2"><div class="bk-f"><label>日期</label><input id="mDate" value="'+ds(bkDate)+'"></div>'+
-     '<div class="bk-f"><label>時段</label><select id="mSlot">'+
-       SLOTS.map(function(s){return "<option>"+s+"</option>"}).join("")+'<option>其他</option></select></div></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
+       '<input id="mDate" type="date" value="'+ds(bkDate).replace(/\//g,"-")+'"></div>'+
+     '<div class="bk-f"><label>時段</label><select id="mSlot"></select>'+
+       '<div class="bk-left" id="mLeft"></div></div></div>'+
+   '<div class="bk-f"><label>課程</label><select id="mCourse"><option value="">載入中…</option></select>'+
+     '<div class="bk-left" id="mCInfo"></div></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>人數 *</label>'+
+       '<input id="mPeople" inputmode="numeric" value="1"></div>'+
+     '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric">'+
+       '<div class="bk-left">選課程後自動帶入，可修改</div></div></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName"></div>'+
-     '<div class="bk-f"><label>人數 *</label><input id="mPeople" inputmode="numeric" value="1"></div></div>'+
-   '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel"></div>'+
-   '<div class="bk-f"><label>課程／品項</label><input id="mCourse" placeholder="例：選圖繪畫"></div>'+
-   '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2"></textarea></div>'+
+     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel"></div></div>'+
+   '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓"></textarea></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="mX">取消</button>'+
      '<button class="bk-save" id="mOK">登記</button></div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null;
+
+  /* 時段 */
+  var slotSel=document.getElementById("mSlot");
+  slotSel.innerHTML=SLOTS.map(function(s){return "<option>"+s+"</option>"}).join("")+"<option>其他</option>";
+  function showLeft(){
+    var d=document.getElementById("mDate").value.replace(/-/g,"/");
+    var sl=slotSel.value, el=document.getElementById("mLeft");
+    if(sl==="其他"){ el.innerHTML=""; return }
+    var n=bkLeft(d,sl), ppl=+document.getElementById("mPeople").value||1;
+    el.innerHTML = n<=0
+      ? '<span class="bk-full">已額滿，仍可加開</span>'
+      : (n<ppl ? '<span class="bk-full">剩 '+n+' 位，不足 '+ppl+' 位</span>'
+               : '<span class="bk-ok">剩 '+n+' 位</span>');
+  }
+  slotSel.onchange=showLeft;
+  document.getElementById("mDate").onchange=async function(){
+    /* 換日期要重抓那天的預約才算得準 */
+    var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
+    await bkLoad(); bkDate=keep; showLeft();
+  };
+  document.getElementById("mPeople").oninput=function(){ showLeft(); fillAmt() };
+
+  /* 課程 */
+  await bkLoadCourses(); await bkLoadSched();
+  var cSel=document.getElementById("mCourse");
+  cSel.innerHTML='<option value="">（不指定，手動填金額）</option>'+
+    bkCourses.map(function(c,i){ return '<option value="'+i+'">'+esc(c.label)+'</option>' }).join("");
+  function fillAmt(){
+    var i=cSel.value, info=document.getElementById("mCInfo");
+    if(i===""){ info.innerHTML=""; return }
+    var c=bkCourses[+i], ppl=+document.getElementById("mPeople").value||1;
+    document.getElementById("mAmt").value=c.price*ppl;
+    info.innerHTML="單價 $"+c.price.toLocaleString()+(c.dur?"　時長 "+esc(c.dur):"");
+  }
+  cSel.onchange=fillAmt;
+  showLeft();
+
+  /* 會員搜尋 */
   await bkLoadMembers();
   document.getElementById("mFind").oninput=function(){
     picked=null; document.getElementById("mPick").innerHTML="";
@@ -389,23 +491,38 @@ async function bkManual(){
       document.getElementById("mPhone").value=picked.phone;
       document.getElementById("mFind").value=""; h.innerHTML="";
       document.getElementById("mPick").innerHTML='<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+
-        '</b> '+picked.phone+'<div>點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
+        '</b> '+picked.phone+'<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
         '</b>　紅利 <b>'+picked.bonus+'</b></div>'+
         (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+'</div>';
     } });
   };
+
   document.getElementById("mOK").onclick=async function(){
     var g=function(id){ return document.getElementById(id).value.trim() };
     if(!g("mName")||!(+g("mPeople"))){ alert("姓名和人數必填"); return }
-    var rec={date:g("mDate").replace(/-/g,"/"),slot:g("mSlot"),people:+g("mPeople"),
-      items:g("mCourse")?[{name:g("mCourse"),spec:"",qty:+g("mPeople")}]:[],
+    var ppl=+g("mPeople"), ci=cSel.value;
+    var c=ci===""?null:bkCourses[+ci];
+    var amt=+g("mAmt")||0;
+    var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
+    if(sl!=="其他"&&bkLeft(d,sl)<ppl&&
+       !confirm("這個時段名額不足，登記後會超收。確定嗎？"))return;
+    var rec={date:d,slot:sl,people:ppl,
+      items:c?[{name:c.name,spec:c.spec,qty:ppl,price:c.price}]
+             :(g("mNote")?[]:[]),
+      total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
       status:"new",source:"manual",ts:new Date().toISOString()};
     if(picked)rec.memberPhone=picked.phone;
-    await fetch(bkf("/bookings.json"),{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
-    if(picked&&!picked.name&&g("mName"))bkPatch("/members/"+picked.phone+".json",{name:g("mName")}).catch(function(){});
-    bkClose(); bkRefresh();
+    var btn=this; btn.disabled=true; btn.textContent="登記中…";
+    try{
+      await fetch(bkf("/bookings.json"),{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+      if(picked&&!picked.name&&g("mName"))
+        bkPatch("/members/"+picked.phone+".json",{name:g("mName")}).catch(function(){});
+      bkClose();
+      bkDate=new Date(d.replace(/\//g,"-")+"T00:00:00");
+      bkRefresh();
+    }catch(e){ alert("登記失敗："+e.message); btn.disabled=false; btn.textContent="登記" }
   };
 }
 
@@ -464,6 +581,8 @@ css.textContent=
 ".bk-hit{padding:9px 11px;border:1px solid #ddd;border-radius:8px;margin-top:6px;background:#fff;cursor:pointer}"+
 ".bk-hit b{color:#1E2B4F}.bk-bal{font-size:12px;color:#888;margin-top:2px}"+
 ".bk-hint{font-size:12.5px;color:#999;padding:8px 2px}"+
+".bk-left{font-size:12px;color:#888;margin-top:4px}"+
+".bk-ok{color:#2E7D4F}.bk-full{color:#C9453B;font-weight:700}"+
 ".bk-act{display:flex;gap:10px;margin-top:16px}"+
 ".bk-cancel{flex:1;padding:12px;background:#fff;border:1px solid #ccc;border-radius:9px;font-size:14px;cursor:pointer}"+
 ".bk-save{flex:2;padding:12px;background:#1E2B4F;color:#fff;border:0;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer}";
