@@ -78,14 +78,17 @@ async function bkLoadSched(){
   }catch(e){ bkSched={}; }
 }
 /* 那個時段還剩幾位 */
-function bkLeft(dateStr,slot){
+function bkSlotInfo(dateStr,slot){
   var cap=(bkSched&&bkSched[dateStr]!=null?bkSched[dateStr]:1)*SEAT_CAP;
-  var used=bkList.filter(function(b){
+  var rows=bkList.filter(function(b){
     return b.date===dateStr&&(b.slot===slot||b.slot2===slot)&&
       b.status!=="cancelled"&&b.status!=="expired";
-  }).reduce(function(s,b){ return s+(+b.people||0) },0);
-  return cap-used;
+  });
+  var used=rows.reduce(function(s,b){ return s+(+b.people||0) },0);
+  return {cap:cap,used:used,left:cap-used,groups:rows.length,
+    names:rows.map(function(b){ return (b.customer&&b.customer.name)||"—" })};
 }
+function bkLeft(dateStr,slot){ return bkSlotInfo(dateStr,slot).left }
 
 function ds(d){ var p=function(n){return String(n).padStart(2,"0")};
   return d.getFullYear()+"/"+p(d.getMonth()+1)+"/"+p(d.getDate()) }
@@ -434,10 +437,11 @@ async function bkManual(){
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel"></div></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓"></textarea></div>'+
+   '<div class="bk-f" id="mNotifyBox"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="mX">取消</button>'+
      '<button class="bk-save" id="mOK">登記</button></div>');
   document.getElementById("mX").onclick=bkClose;
-  var picked=null;
+  var picked=null, pickedUid=null;
 
   /* 時段 */
   var slotSel=document.getElementById("mSlot");
@@ -446,11 +450,13 @@ async function bkManual(){
     var d=document.getElementById("mDate").value.replace(/-/g,"/");
     var sl=slotSel.value, el=document.getElementById("mLeft");
     if(sl==="其他"){ el.innerHTML=""; return }
-    var n=bkLeft(d,sl), ppl=+document.getElementById("mPeople").value||1;
-    el.innerHTML = n<=0
-      ? '<span class="bk-full">已額滿，仍可加開</span>'
-      : (n<ppl ? '<span class="bk-full">剩 '+n+' 位，不足 '+ppl+' 位</span>'
-               : '<span class="bk-ok">剩 '+n+' 位</span>');
+    var s=bkSlotInfo(d,sl), ppl=+document.getElementById("mPeople").value||1;
+    var line="目前 <b>"+s.used+"</b> 位 / 上限 "+s.cap+" 位";
+    if(s.left<=0)      line+='　<span class="bk-full">已額滿，仍可加開</span>';
+    else if(s.left<ppl)line+='　<span class="bk-full">剩 '+s.left+' 位，不足 '+ppl+' 位</span>';
+    else               line+='　<span class="bk-ok">剩 '+s.left+' 位</span>';
+    if(s.names.length)line+='<div class="bk-names">已約：'+s.names.map(esc).join("、")+'</div>';
+    el.innerHTML=line;
   }
   slotSel.onchange=showLeft;
   document.getElementById("mDate").onchange=async function(){
@@ -494,8 +500,19 @@ async function bkManual(){
         '</b> '+picked.phone+'<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
         '</b>　紅利 <b>'+picked.bonus+'</b></div>'+
         (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+'</div>';
+      showNotify();
     } });
   };
+  async function showNotify(){
+    var box=document.getElementById("mNotifyBox");
+    if(!picked){ box.innerHTML=""; pickedUid=null; return }
+    var m=await bkMember(picked.phone);
+    pickedUid=m&&m.lineUserId||null;
+    box.innerHTML = pickedUid
+      ? '<label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333">'+
+        '<input type="checkbox" id="mNotify" checked style="width:16px;height:16px"> 登記後傳 LINE 通知給客人</label>'
+      : '<div class="bk-left">這位會員還沒綁定 LINE，登記後不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
+  }
 
   document.getElementById("mOK").onclick=async function(){
     var g=function(id){ return document.getElementById(id).value.trim() };
@@ -513,10 +530,20 @@ async function bkManual(){
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
       status:"new",source:"manual",ts:new Date().toISOString()};
     if(picked)rec.memberPhone=picked.phone;
+    var wantNotify=document.getElementById("mNotify");
+    if(pickedUid)rec.line={userId:pickedUid};
     var btn=this; btn.disabled=true; btn.textContent="登記中…";
     try{
       await fetch(bkf("/bookings.json"),{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+      if(pickedUid&&wantNotify&&wantNotify.checked){
+        fetch(NOTIFY+"/notify/booking",{method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(Object.assign({},rec,{
+            total:amt,
+            deposit:{method:"other",name:"由小編為你登記",amount:0}
+          }))}).catch(function(){});
+      }
       if(picked&&!picked.name&&g("mName"))
         bkPatch("/members/"+picked.phone+".json",{name:g("mName")}).catch(function(){});
       bkClose();
@@ -582,6 +609,7 @@ css.textContent=
 ".bk-hit b{color:#1E2B4F}.bk-bal{font-size:12px;color:#888;margin-top:2px}"+
 ".bk-hint{font-size:12.5px;color:#999;padding:8px 2px}"+
 ".bk-left{font-size:12px;color:#888;margin-top:4px}"+
+".bk-names{font-size:11.5px;color:#999;margin-top:3px}"+
 ".bk-ok{color:#2E7D4F}.bk-full{color:#C9453B;font-weight:700}"+
 ".bk-act{display:flex;gap:10px;margin-top:16px}"+
 ".bk-cancel{flex:1;padding:12px;background:#fff;border:1px solid #ccc;border-radius:9px;font-size:14px;cursor:pointer}"+
