@@ -1,8 +1,14 @@
 // ── Consumables ─────────────────────────────────────────
 
 const CM_CATS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
-const CM_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌'};
-const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','筆刷':'b-purple','樹脂':'b-blue','溶劑':'b-gray','包裝':'b-green','清潔':'b-green','印刷':'b-gray','其他':'b-gray'};
+const CM_CAT_ICONS = {'顏料':'🎨','畫布':'🖼','紙張':'📄','筆刷':'🖌','樹脂':'💎','溶劑':'🧪','包裝':'📦','清潔':'🧹','印刷':'🖨','其他':'📌','雜費':'📌','餐食':'🍱','上課材料':'🎨'};
+const CM_CAT_COLORS = {'顏料':'b-gold','畫布':'b-blue','紙張':'b-gray','筆刷':'b-purple','樹脂':'b-blue','溶劑':'b-gray','包裝':'b-green','清潔':'b-green','印刷':'b-gray','其他':'b-gray','雜費':'b-gray','餐食':'b-green','上課材料':'b-gold'};
+
+// 營隊支出只用三種分類，跟耗材完全分開
+const CM_CAMP_CATS = ['雜費','餐食','上課材料'];
+function getCMCats() {
+  return curStore.consumables === 'camp' ? CM_CAMP_CATS : CM_CATS;
+}
 
 // 耗材記帳的店別/樓層名稱對照（只影響耗材記帳，不影響每日/月結/薪資/庫存）
 // flagship 為「分樓層之前」的舊資料，獨立保留，不會被自動分配到四樓/二樓，避免資料張冠李戴
@@ -244,7 +250,7 @@ function editConsumable(id) {
   var row = document.getElementById('cm-row-'+id);
   if (!row) return;
 
-  var catOpts = CM_CATS.map(function(c){
+  var catOpts = getCMCats().map(function(c){
     return '<option value="'+c+'"'+(c===x.cat?' selected':'')+'>'+CM_CAT_ICONS[c]+' '+c+'</option>';
   }).join('');
   var srcOpts = CM_SOURCE_LIST.map(function(s){
@@ -407,6 +413,23 @@ function renderConsumables() {
     totalEl.textContent = t > 0 ? '本月共 NT$' + t.toLocaleString() : '';
   }
 
+  var addTitleEl = document.getElementById('cm-add-title');
+  if (addTitleEl) addTitleEl.textContent = (store === 'camp') ? '➕ 新增營隊支出' : '➕ 新增耗材支出';
+
+  // 類別下拉依分頁重建（營隊只有三種）
+  var catSel = document.getElementById('cm-cat');
+  if (catSel) {
+    var wantCats = getCMCats();
+    var curCats = Array.prototype.map.call(catSel.options, function(o){ return o.value; }).join(',');
+    if (curCats !== wantCats.join(',')) {
+      var keep = catSel.value;
+      catSel.innerHTML = wantCats.map(function(c){
+        return '<option value="'+c+'">'+(CM_CAT_ICONS[c]||'📌')+' '+c+'</option>';
+      }).join('');
+      if (wantCats.indexOf(keep) >= 0) catSel.value = keep;
+    }
+  }
+
   // 設定日期預設值
   var dateEl = document.getElementById('cm-date');
   if (dateEl && !dateEl.value) {
@@ -420,17 +443,17 @@ function renderConsumables() {
   // 統計
   var total = 0;
   var byCat = {};
-  CM_CATS.forEach(function(c){ byCat[c] = 0; });
+  getCMCats().forEach(function(c){ byCat[c] = 0; });
   items.forEach(function(x){ total += x.amount; byCat[x.cat] = (byCat[x.cat]||0)+x.amount; });
 
   // 找出最高類別
   var topCat = '—', topAmt = 0;
-  CM_CATS.forEach(function(c){ if(byCat[c]>topAmt){ topAmt=byCat[c]; topCat=c; } });
+  getCMCats().forEach(function(c){ if(byCat[c]>topAmt){ topAmt=byCat[c]; topCat=c; } });
 
   // 分析：超過 30% 的類別才提醒
   var alerts = [];
   if (total > 0) {
-    CM_CATS.forEach(function(c){
+    getCMCats().forEach(function(c){
       var pct = byCat[c]/total*100;
       if (pct >= 30) alerts.push(CM_CAT_ICONS[c]+' '+c+'（'+pct.toFixed(0)+'%，$'+byCat[c].toLocaleString()+'）');
     });
@@ -467,13 +490,13 @@ function renderConsumables() {
     statsHtml += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">支出分布</div>';
     statsHtml += '<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:10px">';
     var barColors = ['#c9a84c','#80c0f0','#aaa','#c0a0f0','#80c0f0','#888','#70e0a8','#70e0a8','#aaa','#666'];
-    CM_CATS.forEach(function(c,i){
+    getCMCats().forEach(function(c,i){
       var pct = byCat[c]/total*100;
       if (pct > 0) statsHtml += '<div style="width:'+pct.toFixed(1)+'%;background:'+barColors[i]+'" title="'+c+': $'+byCat[c].toLocaleString()+'"></div>';
     });
     statsHtml += '</div>';
     statsHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-    CM_CATS.forEach(function(c,i){
+    getCMCats().forEach(function(c,i){
       if (byCat[c] > 0) {
         var pct = (byCat[c]/total*100).toFixed(0);
         statsHtml += '<span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+barColors[i]+';display:inline-block"></span>'+CM_CAT_ICONS[c]+' '+c+' '+pct+'%</span>';
@@ -725,6 +748,11 @@ async function recognizeImages(base64List) {
 
 function guessCMCategory(name) {
   var s = (name || '').toLowerCase();
+  if (curStore.consumables === 'camp') {
+    if (/便當|餐|飯|麵|飲|水|茶|點心|零食|冰|果|奶|披薩|漢堡|外送/.test(s)) return '餐食';
+    if (/顏料|paint|壓克力|水彩|畫布|canvas|畫框|木框|紙|素描|筆|刷|畫刀|樹脂|uv|膠|材料|黏土|石膏|珠|布/.test(s)) return '上課材料';
+    return '雜費';
+  }
   if (/顏料|paint|壓克力|油畫|水彩|色粉/.test(s)) return '顏料';
   if (/畫布|canvas|畫框|木框|框|f號|p號/.test(s)) return '畫布';
   if (/紙|素描|卡紙|影印|列印/.test(s)) return '紙張';
@@ -783,7 +811,7 @@ function renderAIResults(items) {
   if (!items.length) { el.innerHTML = '<div class="empty">未辨識到任何品項</div>'; return; }
 
   var CUR_OPTS = [['TWD','NT$台幣'],['CNY','¥人民幣'],['USD','$美元'],['JPY','¥日圓']];
-  var CAT_OPTS = ['顏料','畫布','紙張','筆刷','樹脂','溶劑','包裝','清潔','印刷','其他'];
+  var CAT_OPTS = getCMCats();
 
   el.innerHTML = '';
   items.forEach(function(item, i) {
