@@ -428,12 +428,13 @@ function getDayAgg(store, mKey, day) {
     r.newCust += e.newCust || 0;
     r.oldCust += e.oldCust || 0;
     Object.keys(e.teachers||{}).forEach(tid => {
-      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, campCount:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
+      if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, campCount:0, campSessions:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
       const td = e.teachers[tid];
       // 人次/場次一律正常累計（獎金、講師費照算，不因總部代課而扣除）
       r.teachers[tid].count        += parseFloat(td.count)        || 0;
       r.teachers[tid].outsideCount += parseFloat(td.outsideCount) || 0;
       r.teachers[tid].campCount    += parseFloat(td.campCount)    || 0;
+      r.teachers[tid].campSessions += parseFloat(td.campSessions) || 0;
       r.teachers[tid].master       += td.master       || 0;
       r.teachers[tid].assist       += td.assist       || 0;
       r.teachers[tid].junior       += td.junior       || 0;
@@ -446,6 +447,13 @@ function getDayAgg(store, mKey, day) {
         r.teachers[tid].hqJunior += td.junior || 0;
       }
     });
+  });
+  // 獨立營隊登記（與每日課程紀錄分開儲存，這裡才合併給月報／薪資使用）
+  const campDay = S.daily[dayKey(store,mKey,day)]?.camp || {};
+  Object.keys(campDay).forEach(tid => {
+    if (!r.teachers[tid]) r.teachers[tid] = { count:0, outsideCount:0, campCount:0, campSessions:0, master:0, assist:0, junior:0, sales:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
+    r.teachers[tid].campCount    += parseFloat(campDay[tid].count)    || 0;
+    r.teachers[tid].campSessions += parseFloat(campDay[tid].sessions) || 0;
   });
   return r;
 }
@@ -505,7 +513,7 @@ function openEditEntry(store, mKey, day, idx) {
     '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
-    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>營隊人次</th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
+    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>營隊人次<br><span style="font-size:10px;color:var(--text3)">舊資料修正用</span></th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="display:flex;gap:10px;margin-top:16px">' +
     '<button class="btn btn-gold" onclick="saveEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
@@ -547,6 +555,22 @@ function saveEditEntry(store, mKey, day, idx) {
   save();
   document.getElementById('edit-entry-modal').remove();
   renderDayForm();
+}
+
+function saveCamp(store, mKey, day) {
+  var k = dayKey(store, mKey, day);
+  if (!S.daily[k]) S.daily[k] = { entries:[] };
+  var teachers = getTeachers(store);
+  var camp = {};
+  teachers.forEach(function(t) {
+    var c = parseFloat(document.getElementById('cmp_p_' + t.id)?.value) || 0;
+    var s = parseFloat(document.getElementById('cmp_s_' + t.id)?.value) || 0;
+    if (c || s) camp[t.id] = { count:c, sessions:s };
+  });
+  S.daily[k].camp = camp;
+  save();
+  renderDayForm();
+  alert(Object.keys(camp).length ? '營隊登記已儲存' : '營隊登記已清空');
 }
 
 function setSupHours(store, mKey, day, field, val) {
@@ -626,7 +650,6 @@ function renderDayForm() {
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
       '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
-      '<td><input type="number" class="in-num" id="inp_p_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
@@ -653,6 +676,7 @@ function renderDayForm() {
         if (td.count) parts.push(td.count + '人次' + (td.hq?'（總部代課）':''));
         if (td.outsideCount) parts.push('外派' + td.outsideCount);
         if (td.campCount) parts.push('營隊' + td.campCount);
+        if (td.campSessions) parts.push('營隊' + td.campSessions + '堂');
         var lec = (td.master||0)*2000+(td.assist||0)*1500+(td.junior||0)*1000;
         if (lec) parts.push('講師費$' + lec.toLocaleString());
         if (td.sales) parts.push('業績$' + td.sales.toLocaleString());
@@ -701,7 +725,6 @@ function renderDayForm() {
     '<th>老師</th>' +
     '<th>一般人次<br><span style="font-size:10px;color:var(--green)">計獎金</span></th>' +
     '<th>外派人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
-    '<th>營隊人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
     '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
     '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
     '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
@@ -729,6 +752,40 @@ function renderDayForm() {
     '</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-top:8px">此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）</div>' +
     '</div>';
+
+  // 獨立營隊登記區塊（與課程紀錄完全分開）
+  var campDay = S.daily[dayKey(store, mKey, day)]?.camp || {};
+  var campHasData = Object.keys(campDay).length > 0;
+  var campRows = teachers.map(function(t) {
+    var cd = campDay[t.id] || {};
+    var cntCell = (t.type === 'part')
+      ? '<td style="text-align:center;color:var(--text3);font-size:12px">—</td>'
+      : '<td><input type="number" class="in-num md" id="cmp_p_' + t.id + '" value="' + (cd.count||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>';
+    var sesCell = (t.type === 'part')
+      ? '<td><input type="number" class="in-num md" id="cmp_s_' + t.id + '" value="' + (cd.sessions||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>'
+      : '<td style="text-align:center;color:var(--text3);font-size:12px">—</td>';
+    var rate = parseFloat(t.campRate) || 0;
+    var fee = rate ? (t.type==='part' ? (parseFloat(cd.sessions)||0)*rate : (parseFloat(cd.count)||0)*rate) : 0;
+    return '<tr><td><strong>' + t.name + '</strong></td>' +
+      '<td class="muted">' + TYPE_NAME[t.type] + '</td>' +
+      cntCell + sesCell +
+      '<td style="font-size:12px;color:var(--text3)">' + (rate ? ('$' + rate.toLocaleString() + (t.type==='part'?'/堂':'/人次')) : '<span style="color:var(--red,#e74c3c)">未設定費率</span>') + '</td>' +
+      '<td class="' + (fee?'auto-val':'zero-val') + '">' + (fee ? '$' + fee.toLocaleString() : '—') + '</td></tr>';
+  }).join('');
+
+  html += '<div class="card" style="border:1px solid var(--green);margin-top:8px">' +
+    '<div class="card-title" style="color:var(--green)">🏕️ 營隊登記（獨立計費，可單獨儲存）</div>' +
+    '<div class="info-box">這區跟上面的課程紀錄完全分開存放，同一位老師教營隊、教一般課不會互相影響。正職填人次、兼職填堂數，填完按下方按鈕儲存（會覆蓋當日營隊資料）。' + (campHasData ? '<br><strong style="color:var(--green)">● 本日已有營隊紀錄</strong>' : '') + '</div>' +
+    '<div style="overflow-x:auto"><table>' +
+    '<thead><tr><th>老師</th><th>職別</th>' +
+    '<th>營隊人次<br><span style="font-size:10px;color:var(--text3)">正職計費</span></th>' +
+    '<th>營隊堂數<br><span style="font-size:10px;color:var(--text3)">兼職計費</span></th>' +
+    '<th>費率</th><th>本日營隊費</th></tr></thead>' +
+    '<tbody>' + campRows + '</tbody></table></div>' +
+    '<div style="margin-top:14px;display:flex;gap:10px;align-items:center">' +
+    '<button class="btn" style="background:var(--green);color:#000;font-weight:700" onclick="saveCamp(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存營隊登記</button>' +
+    '<span style="font-size:12px;color:var(--text3)">沒有營隊的日子不用填，留空即可</span>' +
+    '</div></div>';
 
   html += '<div class="card">' +
     '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:12px;color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
@@ -807,7 +864,7 @@ function submitEntry(store, mKey, day) {
   teachers.forEach(function(t) {
     var c = parseFloat(document.getElementById('inp_c_' + t.id)?.value) || 0;
     var o = parseFloat(document.getElementById('inp_o_' + t.id)?.value) || 0;
-    var p = parseFloat(document.getElementById('inp_p_' + t.id)?.value) || 0;
+    var p = 0;
     var m = parseInt(document.getElementById('inp_m_' + t.id)?.value) || 0;
     var a = parseInt(document.getElementById('inp_a_' + t.id)?.value) || 0;
     var j = parseInt(document.getElementById('inp_j_' + t.id)?.value) || 0;
@@ -815,7 +872,7 @@ function submitEntry(store, mKey, day) {
     var s = getFBSalesByDay(getSalesKey(t.name), selM_submit, day, store);
     var tf = parseInt(document.getElementById('inp_tf_' + t.id)?.value) || 0;
     var hq = document.getElementById('inp_hq_' + t.id)?.checked ? 1 : 0;
-    if (c||o||p||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,campCount:p,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf,hq:hq}; }
+    if (c||o||m||a||j||tf) { hasData = true; entry.teachers[t.id] = {count:c,outsideCount:o,campCount:0,master:m,assist:a,junior:j,note:n,sales:s,trainingFee:tf,hq:hq}; }
   });
   if (!hasData) { alert('請至少填入一筆資料'); return; }
   addEntry(store, mKey, day, entry);
@@ -830,7 +887,7 @@ function aggregateMonth(store, mKey) {
   var teachers = getTeachers(store);
   var totals = { newCust:0, oldCust:0, teachers:{} };
   teachers.forEach(function(t) {
-    totals.teachers[t.id] = { count:0, outsideCount:0, campCount:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
+    totals.teachers[t.id] = { count:0, outsideCount:0, campCount:0, campSessions:0, master:0, assist:0, junior:0, sales:0, supHours:0, supRate:0, trainingFee:0, hqCount:0, hqMaster:0, hqAssist:0, hqJunior:0 };
   });
   for (var d=1; d<=days; d++) {
     var agg = getDayAgg(store, mKey, d);
@@ -841,6 +898,7 @@ function aggregateMonth(store, mKey) {
       totals.teachers[t.id].count        += parseFloat(td.count)        || 0;
       totals.teachers[t.id].outsideCount += parseFloat(td.outsideCount) || 0;
       totals.teachers[t.id].campCount    += parseFloat(td.campCount)    || 0;
+      totals.teachers[t.id].campSessions += parseFloat(td.campSessions) || 0;
       totals.teachers[t.id].master       += td.master       || 0;
       totals.teachers[t.id].assist       += td.assist       || 0;
       totals.teachers[t.id].junior       += td.junior       || 0;
@@ -962,20 +1020,20 @@ function renderMonthly() {
           '<td><input type="number" class="in-num md" id="pts_hq_' + t.id + '" value="' + hqHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
           '<td><input type="number" class="in-num md" id="pts_gt_' + t.id + '" value="' + gtHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
           '<td><span id="pts_total_' + t.id + '" style="font-weight:600;color:var(--gold2)">' + hrs + ' 小時</span> <span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span></td>' +
-          '<td><input type="number" class="in-num md" value="' + (parseFloat(S.salaryBase[ptKeyCamp][t.id])||0) + '" min="0" step="0.5" onchange="setPTHours(\'' + ptKeyCamp + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
-          '<td style="color:var(--text3);font-size:12px">獎金依總時數計算；總部時數的時薪費由總部支付；營隊時數另依營隊費率計費，不含在總時數內</td></tr>';
+          '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
+          '<td style="color:var(--text3);font-size:12px">獎金依總時數計算；總部時數的時薪費由總部支付；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
       }
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
         '<td style="display:flex;align-items:center;gap:8px">' +
         '<input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()">' +
         '<span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span>' +
         '</td>' +
-        '<td><input type="number" class="in-num md" value="' + (parseFloat(S.salaryBase[ptKeyCamp][t.id])||0) + '" min="0" step="0.5" onchange="setPTHours(\'' + ptKeyCamp + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
-        '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算；營隊時數依營隊費率另計，不含在本月時數內</td></tr>';
+        '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
+        '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在本月時數內</td></tr>';
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
       '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。</div>' +
-      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>營隊時數<br><span style="font-size:10px;color:var(--text3)">依營隊費率另計</span></th><th>說明</th></tr></thead>' +
+      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>營隊堂數<br><span style="font-size:10px;color:var(--green)">營隊登記自動加總</span></th><th>說明</th></tr></thead>' +
       '<tbody>' + ptRows + '</tbody></table></div>';
   }
 
@@ -1135,11 +1193,11 @@ function calcSalary(t, store, mKey) {
   var adminAmt = store==='flagship' ? (t.adminF||0) : (t.adminG||0);
   var ptKey = 'pt_' + mKey + '_' + store;
   var ptHours = t.type==='part' ? (S.salaryBase?.[ptKey]?.[t.id] || 0) : 0;
-  // 營隊費：正職＝營隊人次×營隊費率；兼職＝營隊時數×營隊費率（時數在月報頁填，不看營隊人次）
+  // 營隊費：正職＝營隊人次×每人次費用；兼職＝營隊堂數×每堂費用（堂數在每日登記逐日填，不看營隊人次）
   var campRate  = parseFloat(t.campRate) || 0;
-  var campHours = t.type==='part' ? (parseFloat(S.salaryBase?.['ptcamp_' + mKey + '_' + store]?.[t.id]) || 0) : 0;
+  var campSess  = t.type==='part' ? (parseFloat(tt.campSessions) || 0) : 0;
   var campFee   = t.type==='part'
-    ? Math.round(campHours * campRate)
+    ? Math.round(campSess * campRate)
     : Math.round((parseFloat(tt.campCount)||0) * campRate);
 
   var countBonus = 0;
@@ -1176,7 +1234,7 @@ function calcSalary(t, store, mKey) {
   var ptBasePay  = t.type==='part' ? Math.round((t.base||0)*(ptHours-hqHours)) : 0;
   var sub = countBonus + lectureFee + salesPerf + adminAmt + supFee + ptBasePay + campFee;
 
-  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, hqHours, hqPay, sub, personalTotal, personalBonus, campFee, campHours };
+  return { countBonus, lectureFee, salesPerf, adminAmt, supFee, ptBasePay, ptHours, hqHours, hqPay, sub, personalTotal, personalBonus, campFee, campSess };
 }
 
 function renderSalary() {
@@ -1223,7 +1281,7 @@ function renderSalary() {
       '<td class="' + (row.count?'auto-val':'zero-val') + '">' + row.count.toLocaleString() + '</td>' +
       '<td class="' + (c.countBonus?'auto-val':'zero-val') + '">$' + c.countBonus.toLocaleString() + '</td>' +
       '<td class="' + (c.lectureFee?'auto-val':'zero-val') + '">$' + c.lectureFee.toLocaleString() + '</td>' +
-      '<td class="' + (c.campFee?'auto-val':'zero-val') + '">' + (c.campFee?'$'+c.campFee.toLocaleString()+(t.type==='part'?'<br><span style="font-size:10px;color:var(--text3)">'+c.campHours+'h×$'+(parseFloat(t.campRate)||0)+'</span>':''):'—') + '</td>' +
+      '<td class="' + (c.campFee?'auto-val':'zero-val') + '">' + (c.campFee?'$'+c.campFee.toLocaleString()+(t.type==='part'?'<br><span style="font-size:10px;color:var(--text3)">'+c.campSess+'堂×$'+(parseFloat(t.campRate)||0)+'</span>':''):'—') + '</td>' +
       '<td style="color:var(--text3)" class="' + (c.personalTotal?'auto-val':'zero-val') + '">$' + c.personalTotal.toLocaleString() + '</td>' +
       '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
       '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
@@ -1252,10 +1310,10 @@ function renderSalary() {
     '<div class="card-title" style="justify-content:space-between"><span>💰 ' + STORE_NAME[store] + ' 薪資明細 — ' + mKey + '</span>' +
     '<div style="display:flex;gap:8px"><button class="btn btn-dl btn-sm" onclick="dlSalaryExcel(\'' + store + '\',\'' + mKey + '\')">⬇ Excel（兩店合併）</button>' +
     '<button class="btn btn-dl btn-sm" onclick="dlSalaryPDF(\'' + store + '\',\'' + mKey + '\')">⬇ PDF</button></div></div>' +
-    '<div class="info-box">全薪已自動帶入「老師設定」的全薪，僅正職人員顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。營隊費另計：正職＝月報營隊人次×老師設定的營隊費率；兼職＝月報填的營隊時數×營隊費率。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
+    '<div class="info-box">全薪已自動帶入「老師設定」的全薪，僅正職人員顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。營隊費另計：正職＝營隊人次×老師設定的「每人次費用」；兼職＝營隊登記的營隊堂數×「每堂費用」，兼職不計營隊人次。營隊資料在每日登記頁的獨立區塊填寫，與一般課程紀錄分開。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
     '<th>人員</th><th style="color:var(--gold)">全薪（正職填）</th><th>當月人次</th><th>人次獎金</th><th>講師費</th>' +
-    '<th>營隊費<br><span style="font-weight:400;font-size:10px">正職:人次×費率<br>兼職:時數×費率</span></th>' +
+    '<th>營隊費<br><span style="font-weight:400;font-size:10px">正職:人次×費率<br>兼職:堂數×費率</span></th>' +
     '<th style="color:var(--text3)">個人業績總和<br><span style="font-weight:400;font-size:10px">（參考）</span></th>' +
     '<th>個人績效<br><span style="font-weight:400;font-size:10px">（=業績×2%）</span></th>' +
     '<th>行政績效</th>' +
@@ -1456,7 +1514,7 @@ function renderTeacherList() {
       '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>講師費倍率</label><input type="number" step="0.1" min="0" max="1" id="elr_' + t.id + '" value="' + (t.lecRate!==undefined?t.lecRate:1) + '" onwheel="this.blur()"></div>' +
-      '<div class="fg"><label>營隊費率<br><span style="font-size:9px;text-transform:none">正職:元/人次｜兼職:元/小時</span></label><input type="number" id="ecr_' + t.id + '" value="' + (t.campRate||'') + '" placeholder="0" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>營隊費率<br><span style="font-size:9px;text-transform:none">正職:元/人次｜兼職:元/堂</span></label><input type="number" id="ecr_' + t.id + '" value="' + (t.campRate||'') + '" placeholder="0" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>備註</label><input id="eno_' + t.id + '" value="' + (t.note||'') + '"></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
