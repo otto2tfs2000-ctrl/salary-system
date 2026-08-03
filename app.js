@@ -383,11 +383,13 @@ function switchTab(tab) {
 }
 
 function doSwitchTab(tab) {
-  document.querySelectorAll('.tab').forEach((el,i) => {
-    el.classList.toggle('active', ['daily','monthly','consumables','inventory','salary','settings'][i] === tab);
+  /* 用 data-tab 對應，之後再加分頁也不會錯位 */
+  document.querySelectorAll('.tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
+  if (tab==='today' && window.bkRender) bkRender();
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();

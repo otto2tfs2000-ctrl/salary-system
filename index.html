@@ -47,15 +47,18 @@
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('daily')">📅 每日填寫</div>
-  <div class="tab" onclick="switchTab('monthly')">📊 月報總覽</div>
-  <div class="tab" onclick="switchTab('consumables')">🧴 耗材記帳</div>
-  <div class="tab" onclick="switchTab('inventory')">📦 庫存盤點</div>
-  <div class="tab" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
-  <div class="tab" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
+  <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課</div>
+  <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
+  <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
+  <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
+  <div class="tab" data-tab="inventory" onclick="switchTab('inventory')">📦 庫存盤點</div>
+  <div class="tab" data-tab="salary" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
+  <div class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
 </div>
 
-<div id="tab-daily" class="page active">
+<div id="tab-today" class="page active"><div id="bkRoot"></div></div>
+
+<div id="tab-daily" class="page">
   <div class="store-tabs">
     <button class="store-btn active" onclick="switchStore('daily','flagship',this)">旗艦店</button>
     <button class="store-btn" onclick="switchStore('daily','guotu',this)">國圖店</button>
@@ -396,6 +399,7 @@
 <script src="app.js?v=20260803a"></script>
 <script src="consumables.js?v=20260803a"></script>
 <script src="inventory.js?v=20260803a"></script>
+<script src="booking.js?v=20260803a"></script>
 <script src="init.js?v=20260803a"></script>
 </body>
 </html>
