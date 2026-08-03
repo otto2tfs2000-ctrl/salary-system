@@ -383,11 +383,14 @@ function switchTab(tab) {
 }
 
 function doSwitchTab(tab) {
-  document.querySelectorAll('.tab').forEach((el,i) => {
-    el.classList.toggle('active', ['daily','monthly','consumables','inventory','salary','settings'][i] === tab);
+  /* 用 data-tab 對應，之後再加分頁也不會錯位 */
+  document.querySelectorAll('.tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
+  if (tab==='today' && window.bkRender) bkRender();
+  if (tab==='recipe') renderRecipe();
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
   if (tab==='salary') renderSalary();
@@ -1013,7 +1016,7 @@ function renderMonthly() {
     var ptRows = ptTeachers.map(function(t) {
       var hrs = S.salaryBase[ptKey][t.id] || 0;
       var iconId = 'ptSaved_' + ptKey + '_' + t.id;
-      {
+      if (store === 'guotu') {
         var hqHrs = parseFloat(S.salaryBase[ptKeyHQ][t.id]) || 0;
         var gtHrs = Math.max(0, hrs - hqHrs);
         return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
@@ -1021,12 +1024,19 @@ function renderMonthly() {
           '<td><input type="number" class="in-num md" id="pts_gt_' + t.id + '" value="' + gtHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
           '<td><span id="pts_total_' + t.id + '" style="font-weight:600;color:var(--gold2)">' + hrs + ' 小時</span> <span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span></td>' +
           '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
-          '<td style="color:var(--text3);font-size:12px">週二時數由總公司支付，不計入本單位人事成本；獎金與時薪仍依總時數計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
+          '<td style="color:var(--text3);font-size:12px">獎金依總時數計算；總部時數的時薪費由總部支付；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
       }
+      return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
+        '<td style="display:flex;align-items:center;gap:8px">' +
+        '<input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()">' +
+        '<span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span>' +
+        '</td>' +
+        '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
+        '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在本月時數內</td></tr>';
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
-      '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。<br><strong>週二</strong>上班的時數填左邊（薪水由總公司出），<strong>其他天</strong>填右邊（由本單位出）。總時數自動加總，獎金和時薪都照總時數算。</div>' +
-      '<table><thead><tr><th>姓名</th><th>職別</th>' + '<th>週二時數<br><span style="font-size:10px;color:var(--text3)">總公司支付</span></th><th>其他時數<br><span style="font-size:10px;color:var(--green)">本單位支付</span></th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' + '<th>營隊堂數<br><span style="font-size:10px;color:var(--green)">營隊登記自動加總</span></th><th>說明</th></tr></thead>' +
+      '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。</div>' +
+      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>營隊堂數<br><span style="font-size:10px;color:var(--green)">營隊登記自動加總</span></th><th>說明</th></tr></thead>' +
       '<tbody>' + ptRows + '</tbody></table></div>';
   }
 
@@ -1279,7 +1289,7 @@ function renderSalary() {
       '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
       '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
       (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
-      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+' ('+(c.ptHours-c.hqHours)+'h)':'—') + (c.hqPay?'<br><span style="font-size:10px;color:var(--text3)">週二·總公司付 $'+c.hqPay.toLocaleString()+' ('+c.hqHours+'h)</span>':'') + '</td>' +
+      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+' ('+(c.ptHours-c.hqHours)+'h)':'—') + (c.hqPay?'<br><span style="font-size:10px;color:var(--text3)">總部另付 $'+c.hqPay.toLocaleString()+' ('+c.hqHours+'h)</span>':'') + '</td>' +
       '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
       '</tr>';
   }).join('');
