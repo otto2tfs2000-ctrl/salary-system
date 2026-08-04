@@ -23,10 +23,17 @@ var PAYWAYS  = [
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
 var salf = function(p){ return SAL_URL.replace(/\/$/,"")+p };
 var bonusOf = function(a){ return Math.floor((+a||0)/500) };
+/* 電話正規化：+886912345678 → 0912345678，去掉空白破折號 */
+var bkNorm = function(p){
+  var d=String(p==null?"":p).replace(/\D/g,"");
+  if(d.indexOf("886")===0) d="0"+d.slice(3);
+  return d;
+};
 var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) };
 
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
+var bkIndex = {}, bkIndexReady = false;
 var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
 var SEAT_CAP = 5;                 /* 每位老師可帶人數 */
 var bkCourses = null, bkSched = null;
@@ -109,6 +116,26 @@ async function bkLoadMembers(){
   var j=await jget(bkf("/members.json"))||{};
   bkMembers=Object.keys(j).map(function(p){ var m=j[p]||{}; var c=m.cache||{};
     return {phone:p,name:m.name||"",points:+c.points||0,sessions:+c.sessions||0,bonus:+c.bonus||0} });
+  bkIndex={};
+  bkMembers.forEach(function(m){ var k=bkNorm(m.phone); if(k)bkIndex[k]=m.phone });
+}
+/* 只抓會員電話清單（shallow），不抓 ledger，畫面用這個判斷是不是會員 */
+async function bkLoadIndex(){
+  if(bkIndexReady)return;
+  var j=await jget(bkf("/members.json?shallow=true"))||{};
+  Object.keys(j).forEach(function(p){ var k=bkNorm(p); if(k)bkIndex[k]=p });
+  bkIndexReady=true;
+}
+/* 用任何格式的電話找出會員的主鍵電話，找不到回 "" */
+async function bkFindPhone(raw){
+  var k=bkNorm(raw); if(!k)return "";
+  await bkLoadIndex();
+  return bkIndex[k]||"";
+}
+function bkIsMember(b){
+  if(b.memberPhone)return true;
+  var k=bkNorm(b.customer&&b.customer.phone);
+  return !!(k&&bkIndex[k]);
 }
 function bkSearch(q){
   if(!bkMembers||!q||q.trim().length<2)return[];
@@ -127,11 +154,14 @@ async function bkMember(phone){
 async function bkRender(){
   var root=document.getElementById("bkRoot"); if(!root)return;
   if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
-    await bkLoad(); bkBusy=false; }
+    await bkLoad(); await bkLoadIndex(); bkBusy=false; }
   var d=bkDate, today=ds(new Date())===ds(d);
   var totalPeople=bkList.reduce(function(s,b){return s+(+b.people||0)},0);
   var doneCount=bkList.filter(function(b){return b.checkout}).length;
   var sum=bkList.reduce(function(s,b){return s+(b.checkout?(+b.checkout.total||0):0)},0);
+  var totKid=bkList.reduce(function(s,b){ var c=b.checkout||{};
+    return s+(+(c.kids!=null?c.kids:b.kids)||0) },0);
+  var pplSub=totKid?"含小孩 "+totKid:"";
 
   root.innerHTML=
    '<div class="bk-bar">'+
@@ -142,7 +172,7 @@ async function bkRender(){
    '</div>'+
    '<div class="bk-stat">'+
      '<div><b>'+bkList.length+'</b><span>預約組數</span></div>'+
-     '<div><b>'+totalPeople+'</b><span>總人數</span></div>'+
+     '<div><b>'+totalPeople+'</b><span>總人數'+(pplSub?"・"+pplSub:"")+'</span></div>'+
      '<div><b>'+doneCount+'/'+bkList.length+'</b><span>已核銷</span></div>'+
      '<div><b>$'+sum.toLocaleString()+'</b><span>本日核銷金額</span></div>'+
    '</div>'+
@@ -168,19 +198,42 @@ async function bkRender(){
 }
 window.bkRender=bkRender;
 
+/* 人數組成：2 位（大人 1・小孩 1）；沒填過就只顯示總數 */
+function bkPplText(b){
+  var c=b.checkout||{};
+  var a=(c.adults!=null?c.adults:b.adults), k=(c.kids!=null?c.kids:b.kids);
+  var n=(a!=null||k!=null)?((+a||0)+(+k||0)):(+b.people||1);
+  if(a==null&&k==null)return n+" 位";
+  var parts=[];
+  if(+a)parts.push("大人 "+(+a));
+  if(+k)parts.push("小孩 "+(+k));
+  return n+" 位"+(parts.length?"（"+parts.join("・")+"）":"");
+}
 function bkCard(b){
   var c=b.checkout, unpaid=b.deposit&&b.deposit.status!=="paid"&&!c;
   var items=(b.items||[]).map(function(i){
     return esc(i.name)+(i.spec?"("+esc(i.spec)+")":"")+" ×"+(i.qty||1) }).join("、");
+  var doneHtml="";
+  if(c){
+    var lines='<div class="bk-dline"><span>課程</span><b>$'+(+c.courseAmt||0).toLocaleString()+'</b></div>';
+    (c.addons||[]).forEach(function(a){
+      lines+='<div class="bk-dline"><span>加購・'+esc(a.name||"未命名")+'</span><b>$'+
+        (+a.amt||0).toLocaleString()+'</b></div>';
+    });
+    lines+='<div class="bk-dline tot"><span>合計</span><b>$'+(+c.total||0).toLocaleString()+'</b></div>';
+    doneHtml='<div class="bk-done"><div class="bk-dhead">已核銷'+
+      (c.teacher?'<span>'+esc(c.teacher)+'</span>':'')+'</div>'+lines+
+      '<div class="bk-dpay">'+esc(c.summary||"")+
+      (c.bonus?'　·　紅利 +'+c.bonus:'')+'</div></div>';
+  }
   return '<div class="bk-card'+(c?" ok":(unpaid?" wait":""))+'">'+
-    '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+(b.people||1)+'位'+
-      (b.memberPhone?'<span class="bk-tag m">會員</span>':'')+
+    '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
+      (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
       (unpaid?'<span class="bk-tag w">待付訂金</span>':'')+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+'</div>'+
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
-    (c?'<div class="bk-done">已核銷　'+esc(c.summary||"")+'　<b>$'+(+c.total||0).toLocaleString()+
-        '</b>　'+esc(c.teacher||"")+'</div>':'')+
+    doneHtml+
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
@@ -222,12 +275,21 @@ async function bkCheckout(id){
   var course={amt:old?old.courseAmt:(b.total||0), way:old?old.coursePay:""};
   var addons=old&&old.addons?JSON.parse(JSON.stringify(old.addons)):[];
   var teacher=old?old.teacher:"";
+  var autoMatched=false;
+  var ppl=+b.people||1;
+  var nKid=(old&&old.kids!=null)?+old.kids:(b.kids!=null?+b.kids:0);
+  var nAdult=(old&&old.adults!=null)?+old.adults:(b.adults!=null?+b.adults:Math.max(0,ppl-nKid));
 
   bkSheet(
    '<h3>'+(old?"修正核銷":"核銷")+'</h3>'+
    '<div class="bk-sh2">'+b.date+'　'+esc(b.actualTime||b.slot)+'　'+esc(b.customer&&b.customer.name||"")+'　'+(b.people||1)+' 位</div>'+
    (old?'<div class="bk-warn">這筆已核銷過。按確認會先沖銷原本那筆，再寫入新的，原始紀錄不會消失。</div>':'')+
    '<div id="ckWho"></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>大人</label>'+
+       '<input id="ckAdult" inputmode="numeric" value="'+nAdult+'"></div>'+
+     '<div class="bk-f"><label>小孩</label>'+
+       '<input id="ckKid" inputmode="numeric" value="'+nKid+'"></div></div>'+
+   '<div class="bk-left" id="ckPplHint" style="margin:-6px 0 11px"></div>'+
    '<div class="bk-f"><label>課程費用</label><input id="ckAmt" inputmode="numeric" value="'+(course.amt||"")+'"></div>'+
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
    '<div class="bk-f"><label>加價項目（畫布、公仔等）</label><div id="ckAdd"></div>'+
@@ -245,9 +307,10 @@ async function bkCheckout(id){
 
   function drawWho(){
     var w=document.getElementById("ckWho");
-    if(!payer){ w.innerHTML='<div class="bk-warn">這筆沒有綁定會員，只能用現金類付款。需要用朋友的點數請勾選下方。</div>'; }
+    if(!payer){ w.innerHTML='<div class="bk-warn">這支電話在會員檔案裡找不到，只能用現金類付款。要用朋友的點數請勾選下方。</div>'; }
     else{ var c=payer.cache||{};
       w.innerHTML='<div class="bk-info"><b>'+esc(payer.name||"（未填姓名）")+'</b> '+payer.phone+
+        (autoMatched?'<span class="bk-tag m" style="margin-left:6px">電話自動比對</span>':'')+
         '<div>可用點數 <b>'+(+c.points||0).toLocaleString()+'</b>　堂數 <b>'+(+c.sessions||0)+
         '</b>　紅利 <b>'+(+c.bonus||0)+'</b></div></div>'; }
   }
@@ -300,6 +363,18 @@ async function bkCheckout(id){
   document.getElementById("ckAmt").oninput=calc;
   document.getElementById("ckT").onchange=function(){ teacher=this.value };
 
+  function pplHint(){
+    nAdult=+document.getElementById("ckAdult").value||0;
+    nKid=+document.getElementById("ckKid").value||0;
+    var s=nAdult+nKid, el=document.getElementById("ckPplHint");
+    el.innerHTML = s===ppl
+      ? "合計 "+s+" 位，與預約人數相同"
+      : '<span class="bk-full">合計 '+s+' 位，預約時是 '+ppl+' 位，確認是否有變動</span>';
+  }
+  document.getElementById("ckAdult").oninput=pplHint;
+  document.getElementById("ckKid").oninput=pplHint;
+  pplHint();
+
   async function setPayer(phone){
     payer=phone?await bkMember(phone):null;
     drawWho(); drawWays(); drawAddons(); calc();
@@ -321,15 +396,22 @@ async function bkCheckout(id){
         await setPayer(r[+el.dataset.pi].phone) } });
     };
   };
-  await setPayer(b.memberPhone||"");
-  if(old&&old.payerPhone&&old.payerPhone!==b.memberPhone){
+  /* 預約單沒綁會員時，用客人填的電話回頭比對一次（主鍵就是電話） */
+  var ownPhone=b.memberPhone||"";
+  if(!ownPhone){
+    ownPhone=await bkFindPhone(b.customer&&b.customer.phone);
+    if(ownPhone)autoMatched=true;
+  }
+  await setPayer(ownPhone);
+  if(old&&old.payerPhone&&old.payerPhone!==ownPhone){
     document.getElementById("ckProxy").checked=true;
     document.getElementById("ckProxy").dispatchEvent(new Event("change"));
     await setPayer(old.payerPhone);
   }
 
   document.getElementById("ckOK").onclick=async function(){
-    calc();
+    calc(); pplHint();
+    if(!(nAdult+nKid)){ alert("大人和小孩不能都是 0"); return }
     var t=document.getElementById("ckT").value;
     var cp=PAYWAYS.filter(function(p){return p.k===course.way})[0];
     if(!course.amt||!cp||!t){ alert("課程費用、付款方式、上課老師都要填"); return }
@@ -378,10 +460,14 @@ async function bkCheckout(id){
       var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
       var total=course.amt+addTotal;
       var dt=new Date(b.date.replace(/\//g,"-")+"T00:00:00");
+      var addonTxt=addons.map(function(a){
+        return (a.name||"未命名")+" $"+(+a.amt||0).toLocaleString() }).join("、");
       var log={date:b.date,month:dt.getMonth()+1,day:dt.getDate(),dept:"4F",
-        customer:(b.customer&&b.customer.name)||"",phone:b.memberPhone||"",
-        payerPhone:payer?payer.phone:"",teacher:t,people:b.people||1,
-        courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
+        customer:(b.customer&&b.customer.name)||"",phone:ownPhone||b.memberPhone||"",
+        payerPhone:payer?payer.phone:"",teacher:t,
+        people:nAdult+nKid,adults:nAdult,kids:nKid,
+        courseAmt:course.amt,coursePay:course.way,
+        addons:addons,addonTotal:addTotal,addonText:addonTxt,
         total:total,byWay:byWay,bonus:bonus,
         items:(b.items||[]).map(function(i){return i.name}).join("、"),
         bookingId:id,at:now,voided:false};
@@ -393,10 +479,14 @@ async function bkCheckout(id){
 
       var sumTxt=PAYWAYS.filter(function(p){return byWay[p.k]}).map(function(p){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
-      await bkPatch("/bookings/"+id+".json",{attend:"in",status:"done",
+      var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
-          total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
-          teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}});
+          addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
+          adults:nAdult,kids:nKid,
+          teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
+      /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
+      if(autoMatched&&ownPhone)patch.memberPhone=ownPhone;
+      await bkPatch("/bookings/"+id+".json",patch);
       bkClose(); bkRefresh();
       if(window.renderDaily)try{ renderDaily() }catch(e){}
     }catch(e){
@@ -430,10 +520,13 @@ async function bkManual(){
        '<div class="bk-left" id="mLeft"></div></div></div>'+
    '<div class="bk-f"><label>課程</label><select id="mCourse"><option value="">載入中…</option></select>'+
      '<div class="bk-left" id="mCInfo"></div></div>'+
-   '<div class="bk-f2"><div class="bk-f"><label>人數 *</label>'+
-       '<input id="mPeople" inputmode="numeric" value="1"></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
+       '<input id="mAdult" inputmode="numeric" value="1"></div>'+
+     '<div class="bk-f"><label>小孩</label>'+
+       '<input id="mKid" inputmode="numeric" value="0"></div>'+
      '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric">'+
-       '<div class="bk-left">選課程後自動帶入，可修改</div></div></div>'+
+       '<div class="bk-left">選課程後自動帶入</div></div></div>'+
+   '<input type="hidden" id="mPeople" value="1">'+
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel"></div></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓"></textarea></div>'+
@@ -464,7 +557,14 @@ async function bkManual(){
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
     await bkLoad(); bkDate=keep; showLeft();
   };
-  document.getElementById("mPeople").oninput=function(){ showLeft(); fillAmt() };
+  function syncPpl(){
+    var a=+document.getElementById("mAdult").value||0;
+    var k=+document.getElementById("mKid").value||0;
+    document.getElementById("mPeople").value=(a+k)||0;
+    showLeft(); fillAmt();
+  }
+  document.getElementById("mAdult").oninput=syncPpl;
+  document.getElementById("mKid").oninput=syncPpl;
 
   /* 課程 */
   await bkLoadCourses(); await bkLoadSched();
@@ -516,14 +616,16 @@ async function bkManual(){
 
   document.getElementById("mOK").onclick=async function(){
     var g=function(id){ return document.getElementById(id).value.trim() };
-    if(!g("mName")||!(+g("mPeople"))){ alert("姓名和人數必填"); return }
-    var ppl=+g("mPeople"), ci=cSel.value;
+    var nA=+g("mAdult")||0, nK=+g("mKid")||0;
+    document.getElementById("mPeople").value=nA+nK;
+    if(!g("mName")||!(nA+nK)){ alert("姓名和人數必填"); return }
+    var ppl=nA+nK, ci=cSel.value;
     var c=ci===""?null:bkCourses[+ci];
     var amt=+g("mAmt")||0;
     var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
     if(sl!=="其他"&&bkLeft(d,sl)<ppl&&
        !confirm("這個時段名額不足，登記後會超收。確定嗎？"))return;
-    var rec={date:d,slot:sl,people:ppl,
+    var rec={date:d,slot:sl,people:ppl,adults:nA,kids:nK,
       items:c?[{name:c.name,spec:c.spec,qty:ppl,price:c.price}]
              :(g("mNote")?[]:[]),
       total:amt,
@@ -556,64 +658,114 @@ async function bkManual(){
 /* ── 樣式 ── */
 var css=document.createElement("style");
 css.textContent=
-".bk-bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}"+
-".bk-nav{background:#fff;border:1px solid #ddd;border-radius:8px;padding:7px 13px;font-size:15px;cursor:pointer}"+
-".bk-tdy{font-size:13px}"+
-".bk-date{flex:1;text-align:center}.bk-date b{font-size:16px}.bk-date span{font-size:12px;color:#888;margin-left:5px}"+
-".bk-stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}"+
-".bk-stat div{flex:1;min-width:78px;background:#fff;border:1px solid #eee;border-radius:9px;padding:9px;text-align:center}"+
-".bk-stat b{display:block;font-size:19px;color:#1E2B4F}.bk-stat span{font-size:11px;color:#999}"+
-".bk-slot{margin-bottom:16px}"+
-".bk-sh{font-size:13px;font-weight:700;color:#1E2B4F;padding:6px 0;border-bottom:2px solid #E3B34C}"+
-".bk-sh span{font-weight:400;color:#999}"+
-".bk-card{background:#fff;border:1px solid #eee;border-radius:10px;padding:11px 13px;margin-top:9px}"+
-".bk-card.ok{background:#F4FAF6;border-color:#B8DCC6}"+
-".bk-card.wait{background:#FFFBF0;border-left:3px solid #E3B34C}"+
-".bk-who b{font-size:15px;color:#1E2B4F}"+
-".bk-tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:99px;margin-left:5px;vertical-align:2px}"+
-".bk-tag.m{background:#EEF2FA;color:#1E2B4F}.bk-tag.w{background:#FDF3DC;color:#8A6400}.bk-tag.s{background:#F0F0F0;color:#777}"+
-".bk-sub{font-size:12.5px;color:#777;margin-top:3px}"+
-".bk-note{font-size:12px;color:#8A6400;margin-top:3px}"+
-".bk-done{font-size:12.5px;color:#2E7D4F;margin-top:6px;background:#E8F3EC;padding:5px 9px;border-radius:6px}"+
-".bk-btns{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}"+
-".bk-b{flex:1;min-width:66px;padding:7px 4px;font-size:12.5px;background:#fff;border:1px solid #ddd;border-radius:7px;cursor:pointer}"+
-".bk-b.on{background:#1E2B4F;color:#fff;border-color:#1E2B4F}"+
-".bk-b.no{background:#F0F0F0;color:#888}"+
-".bk-b.ck{border-color:#1E2B4F;color:#1E2B4F;font-weight:700}"+
-".bk-b.cx{border-color:#C9453B;color:#C9453B}"+
-".bk-add{width:100%;margin-top:14px;padding:12px;background:#1E2B4F;color:#fff;border:0;border-radius:9px;font-size:14px;cursor:pointer}"+
-".bk-empty{text-align:center;color:#aaa;padding:30px;font-size:13px}"+
-".bk-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:900;align-items:flex-end;justify-content:center}"+
+"#bkRoot{--bkNavy:#1E2B4F;--bkGold:#C99A3B;--bkInk:#232936;--bkMute:#8A90A0;"+
+  "--bkLine:#ECEEF2;--bkSoft:#F6F7F9;--bkOk:#12805C;--bkOkBg:#EAF6F1;--bkRed:#C9453B}"+
+".bk-bar{display:flex;align-items:center;gap:8px;margin-bottom:18px}"+
+".bk-nav{background:#fff;border:0;box-shadow:0 1px 2px rgba(16,24,40,.07);border-radius:10px;"+
+  "width:38px;height:38px;font-size:17px;color:#5B6272;cursor:pointer;transition:.15s}"+
+".bk-nav:hover{background:#F0F2F6}"+
+".bk-tdy{font-size:13px;width:auto;padding:0 15px;color:var(--bkNavy);font-weight:600}"+
+".bk-date{flex:1;text-align:center}"+
+".bk-date b{font-size:19px;color:var(--bkInk);letter-spacing:.3px}"+
+".bk-date span{font-size:12.5px;color:var(--bkMute);margin-left:6px}"+
+".bk-stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}"+
+".bk-stat div{flex:1;min-width:84px;background:#fff;border:0;border-radius:14px;"+
+  "padding:15px 10px;text-align:center;box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
+".bk-stat b{display:block;font-size:25px;font-weight:700;color:var(--bkNavy);line-height:1.15}"+
+".bk-stat span{font-size:11.5px;color:var(--bkMute);margin-top:3px;display:block}"+
+".bk-slot{margin-bottom:24px}"+
+".bk-sh{font-size:12.5px;font-weight:700;color:var(--bkMute);letter-spacing:1.2px;"+
+  "padding:0 2px 9px;border:0;text-transform:uppercase}"+
+".bk-sh span{font-weight:400;letter-spacing:0;text-transform:none;color:#A8AEBC}"+
+".bk-card{background:#fff;border:0;border-radius:14px;padding:16px 17px;margin-top:10px;"+
+  "box-shadow:0 1px 3px rgba(16,24,40,.06);transition:.15s}"+
+".bk-card:hover{box-shadow:0 3px 10px rgba(16,24,40,.09)}"+
+".bk-card.ok{background:#FBFDFC;box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkOk)}"+
+".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
+".bk-who b{font-size:16px;color:var(--bkInk);font-weight:600}"+
+".bk-tag{display:inline-block;font-size:11px;padding:2.5px 9px;border-radius:99px;"+
+  "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
+".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
+".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
+".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+".bk-sub{font-size:13px;color:var(--bkMute);margin-top:5px;line-height:1.6}"+
+".bk-note{font-size:12.5px;color:#8A6400;margin-top:5px}"+
+".bk-done{margin-top:12px;background:var(--bkOkBg);padding:11px 13px;border-radius:10px}"+
+".bk-dhead{font-size:12px;font-weight:700;color:var(--bkOk);letter-spacing:.6px;"+
+  "margin-bottom:7px;display:flex;justify-content:space-between}"+
+".bk-dhead span{font-weight:500;color:#4F7A6A}"+
+".bk-dline{display:flex;justify-content:space-between;font-size:13px;color:#3F5A50;padding:2.5px 0}"+
+".bk-dline b{color:#1B5E48;font-weight:600}"+
+".bk-dline.tot{border-top:1px solid #CFE6DC;margin-top:5px;padding-top:6px;font-weight:600}"+
+".bk-dline.tot b{font-size:15px;color:var(--bkOk)}"+
+".bk-dpay{font-size:11.5px;color:#6B8C7F;margin-top:7px}"+
+".bk-btns{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}"+
+".bk-b{flex:1;min-width:70px;padding:9px 4px;font-size:13px;background:var(--bkSoft);"+
+  "border:0;border-radius:9px;color:#5B6272;cursor:pointer;transition:.15s;font-family:inherit}"+
+".bk-b:hover{background:#EBEDF2}"+
+".bk-b.on{background:var(--bkNavy);color:#fff;font-weight:600}"+
+".bk-b.no{background:#F2F3F6;color:#A8AEBC}"+
+".bk-b.ck{background:#EDF1FA;color:#3A4C7A;font-weight:600}"+
+".bk-b.ck:hover{background:#E1E8F6}"+
+".bk-b.cx{background:#FBF0EF;color:var(--bkRed)}"+
+".bk-b.cx:hover{background:#F7E4E2}"+
+".bk-add{width:100%;margin-top:18px;padding:14px;background:var(--bkNavy);color:#fff;"+
+  "border:0;border-radius:12px;font-size:14.5px;font-weight:600;cursor:pointer;"+
+  "font-family:inherit;transition:.15s}"+
+".bk-add:hover{background:#16223F}"+
+".bk-empty{text-align:center;color:#A8AEBC;padding:44px 20px;font-size:13.5px}"+
+".bk-mask{position:fixed;inset:0;background:rgba(24,30,45,.42);display:none;z-index:900;"+
+  "align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)}"+
 ".bk-mask.on{display:flex}"+
-".bk-sheet{background:#F7F5F0;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 16px 26px}"+
-".bk-sheet h3{font-size:16px;color:#1E2B4F;margin:0 0 3px}"+
-".bk-sh2{font-size:12.5px;color:#888;margin-bottom:12px}"+
-".bk-f{margin-bottom:11px}.bk-f2{display:flex;gap:10px}.bk-f2 .bk-f{flex:1}"+
-".bk-f label{display:block;font-size:12px;color:#888;margin-bottom:4px}"+
-".bk-f input,.bk-f select,.bk-f textarea,#ckFind,#mFind{width:100%;padding:9px 11px;border:1px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box}"+
-".bk-ways{display:flex;gap:7px;flex-wrap:wrap}"+
-".bk-way{flex:1 1 30%;min-width:88px;text-align:center;padding:9px 5px;border:1px solid #ddd;border-radius:8px;background:#fff;font-size:13px;cursor:pointer}"+
-".bk-way.on{border-color:#1E2B4F;background:#EEF2FA;color:#1E2B4F;font-weight:700}"+
-".bk-way.dis{opacity:.35;pointer-events:none}"+
+".bk-sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;"+
+  "border-radius:20px 20px 0 0;padding:24px 20px 30px;box-shadow:0 -6px 28px rgba(16,24,40,.16)}"+
+".bk-sheet h3{font-size:19px;color:#232936;margin:0 0 4px;font-weight:600}"+
+".bk-sh2{font-size:13px;color:#8A90A0;margin-bottom:18px}"+
+".bk-f{margin-bottom:14px}.bk-f2{display:flex;gap:10px}.bk-f2 .bk-f{flex:1}"+
+".bk-f label{display:block;font-size:12.5px;color:#8A90A0;margin-bottom:6px;font-weight:500}"+
+".bk-f input,.bk-f select,.bk-f textarea,#ckFind,#mFind{width:100%;padding:11px 13px;"+
+  "border:1px solid #E3E6EC;border-radius:10px;font-size:15px;font-family:inherit;"+
+  "box-sizing:border-box;background:#FBFCFD;transition:.15s;color:#232936}"+
+".bk-f input:focus,.bk-f select:focus,.bk-f textarea:focus,#ckFind:focus,#mFind:focus{"+
+  "outline:0;border-color:#9FB0D6;background:#fff;box-shadow:0 0 0 3px rgba(62,86,145,.09)}"+
+".bk-ways{display:flex;gap:8px;flex-wrap:wrap}"+
+".bk-way{flex:1 1 30%;min-width:92px;text-align:center;padding:11px 5px;border:1px solid #E3E6EC;"+
+  "border-radius:10px;background:#FBFCFD;font-size:13.5px;cursor:pointer;color:#5B6272;transition:.15s}"+
+".bk-way:hover{border-color:#C3CCDF}"+
+".bk-way.on{border-color:#3A4C7A;background:#EDF1FA;color:#1E2B4F;font-weight:600;"+
+  "box-shadow:0 0 0 2px rgba(58,76,122,.1)}"+
+".bk-way.dis{opacity:.3;pointer-events:none}"+
 ".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:6px}"+
 ".bk-addon .an{flex:2}.bk-addon .av{flex:1;min-width:70px}.bk-addon .aw{flex:1;min-width:88px}"+
 ".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;font-size:13px;box-sizing:border-box}"+
 ".ax{color:#C9453B;cursor:pointer;padding:0 4px;font-size:15px}"+
 ".bk-mini{background:#fff;border:1px dashed #999;border-radius:7px;padding:7px 12px;font-size:12.5px;cursor:pointer;width:100%}"+
-".bk-info{background:#F4F7FD;border:1px solid #C9D6EE;border-radius:9px;padding:10px 12px;margin-bottom:11px;font-size:13px;color:#1E2B4F}"+
-".bk-info b{color:#1E2B4F}"+
-".bk-warn{background:#FDF3DC;color:#8A6400;font-size:12.5px;padding:8px 10px;border-radius:7px;margin:7px 0}"+
-".bk-err{background:#FBEAE8;color:#C9453B;font-size:12.5px;padding:7px 10px;border-radius:7px;margin-top:6px}"+
-".bk-calc{font-size:12.5px;color:#777;line-height:1.9;margin:10px 0}.bk-calc b{color:#1E2B4F;font-size:14px}"+
-".bk-hit{padding:9px 11px;border:1px solid #ddd;border-radius:8px;margin-top:6px;background:#fff;cursor:pointer}"+
-".bk-hit b{color:#1E2B4F}.bk-bal{font-size:12px;color:#888;margin-top:2px}"+
-".bk-hint{font-size:12.5px;color:#999;padding:8px 2px}"+
-".bk-left{font-size:12px;color:#888;margin-top:4px}"+
-".bk-names{font-size:11.5px;color:#999;margin-top:3px}"+
-".bk-ok{color:#2E7D4F}.bk-full{color:#C9453B;font-weight:700}"+
-".bk-act{display:flex;gap:10px;margin-top:16px}"+
-".bk-cancel{flex:1;padding:12px;background:#fff;border:1px solid #ccc;border-radius:9px;font-size:14px;cursor:pointer}"+
-".bk-save{flex:2;padding:12px;background:#1E2B4F;color:#fff;border:0;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer}";
+".bk-info{background:#EDF1FA;border:0;border-radius:12px;padding:13px 15px;margin-bottom:14px;"+
+  "font-size:13.5px;color:#3A4C7A;line-height:1.7}"+
+".bk-info b{color:#1E2B4F;font-weight:600}"+
+".bk-warn{background:#FDF4E3;color:#8A6400;font-size:13px;padding:11px 13px;"+
+  "border-radius:10px;margin:9px 0;line-height:1.6}"+
+".bk-err{background:#FBEAE8;color:#C9453B;font-size:13px;padding:10px 12px;"+
+  "border-radius:10px;margin-top:8px}"+
+".bk-calc{font-size:13px;color:#6B7180;line-height:2;margin:14px 0;background:#F6F7F9;"+
+  "padding:13px 15px;border-radius:12px}"+
+".bk-calc b{color:#1E2B4F;font-size:15px;font-weight:600}"+
+".bk-hit{padding:11px 13px;border:1px solid #E3E6EC;border-radius:10px;margin-top:7px;"+
+  "background:#fff;cursor:pointer;transition:.15s}"+
+".bk-hit:hover{background:#F6F7F9;border-color:#C3CCDF}"+
+".bk-hit b{color:#232936}.bk-bal{font-size:12.5px;color:#8A90A0;margin-top:3px}"+
+".bk-hint{font-size:13px;color:#A8AEBC;padding:10px 2px}"+
+".bk-left{font-size:12.5px;color:#8A90A0;margin-top:5px;line-height:1.6}"+
+".bk-names{font-size:12px;color:#A8AEBC;margin-top:4px}"+
+".bk-ok{color:#12805C;font-weight:500}.bk-full{color:#C9453B;font-weight:600}"+
+".bk-act{display:flex;gap:10px;margin-top:22px}"+
+".bk-cancel{flex:1;padding:14px;background:#F2F3F6;border:0;border-radius:12px;"+
+  "font-size:14.5px;cursor:pointer;color:#5B6272;font-family:inherit;transition:.15s}"+
+".bk-cancel:hover{background:#E7E9EE}"+
+".bk-save{flex:2;padding:14px;background:#1E2B4F;color:#fff;border:0;border-radius:12px;"+
+  "font-size:14.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}"+
+".bk-save:hover{background:#16223F}"+
+".bk-save:disabled{background:#A8AEBC;cursor:default}";
 document.head.appendChild(css);
 
 document.addEventListener("DOMContentLoaded",function(){ setTimeout(bkRender,400) });
