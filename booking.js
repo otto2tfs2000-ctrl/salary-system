@@ -11,23 +11,7 @@ var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebas
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
-/* 老師名單一律以「老師設定」為準；真的完全讀不到才用備用清單 */
-var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
-function bkTeachers(){
-  try{
-    var store=(typeof curStore==="object"&&curStore&&curStore.daily)?curStore.daily:"flagship";
-    if(typeof getTeachers==="function"){
-      var list=getTeachers(store).map(function(t){return t.name}).filter(Boolean);
-      if(list.length)return list;
-    }
-    /* 店別篩不到時，退一步列出全部老師，總比顯示不存在的名字好 */
-    if(typeof S==="object"&&S&&S.teachers&&S.teachers.length){
-      var all=S.teachers.map(function(t){return t.name}).filter(Boolean);
-      if(all.length)return all;
-    }
-  }catch(e){}
-  return TEACHERS_FALLBACK;
-}
+var TEACHERS = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 var PAYWAYS  = [
   {k:"points",  n:"點數扣抵", member:true },
   {k:"sessions",n:"堂數扣抵", member:true },
@@ -39,6 +23,34 @@ var PAYWAYS  = [
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
 var salf = function(p){ return SAL_URL.replace(/\/$/,"")+p };
 var bonusOf = function(a){ return Math.floor((+a||0)/500) };
+/* ── 加購項目可選的材料 ──
+   直接讀「庫存盤點」旗艦店的品項，跟課程用料同一份資料，不另外維護一張表。
+   顏料整類不列：那是課程本身在用的，不會單獨賣給客人。 */
+function bkAddonMats(){
+  try{
+    var items=null;
+    if(typeof getInvStoreByName==="function"){
+      var st=getInvStoreByName("flagship"); items=st&&st.items;
+    }
+    if(!items&&typeof getInvItems==="function")items=getInvItems();
+    if(!items||!items.length)return [];
+    return items.filter(function(m){ return String(m.cat||"")!=="顏料" })
+      .sort(function(a,b){
+        return String(a.cat||"").localeCompare(String(b.cat||""))||
+               String(a.name||"").localeCompare(String(b.name||"")) });
+  }catch(e){ return [] }
+}
+function bkMatById(id){
+  if(id==null||id==="")return null;
+  return bkAddonMats().filter(function(m){ return String(m.id)===String(id) })[0]||null;
+}
+/* 舊核銷紀錄的加購只存了品名，開「修正核銷」時比對一次，對得上就自動接回庫存品項 */
+function bkMatByName(nm){
+  var k=String(nm==null?"":nm).replace(/\s/g,"").toLowerCase();
+  if(!k)return null;
+  return bkAddonMats().filter(function(m){
+    return String(m.name||"").replace(/\s/g,"").toLowerCase()===k })[0]||null;
+}
 /* 電話正規化：+886912345678 → 0912345678，去掉空白破折號 */
 var bkNorm = function(p){
   var d=String(p==null?"":p).replace(/\D/g,"");
@@ -209,6 +221,7 @@ async function bkRender(){
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
+  root.querySelectorAll("[data-vd]").forEach(function(el){ el.onclick=function(){ bkVoid(el.dataset.vd) } });
   root.querySelectorAll("[data-cx]").forEach(function(el){ el.onclick=function(){ bkCancel(el.dataset.cx) } });
 }
 window.bkRender=bkRender;
@@ -258,6 +271,7 @@ function bkCard(b){
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
       '<button class="bk-b ck" data-ck="'+b.id+'">'+(c?"修正核銷":"核銷")+'</button>'+
+      (c?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
@@ -294,6 +308,15 @@ async function bkCheckout(id){
   /* course: 課程本身；addons: 加價項目 */
   var course={amt:old?old.courseAmt:(b.total||0), way:old?old.coursePay:""};
   var addons=old&&old.addons?JSON.parse(JSON.stringify(old.addons)):[];
+  /* 舊紀錄沒有 materialId，用品名回頭比對庫存品項，對得上就補回去，行政在畫面上看得到 */
+  addons.forEach(function(a){
+    if(!a)return;
+    if(a.materialId==null&&a.name){
+      var m=bkMatByName(a.name);
+      if(m){ a.materialId=m.id; a.name=m.name; }
+    }
+    if(a.materialId&&!(+a.qty>0))a.qty=1;
+  });
   var teacher=old?old.teacher:"";
   var autoMatched=false;
   var ppl=+b.people||1;
@@ -314,12 +337,12 @@ async function bkCheckout(id){
    '<div class="bk-f"><label>課程費用</label><input id="ckAmt" inputmode="numeric" value="'+(course.amt||"")+'"></div>'+
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
    '<div class="bk-f"><label>加價項目（畫布、公仔等）</label><div id="ckAdd"></div>'+
-     '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button></div>'+
+     '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button><div id="ckAddWarn"></div></div>'+
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
      '<input type="checkbox" id="ckProxy" style="width:16px;height:16px"> 用其他會員的點數（朋友代扣）</label>'+
      '<div id="ckProxyBox"></div></div>'+
    '<div class="bk-f"><label>上課老師</label><select id="ckT"><option value="">請選擇</option>'+
-     bkTeachers().map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+esc(t)+'</option>'}).join("")+'</select></div>'+
+     TEACHERS.map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+t+'</option>'}).join("")+'</select></div>'+
    '<div class="bk-calc" id="ckCalc"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="ckX">取消</button>'+
      '<button class="bk-save" id="ckOK">'+(old?"確認修正":"確認核銷")+'</button></div>');
@@ -343,21 +366,52 @@ async function bkCheckout(id){
       el.onclick=function(){ course.way=el.dataset.w; drawWays(); calc() } });
   }
   function drawAddons(){
+    var mats=bkAddonMats();
+    /* 每一列各自組一次選項，選中的那項直接標 selected，不用事後再設值 */
+    function optsFor(sel){
+      var s='<option value=""'+(sel?"":" selected")+'>其他（不扣庫存）</option>';
+      var lastCat=null;
+      mats.forEach(function(m){
+        if(m.cat!==lastCat){ if(lastCat!==null)s+="</optgroup>";
+          s+='<optgroup label="'+esc(m.cat||"未分類")+'">'; lastCat=m.cat }
+        s+='<option value="'+esc(m.id)+'"'+(String(sel)===String(m.id)?" selected":"")+'>'+
+           esc(m.name)+(m.unit?"（"+esc(m.unit)+"）":"")+'</option>';
+      });
+      if(lastCat!==null)s+="</optgroup>";
+      return s;
+    }
     document.getElementById("ckAdd").innerHTML=addons.map(function(a,i){
+      var isOther=!a.materialId;
       return '<div class="bk-addon">'+
-        '<input class="an" data-i="'+i+'" placeholder="品名（例：8F 畫布）" value="'+esc(a.name||"")+'">'+
+        '<select class="am" data-i="'+i+'">'+optsFor(a.materialId)+'</select>'+
+        (isOther
+          ? '<input class="an" data-i="'+i+'" placeholder="品名" value="'+esc(a.name||"")+'">'
+          : '<input class="aq" data-i="'+i+'" inputmode="numeric" placeholder="數量" value="'+(a.qty||1)+'">')+
         '<input class="av" data-i="'+i+'" inputmode="numeric" placeholder="金額" value="'+(a.amt||"")+'">'+
         '<select class="aw" data-i="'+i+'">'+PAYWAYS.map(function(p){
           return '<option value="'+p.k+'"'+(a.way===p.k?" selected":"")+
             (p.member&&!payer?" disabled":"")+'>'+p.n+'</option>' }).join("")+'</select>'+
-        '<span class="ax" data-i="'+i+'">✕</span></div>' }).join("");
-    document.querySelectorAll(".an").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].name=el.value } });
-    document.querySelectorAll(".av").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].amt=+el.value||0; calc() } });
-    document.querySelectorAll(".aw").forEach(function(el){ el.onchange=function(){ addons[+el.dataset.i].way=el.value; calc() } });
-    document.querySelectorAll(".ax").forEach(function(el){ el.onclick=function(){ addons.splice(+el.dataset.i,1); drawAddons(); calc() } });
+        '<span class="ax" data-i="'+i+'">✕</span>'+
+        (isOther?'<div class="bk-nodeduct">手打品名，不扣庫存</div>':"")+
+        '</div>' }).join("");
+    document.querySelectorAll("#ckAdd .am").forEach(function(el){ el.onchange=function(){
+      var a=addons[+el.dataset.i];
+      if(!el.value){ a.materialId=null; a.qty=0; }
+      else{ var m=bkMatById(el.value);
+        a.materialId=m?m.id:el.value; a.name=m?m.name:"";
+        if(!(+a.qty>0))a.qty=1; }
+      drawAddons(); calc() } });
+    document.querySelectorAll("#ckAdd .an").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].name=el.value } });
+    document.querySelectorAll("#ckAdd .aq").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].qty=+el.value||0 } });
+    document.querySelectorAll("#ckAdd .av").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].amt=+el.value||0; calc() } });
+    document.querySelectorAll("#ckAdd .aw").forEach(function(el){ el.onchange=function(){ addons[+el.dataset.i].way=el.value; calc() } });
+    document.querySelectorAll("#ckAdd .ax").forEach(function(el){ el.onclick=function(){ addons.splice(+el.dataset.i,1); drawAddons(); calc() } });
+    var w=document.getElementById("ckAddWarn");
+    if(w)w.innerHTML=mats.length?"":
+      '<div class="bk-warn">庫存盤點還沒有品項（顏料不列入加購），現在加價只能手打品名，不會扣庫存。</div>';
   }
   document.getElementById("ckAddNew").onclick=function(){
-    addons.push({name:"",amt:0,way:payer?"points":"cash"}); drawAddons(); calc() };
+    addons.push({materialId:null,name:"",qty:0,amt:0,way:payer?"points":"cash"}); drawAddons(); calc() };
 
   function calc(){
     course.amt=+document.getElementById("ckAmt").value||0;
@@ -437,9 +491,11 @@ async function bkCheckout(id){
     var cp=PAYWAYS.filter(function(p){return p.k===course.way})[0];
     if(!course.amt||!cp||!t){ alert("課程費用、付款方式、上課老師都要填"); return }
     if(cp.member&&!payer){ alert("這個付款方式需要先選會員"); return }
-    addons=addons.filter(function(a){ return a.name||a.amt });
+    addons=addons.filter(function(a){ return a.materialId||a.name||a.amt });
     for(var i=0;i<addons.length;i++){
       var ap=PAYWAYS.filter(function(p){return p.k===addons[i].way})[0];
+      if(addons[i].materialId&&!(+addons[i].qty>0)){
+        alert("加價項目「"+(addons[i].name||"未命名")+"」的數量要大於 0"); return }
       if(!addons[i].amt){ alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"); return }
       if(ap&&ap.member&&!payer){ alert("加價項目不能用點數，這筆沒有綁會員"); return }
     }
@@ -500,17 +556,6 @@ async function bkCheckout(id){
 
       var sumTxt=PAYWAYS.filter(function(p){return byWay[p.k]}).map(function(p){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
-      /* 課程材料：依「課程用料」自動扣庫存。修正核銷會先撤舊的再重扣 */
-      var matTxt = "";
-      try{
-        if(typeof consumeInvForBooking === "function"){
-          var mr=consumeInvForBooking(id, b.date, b.items||[]);
-          if(mr.ok.length)matTxt="已扣材料："+mr.ok.map(function(m){
-            return m.name+" "+(Math.round(m.qty*10)/10)+m.unit }).join("、");
-          if(mr.miss.length)matTxt+=(matTxt?"\n":"")+"這些課還沒建材料表，沒扣料："+mr.miss.join("、");
-        }
-      }catch(e){ matTxt="材料扣除失敗："+e.message }
-
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
@@ -519,16 +564,83 @@ async function bkCheckout(id){
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
       if(autoMatched&&ownPhone)patch.memberPhone=ownPhone;
       await bkPatch("/bookings/"+id+".json",patch);
+      /* ── 扣材料庫存 ──
+         先把這筆預約的舊耗用整筆撤掉（修正核銷會重跑一次），
+         再依「課程用料」扣課程材料、依加購項目扣加購材料。兩段都寫進 autoUsed，
+         庫存盤點當天就會反映，不用等週一。 */
+      var invMsg="";
+      try{
+        if(typeof releaseInvAutoUse==="function")releaseInvAutoUse(id);
+        var r1=(typeof consumeInvForBooking==="function")
+          ?consumeInvForBooking(id,b.date,b.items||[]):{ok:[],miss:[]};
+        var r2=(typeof consumeInvForAddons==="function")
+          ?consumeInvForAddons(id,b.date,addons):{ok:[],skip:[]};
+        if(typeof save==="function")save();
+        if(r1&&r1.miss&&r1.miss.length)
+          invMsg+="這些課還沒建材料表，沒扣料："+r1.miss.join("、")+"\n";
+        if(r2&&r2.skip&&r2.skip.length)
+          invMsg+="這些加購是手打品名，沒扣庫存："+r2.skip.join("、")+"\n";
+      }catch(e){ invMsg+="材料扣帳出錯："+e.message+"\n" }
+      if(typeof renderInventory==="function")try{ renderInventory() }catch(e){}
       bkClose(); bkRefresh();
-      if(matTxt)alert(matTxt);
-      try{ if(window.dedCache)delete window.dedCache[b.date] }catch(e){}
       if(window.renderDaily)try{ renderDaily() }catch(e){}
-      if(window.renderInventory)try{ renderInventory() }catch(e){}
+      if(invMsg)alert(invMsg.trim());
     }catch(e){
       alert("核銷失敗："+e.message+"\n請重新整理後確認餘額是否已變動。");
       btn.disabled=false; btn.textContent="確認核銷";
     }
   };
+}
+
+/* ══ 作廢核銷 ══
+   把整筆核銷退回「未核銷」：點數／堂數回補、紅利收回、每日登記那筆標作廢、
+   材料庫存整筆撤掉。預約本身留著，不會消失，隨時可以重新核銷。
+   ledger 用反向沖銷留軌跡，不刪舊紀錄。 */
+async function bkVoid(id){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  var c=b.checkout;
+  if(!c){ alert("這筆還沒核銷，不用作廢。"); return }
+  var lines=["確定作廢這筆核銷？","",
+    b.date+"　"+esc(b.customer&&b.customer.name||"—")+"　$"+(+c.total||0).toLocaleString()];
+  if(c.payerPhone){
+    if(+c.usePoints)  lines.push("・回補點數 "+(+c.usePoints).toLocaleString());
+    if(+c.useSessions)lines.push("・回補堂數 "+(+c.useSessions));
+    if(+c.bonus)      lines.push("・收回紅利 "+(+c.bonus));
+  }
+  lines.push("・已扣的材料整筆退回庫存");
+  lines.push("・每日登記那筆標成作廢，不再計入營收與人次");
+  lines.push("","預約單會保留，可以重新核銷。");
+  if(!confirm(lines.join("\n")))return;
+  try{
+    var now=new Date().toISOString();
+    if(c.payerPhone){
+      if(+c.usePoints){ await bkLedger(c.payerPhone,{type:"points",delta:+c.usePoints,
+        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        await bkCache(c.payerPhone,"points",+c.usePoints) }
+      if(+c.useSessions){ await bkLedger(c.payerPhone,{type:"sessions",delta:+c.useSessions,
+        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        await bkCache(c.payerPhone,"sessions",+c.useSessions) }
+      if(+c.bonus){ await bkLedger(c.payerPhone,{type:"bonus",delta:-c.bonus,
+        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        await bkCache(c.payerPhone,"bonus",-c.bonus) }
+    }
+    if(c.logId)await fetch(salf("/deductions/"+c.logId+".json"),{method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({voided:true,voidAt:now,voidReason:"作廢核銷"})});
+    try{
+      if(typeof releaseInvAutoUse==="function"){
+        releaseInvAutoUse(id);
+        if(typeof save==="function")save();
+        if(typeof renderInventory==="function")renderInventory();
+      }
+    }catch(e){}
+    await bkPatch("/bookings/"+id+".json",
+      {status:"new",checkout:null,voidedCheckout:Object.assign({},c,{voidedAt:now})});
+    bkRefresh();
+    if(window.renderDaily)try{ renderDaily() }catch(e){}
+  }catch(e){
+    alert("作廢失敗："+e.message+"\n請重新整理後確認餘額是否已變動。");
+  }
 }
 
 /* ══ 取消 ══ */
@@ -537,9 +649,6 @@ async function bkCancel(id){
   if(b.checkout&&!confirm("這筆已經核銷過，取消預約不會自動退還點數。\n請先用「修正核銷」處理餘額。仍要取消嗎？"))return;
   if(!confirm("確定取消 "+((b.customer&&b.customer.name)||"這筆")+" 的預約？\n名額會立刻釋出，客人會收到 LINE 通知。"))return;
   var reason=prompt("取消原因（可留空，會顯示在客人的通知裡）","")||"";
-  if(b.checkout&&typeof releaseInvAutoUse==="function"){
-    try{ if(releaseInvAutoUse(id)){ save(); if(window.renderInventory)renderInventory() } }catch(e){}
-  }
   await bkPatch("/bookings/"+id+".json",{status:"cancelled",cancelledAt:new Date().toISOString(),cancelReason:reason});
   if(b.line&&b.line.userId)fetch(NOTIFY+"/notify/cancel",{method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -582,10 +691,18 @@ async function bkManual(){
     var sl=slotSel.value, el=document.getElementById("mLeft");
     if(sl==="其他"){ el.innerHTML=""; return }
     var s=bkSlotInfo(d,sl), ppl=+document.getElementById("mPeople").value||1;
-    var line="目前 <b>"+s.used+"</b> 位 / 上限 "+s.cap+" 位";
-    if(s.left<=0)      line+='　<span class="bk-full">已額滿，仍可加開</span>';
-    else if(s.left<ppl)line+='　<span class="bk-full">剩 '+s.left+' 位，不足 '+ppl+' 位</span>';
-    else               line+='　<span class="bk-ok">剩 '+s.left+' 位</span>';
+    /* 實際人數永遠擺第一位。老師現場可能已自行超收，
+       行政若只記得表定數字會再加上去，容易一路加到爆。 */
+    var line='<span class="bk-cnt">目前已預約 <b>'+s.used+'</b> 位</span>';
+    if(s.cap>0){
+      line+='<span class="bk-cap">表定上限 '+s.cap+' 位</span>';
+      if(s.left<0)        line+='<span class="bk-full">已超過表定 '+Math.abs(s.left)+' 位</span>';
+      else if(s.left===0) line+='<span class="bk-full">已達表定上限，仍可加開</span>';
+      else if(s.left<ppl) line+='<span class="bk-full">表定剩 '+s.left+' 位，這筆要 '+ppl+' 位</span>';
+      else                line+='<span class="bk-ok">表定剩 '+s.left+' 位</span>';
+    }else{
+      line+='<span class="bk-cap">班表這天沒排老師，沒有表定上限</span>';
+    }
     if(s.names.length)line+='<div class="bk-names">已約：'+s.names.map(esc).join("、")+'</div>';
     el.innerHTML=line;
   }
@@ -661,8 +778,15 @@ async function bkManual(){
     var c=ci===""?null:bkCourses[+ci];
     var amt=+g("mAmt")||0;
     var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
-    if(sl!=="其他"&&bkLeft(d,sl)<ppl&&
-       !confirm("這個時段名額不足，登記後會超收。確定嗎？"))return;
+    if(sl!=="其他"){
+      var si=bkSlotInfo(d,sl);
+      if(si.cap>0&&si.left<ppl&&
+         !confirm("這個時段目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
+                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))return;
+      if(si.cap<=0&&si.used>0&&
+         !confirm("這個時段班表沒排老師，目前已預約 "+si.used+" 位。\n"+
+                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))return;
+    }
     var rec={date:d,slot:sl,people:ppl,adults:nA,kids:nK,
       items:c?[{name:c.name,spec:c.spec,qty:ppl,price:c.price}]
              :(g("mNote")?[]:[]),
@@ -773,9 +897,14 @@ css.textContent=
 ".bk-way.on{border-color:#3A4C7A;background:#EDF1FA;color:#1E2B4F;font-weight:600;"+
   "box-shadow:0 0 0 2px rgba(58,76,122,.1)}"+
 ".bk-way.dis{opacity:.3;pointer-events:none}"+
-".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:6px}"+
-".bk-addon .an{flex:2}.bk-addon .av{flex:1;min-width:70px}.bk-addon .aw{flex:1;min-width:88px}"+
-".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;font-size:13px;box-sizing:border-box}"+
+".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}"+
+".bk-addon .am{flex:2 1 132px}.bk-addon .an{flex:2 1 108px}.bk-addon .aq{flex:0 1 60px}"+
+".bk-addon .av{flex:1 1 70px}.bk-addon .aw{flex:1 1 88px}"+
+".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;"+
+  "font-size:13px;box-sizing:border-box;background:#fff;font-family:inherit}"+
+".bk-nodeduct{flex-basis:100%;font-size:11.5px;color:#A8AEBC;margin:-3px 0 0 2px}"+
+".bk-b.vd{background:#FDF4E3;color:#8A6400}"+
+".bk-b.vd:hover{background:#F8EBD3}"+
 ".ax{color:#C9453B;cursor:pointer;padding:0 4px;font-size:15px}"+
 ".bk-mini{background:#fff;border:1px dashed #999;border-radius:7px;padding:7px 12px;font-size:12.5px;cursor:pointer;width:100%}"+
 ".bk-info{background:#EDF1FA;border:0;border-radius:12px;padding:13px 15px;margin-bottom:14px;"+
@@ -796,6 +925,9 @@ css.textContent=
 ".bk-left{font-size:12.5px;color:#8A90A0;margin-top:5px;line-height:1.6}"+
 ".bk-names{font-size:12px;color:#A8AEBC;margin-top:4px}"+
 ".bk-ok{color:#12805C;font-weight:500}.bk-full{color:#C9453B;font-weight:600}"+
+".bk-cnt{display:inline-block;font-size:14px;color:#1E2B4F;font-weight:600;margin-right:9px}"+
+".bk-cnt b{font-size:19px;color:#1E2B4F;font-weight:700;vertical-align:-1px}"+
+".bk-cap{display:inline-block;font-size:12.5px;color:#8A90A0;margin-right:8px}"+
 ".bk-act{display:flex;gap:10px;margin-top:22px}"+
 ".bk-cancel{flex:1;padding:14px;background:#F2F3F6;border:0;border-radius:12px;"+
   "font-size:14.5px;cursor:pointer;color:#5B6272;font-family:inherit;transition:.15s}"+

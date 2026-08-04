@@ -286,6 +286,38 @@ function consumeInvForBooking(bookingId, dateStr, items) {
   return res;
 }
 
+// 加購項目（畫布、公仔等）的材料耗用。
+// 跟課程用料共用 st.autoUsed，用 kind:'addon' 標出來源，修正核銷時一起被 releaseInvAutoUse 撤掉。
+// 注意：這支「不會」自己先 release，因為呼叫端會在扣課程用料之前先撤一次；
+// 這裡若再撤一次，剛寫進去的課程用料會被一起刪掉。
+// addons 格式：[{materialId, name, qty}]。materialId 空的（行政手打的品名）直接跳過不扣。
+function consumeInvForAddons(bookingId, dateStr, addons) {
+  var res = { ok: [], skip: [] };
+  if (!bookingId || !addons || !addons.length) return res;
+  var st = getInvStore();
+  var dateKey = String(dateStr || '').replace(/\//g, '-');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) dateKey = invFmtDate(new Date());
+  var pool = {};
+  addons.forEach(function(a) {
+    if (!a) return;
+    if (!a.materialId) { if (a.name) res.skip.push(a.name); return; }
+    var q = +a.qty || 0;
+    if (q > 0) pool[a.materialId] = (pool[a.materialId] || 0) + q;
+  });
+  var ids = Object.keys(pool);
+  if (!ids.length) return res;
+  if (!st.autoUsed[dateKey]) st.autoUsed[dateKey] = [];
+  var now = Date.now();
+  ids.forEach(function(id) {
+    var m = getInvItems().find(function(x){ return String(x.id) === String(id) });
+    st.autoUsed[dateKey].push({ itemId: id, qty: pool[id], bookingId: bookingId,
+      course: '加購', kind: 'addon', savedAt: now });
+    res.ok.push({ name: m ? m.name : ('#' + id), qty: pool[id], unit: m ? (m.unit || '') : '' });
+  });
+  save();
+  return res;
+}
+
 // 計算某品項目前的「庫存量」。
 // 統一邏輯：找到「目標週或之前，最近一筆有實際盤點值」當基準（含 savedAt 時間戳記），
 // 之後依時間序往前滾算：
