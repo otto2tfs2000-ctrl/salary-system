@@ -46,10 +46,19 @@ function bkAddonMats(){
     }
     if(!items&&typeof getInvItems==="function")items=getInvItems();
     if(!items||!items.length)return [];
+    var cats=(typeof INV_CATS!=="undefined"&&INV_CATS&&INV_CATS.length)
+      ?INV_CATS:["畫布","框木板","飾品配件","顏料"];
+    /* 排序完全跟著「庫存盤點」那張表：先照類別、同類別內照品項自己的 order。
+       所以順序要調整就去庫存盤點拖拉品項，這裡不另外排。 */
+    var ordOf=(typeof getInvItemOrder==="function")
+      ?getInvItemOrder:function(it){ return +it.id||0 };
     return items.filter(function(m){ return String(m.cat||"")!=="顏料" })
       .sort(function(a,b){
-        return String(a.cat||"").localeCompare(String(b.cat||""))||
-               String(a.name||"").localeCompare(String(b.name||"")) });
+        var ca=cats.indexOf(a.cat); if(ca<0)ca=999;
+        var cb=cats.indexOf(b.cat); if(cb<0)cb=999;
+        if(ca!==cb)return ca-cb;
+        return ordOf(a)-ordOf(b);
+      });
   }catch(e){ return [] }
 }
 function bkMatById(id){
