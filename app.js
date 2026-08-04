@@ -636,14 +636,7 @@ function dedDateStr(y, m, d) {
 }
 
 async function loadDeductions(dateStr) {
-  /* 已經有快取就直接套用：畫面每次重畫都會清空欄位，這裡要補填回去 */
-  if (dedCache[dateStr]) {
-    var b0 = document.getElementById('ded-box');
-    if (b0) b0.innerHTML = buildDedHtml(dateStr);
-    applyDeductions(dateStr);
-    return;
-  }
-  if (dedLoading[dateStr]) return;
+  if (dedCache[dateStr] || dedLoading[dateStr]) return;
   dedLoading[dateStr] = true;
   try {
     var r = await fetch(DED_URL + '/deductions.json');
@@ -659,8 +652,25 @@ async function loadDeductions(dateStr) {
     dedCache[dateStr] = out;
   } catch(e) { dedCache[dateStr] = []; }
   dedLoading[dateStr] = false;
-  var box = document.getElementById('ded-box');
-  if (box) { box.innerHTML = buildDedHtml(dateStr); applyDeductions(dateStr); }
+  /* 資料到齊後整塊重畫一次，數字就會直接出現在欄位裡（不靠事後補填） */
+  if (document.getElementById('ded-box')) renderDayForm();
+}
+
+/* 刪除一筆核銷紀錄。只清掉每日登記的這筆帳，
+   會員點數與材料不會退——那要在「今日排課」用修正核銷或取消預約處理。 */
+async function delDeduction(logId, dateStr) {
+  if (!logId) return;
+  if (!confirm('確定刪除這筆核銷紀錄？\n\n只會從每日登記移除，客人的點數和已扣的材料不會退回。\n如果要連點數一起還原，請到「今日排課」用「修正核銷」或「取消預約」。')) return;
+  try {
+    await fetch(DED_URL + '/deductions/' + logId + '.json', { method: 'DELETE' });
+  } catch(e) { alert('刪除失敗：' + e.message); return; }
+  dedRefresh(dateStr);
+}
+
+/* 重新抓一次核銷資料（核銷完、或想還原被改掉的數字時用） */
+function dedRefresh(dateStr) {
+  delete dedCache[dateStr];
+  renderDayForm();
 }
 
 function buildDedHtml(dateStr) {
@@ -689,12 +699,13 @@ function buildDedHtml(dateStr) {
       '<td style="font-size:12px;color:var(--text3)">' + (r.items || '—') + (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
       '<td style="font-size:12.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
       '<td style="text-align:right;font-size:12.5px">$' + amt.toLocaleString() + '</td>' +
+      '<td><button class="btn btn-del btn-sm" onclick="delDeduction(\'' + r._id + '\',\'' + dateStr + '\')">刪除</button></td>' +
       '</tr>';
   });
 
   var h = '';
   h += '<div style="overflow-x:auto"><table><thead><tr>' +
-       '<th>客人</th><th style="width:110px">人數</th><th>課程</th><th style="width:90px">老師</th><th style="width:80px">金額</th>' +
+       '<th>客人</th><th style="width:110px">人數</th><th>課程</th><th style="width:90px">老師</th><th style="width:80px">金額</th><th style="width:60px"></th>' +
        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:13px">' +
        '<span>合計 <strong style="color:var(--gold2)">' + totalPpl + '</strong> 人次</span>' +
@@ -708,55 +719,27 @@ function buildDedHtml(dateStr) {
   h += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
        '<span class="muted" style="font-size:12px">人次與營收已自動填入下方欄位，' +
        '確認後按「新增本次紀錄」與「儲存當日營收」存檔。</span>' +
-       '<button class="btn btn-outline btn-sm" onclick="applyDeductions(\'' + dateStr + '\',1)">重新帶入</button>' +
+       '<button class="btn btn-outline btn-sm" onclick="dedRefresh(\'' + dateStr + '\')">重新讀取</button>' +
        '</div>';
   return h;
 }
 
-function applyDeductions(dateStr, loud) {
-  var list = dedCache[dateStr] || [];
-  if (!list.length) { if (loud) alert('這天沒有核銷紀錄'); return; }
-  var teachers = getTeachers(curStore.daily);
+
+/* 直接算出某天核銷的合計，供畫面組裝時就把數字寫進欄位（不靠事後補填） */
+function dedTotals(dateStr) {
+  var out = { byTeacher: {}, revenue: 0, skipped: 0, has: false };
+  var list = dedCache[dateStr];
+  if (!list || !list.length) return out;
+  out.has = true;
   var byName = {};
-  teachers.forEach(function(t){ byName[t.name] = t; });
-
-  var acc = {}, skipped = 0, revenue = 0;
+  getTeachers(curStore.daily).forEach(function(t){ byName[t.name] = t; });
   list.forEach(function(r){
-    revenue += (+r.total || 0);
+    out.revenue += (+r.total || 0);
     var t = byName[r.teacher || ''];
-    if (!t) { skipped++; return; }
-    if (!acc[t.id]) acc[t.id] = { count:0, sales:0 };
-    acc[t.id].count += (+r.people || 0);
-    acc[t.id].sales += (+r.total || 0);
+    if (!t) { out.skipped++; return; }
+    out.byTeacher[t.id] = (out.byTeacher[t.id] || 0) + (+r.people || 0);
   });
-
-  teachers.forEach(function(t){
-    var c = document.getElementById('inp_c_' + t.id);
-    var a = acc[t.id];
-    if (c) c.value = a ? a.count : 0;
-  });
-
-  /* 當日營收＝課程＋加購的核銷總額。已經填過不一樣的數字就不覆蓋，只提示 */
-  var rev = document.getElementById('inp_rev');
-  if (rev) {
-    var cur = parseInt(rev.value) || 0;
-    if (loud || !cur || cur === (rev.dataset.autofill ? parseInt(rev.dataset.autofill) : -1)) {
-      rev.value = revenue;
-      rev.dataset.autofill = revenue;
-      var hint = document.getElementById('rev-hint');
-      if (hint) hint.textContent = '已依今日核銷帶入 $' + revenue.toLocaleString();
-    } else if (cur !== revenue) {
-      var hint2 = document.getElementById('rev-hint');
-      if (hint2) hint2.innerHTML = '<span style="color:var(--red)">今日核銷合計 $' + revenue.toLocaleString() +
-        '，與目前填的 $' + cur.toLocaleString() + ' 不同</span>';
-    }
-  }
-
-  if (loud) {
-    var msg = '已帶入 ' + Object.keys(acc).length + ' 位老師的人次，當日營收 $' + revenue.toLocaleString() + '。';
-    if (skipped) msg += '\n有 ' + skipped + ' 筆因為老師名字對不上，沒有帶入。';
-    alert(msg);
-  }
+  return out;
 }
 
 function renderDayForm() {
@@ -772,6 +755,9 @@ function renderDayForm() {
   // Teacher input rows
   let tRows = '';
   var selM_daily = parseInt(document.getElementById('selMonth').value);
+  var selY_daily = parseInt(document.getElementById('selYear').value);
+  var dedDate = dedDateStr(selY_daily, selM_daily, day);
+  var DT = dedTotals(dedDate);
   teachers.forEach(function(t) {
     var fbAmt = getFBSalesByDay(getSalesKey(t.name), selM_daily, day, store);
     var salesCell;
@@ -787,7 +773,7 @@ function renderDayForm() {
     }
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
-      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
+      '<td><input type="number" class="in-num" id="inp_c_' + t.id + '" value="' + (DT.byTeacher[t.id] || 0) + '" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_o_' + t.id + '" value="0" min="0" step="0.5" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_m_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="inp_a_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
@@ -850,8 +836,6 @@ function renderDayForm() {
     }
   }
 
-  var selY_daily = parseInt(document.getElementById('selYear').value);
-  var dedDate = dedDateStr(selY_daily, selM_daily, day);
   var html = '<div class="card">' +
     '<div class="card-title">🧾 今日核銷 — ' + day + ' 日</div>' +
     '<div id="ded-box">' + buildDedHtml(dedDate) + '</div>' +
@@ -886,16 +870,22 @@ function renderDayForm() {
 
   // 獨立當日營收區塊
   var existRev = (S.daily[dayKey(store, mKey, day)] && S.daily[dayKey(store, mKey, day)].revenue) ? S.daily[dayKey(store, mKey, day)].revenue : 0;
+  var revVal = existRev || (DT.revenue || '');
+  var revNote = DT.has
+    ? (existRev && existRev !== DT.revenue
+        ? '<span style="color:var(--red)">今日核銷合計 $' + DT.revenue.toLocaleString() + '，與已儲存的 $' + existRev.toLocaleString() + ' 不同</span>'
+        : '已依今日核銷帶入 $' + (DT.revenue||0).toLocaleString() + '，確認後按右邊儲存')
+    : '此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）';
   html += '<div class="card" style="border:1px solid var(--gold);margin-top:8px">' +
     '<div class="card-title" style="color:var(--gold2)">💰 當日營收（可單獨儲存）</div>' +
     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label style="color:var(--gold2)">今日實際營收（元）</label>' +
-    '<input type="number" id="inp_rev" placeholder="0" min="0" value="' + (existRev||'') + '" style="width:160px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()">' +
+    '<input type="number" id="inp_rev" placeholder="0" min="0" value="' + revVal + '" style="width:160px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()">' +
     '</div>' +
     (existRev ? '<div style="font-size:13px;color:var(--gold2)">目前已記錄：<strong>$' + existRev.toLocaleString() + '</strong></div>' : '') +
     '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存當日營收</button>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">' + revNote + '</div>' +
     '</div>';
 
   // 獨立營隊登記區塊（與課程紀錄完全分開）
