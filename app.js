@@ -869,23 +869,31 @@ function renderDayForm() {
     '</div></div>';
 
   // 獨立當日營收區塊
-  var existRev = (S.daily[dayKey(store, mKey, day)] && S.daily[dayKey(store, mKey, day)].revenue) ? S.daily[dayKey(store, mKey, day)].revenue : 0;
-  var revVal = existRev || (DT.revenue || '');
-  var revNote = DT.has
-    ? (existRev && existRev !== DT.revenue
-        ? '<span style="color:var(--red)">今日核銷合計 $' + DT.revenue.toLocaleString() + '，與已儲存的 $' + existRev.toLocaleString() + ' 不同</span>'
-        : '已依今日核銷帶入 $' + (DT.revenue||0).toLocaleString() + '，確認後按右邊儲存')
-    : '此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）';
+  var dayRec = S.daily[dayKey(store, mKey, day)] || {};
+  var existRev = +dayRec.revenue || 0;
+  var existExtra = (dayRec.revenueExtra != null) ? (+dayRec.revenueExtra || 0)
+                 : Math.max(0, existRev - (DT.revenue || 0));   /* 舊資料沒有這欄，用差額推回去 */
+  var revTotal = (DT.revenue || 0) + existExtra;
   html += '<div class="card" style="border:1px solid var(--gold);margin-top:8px">' +
     '<div class="card-title" style="color:var(--gold2)">💰 當日營收（可單獨儲存）</div>' +
     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
-    '<div class="day-meta-item"><label style="color:var(--gold2)">今日實際營收（元）</label>' +
-    '<input type="number" id="inp_rev" placeholder="0" min="0" value="' + revVal + '" style="width:160px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()">' +
+    '<div class="day-meta-item"><label>核銷營收（自動）</label>' +
+    '<div style="width:130px;padding:8px 12px;font-size:15px;color:var(--gold2);font-weight:700">$' + (DT.revenue||0).toLocaleString() + '</div>' +
     '</div>' +
-    (existRev ? '<div style="font-size:13px;color:var(--gold2)">目前已記錄：<strong>$' + existRev.toLocaleString() + '</strong></div>' : '') +
-    '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存當日營收</button>' +
+    '<div style="font-size:18px;color:var(--text3)">＋</div>' +
+    '<div class="day-meta-item"><label style="color:var(--gold2)">其他收入（手動填）</label>' +
+    '<input type="number" id="inp_rev_extra" placeholder="0" min="0" value="' + (existExtra||'') + '" style="width:130px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()" oninput="updateRevTotal(' + (DT.revenue||0) + ')">' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">' + revNote + '</div>' +
+    '<div style="font-size:18px;color:var(--text3)">＝</div>' +
+    '<div class="day-meta-item"><label>當日營收</label>' +
+    '<div id="rev-total" style="width:130px;padding:8px 12px;font-size:17px;font-weight:700">$' + revTotal.toLocaleString() + '</div>' +
+    '</div>' +
+    '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ',' + (DT.revenue||0) + ')">💾 儲存當日營收</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">' +
+      '「其他收入」填純賣材料、雜項這種沒有走核銷的收入。核銷那格會自己算，不用動。' +
+      (existRev && existRev !== revTotal ? '<br><span style="color:var(--red)">已儲存的是 $' + existRev.toLocaleString() + '，與目前算出來的 $' + revTotal.toLocaleString() + ' 不同，記得重新儲存</span>' : '') +
+    '</div>' +
     '</div>';
 
   // 獨立營隊登記區塊（與課程紀錄完全分開）
@@ -971,12 +979,20 @@ function updateFee(tid) {
 }
 
 // ── 獨立儲存當日營收 ────────────────────────────────────
-function saveRevOnly(store, mKey, day) {
-  var rev = parseInt(document.getElementById('inp_rev')?.value) || 0;
-  if (!rev) { alert('請輸入營收金額'); return; }
+function updateRevTotal(dedRev) {
+  var extra = parseInt(document.getElementById('inp_rev_extra')?.value) || 0;
+  var el = document.getElementById('rev-total');
+  if (el) el.textContent = '$' + ((+dedRev || 0) + extra).toLocaleString();
+}
+
+function saveRevOnly(store, mKey, day, dedRev) {
+  var extra = parseInt(document.getElementById('inp_rev_extra')?.value) || 0;
+  var rev = (+dedRev || 0) + extra;
+  if (!rev) { alert('核銷與其他收入都是 0，沒有東西可以儲存'); return; }
   var rk = dayKey(store, mKey, day);
   if (!S.daily[rk]) S.daily[rk] = { entries:[] };
-  S.daily[rk].revenue = rev;
+  S.daily[rk].revenue = rev;          /* 總額，月報與薪資讀這個 */
+  S.daily[rk].revenueExtra = extra;   /* 手動填的部分，重算時才知道要留多少 */
   save();
   renderDayForm();
   // 顯示成功提示
