@@ -159,8 +159,7 @@ async function bkRender(){
   var totalPeople=bkList.reduce(function(s,b){return s+(+b.people||0)},0);
   var doneCount=bkList.filter(function(b){return b.checkout}).length;
   var sum=bkList.reduce(function(s,b){return s+(b.checkout?(+b.checkout.total||0):0)},0);
-  var totKid=bkList.reduce(function(s,b){ var c=b.checkout||{};
-    return s+(+(c.kids!=null?c.kids:b.kids)||0) },0);
+  var totKid=bkList.reduce(function(s,b){ var x=bkAK(b); return s+(+x.k||0) },0);
   var pplSub=totKid?"含小孩 "+totKid:"";
 
   root.innerHTML=
@@ -199,14 +198,19 @@ async function bkRender(){
 window.bkRender=bkRender;
 
 /* 人數組成：2 位（大人 1・小孩 1）；沒填過就只顯示總數 */
+function bkAK(b){
+  var c=b.checkout||{}, p=b.party||{};
+  var a=(c.adults!=null)?c.adults:(b.adults!=null?b.adults:(p.adults!=null?p.adults:null));
+  var k=(c.kids  !=null)?c.kids  :(b.kids  !=null?b.kids  :(p.kids  !=null?p.kids  :null));
+  return {a:a,k:k,bands:(p.kidBands||[]).join("、")};
+}
 function bkPplText(b){
-  var c=b.checkout||{};
-  var a=(c.adults!=null?c.adults:b.adults), k=(c.kids!=null?c.kids:b.kids);
-  var n=(a!=null||k!=null)?((+a||0)+(+k||0)):(+b.people||1);
-  if(a==null&&k==null)return n+" 位";
+  var x=bkAK(b);
+  var n=(x.a!=null||x.k!=null)?((+x.a||0)+(+x.k||0)):(+b.people||1);
+  if(x.a==null&&x.k==null)return n+" 位";
   var parts=[];
-  if(+a)parts.push("大人 "+(+a));
-  if(+k)parts.push("小孩 "+(+k));
+  if(+x.a)parts.push("大人 "+(+x.a));
+  if(+x.k)parts.push("小孩 "+(+x.k)+(x.bands?"・"+x.bands:""));
   return n+" 位"+(parts.length?"（"+parts.join("・")+"）":"");
 }
 function bkCard(b){
@@ -277,8 +281,9 @@ async function bkCheckout(id){
   var teacher=old?old.teacher:"";
   var autoMatched=false;
   var ppl=+b.people||1;
-  var nKid=(old&&old.kids!=null)?+old.kids:(b.kids!=null?+b.kids:0);
-  var nAdult=(old&&old.adults!=null)?+old.adults:(b.adults!=null?+b.adults:Math.max(0,ppl-nKid));
+  var _ak=bkAK(b);
+  var nKid=(old&&old.kids!=null)?+old.kids:(_ak.k!=null?+_ak.k:0);
+  var nAdult=(old&&old.adults!=null)?+old.adults:(_ak.a!=null?+_ak.a:Math.max(0,ppl-nKid));
 
   bkSheet(
    '<h3>'+(old?"修正核銷":"核銷")+'</h3>'+
@@ -479,6 +484,17 @@ async function bkCheckout(id){
 
       var sumTxt=PAYWAYS.filter(function(p){return byWay[p.k]}).map(function(p){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
+      /* 課程材料：依「課程用料」自動扣庫存。修正核銷會先撤舊的再重扣 */
+      var matTxt = "";
+      try{
+        if(typeof consumeInvForBooking === "function"){
+          var mr=consumeInvForBooking(id, b.date, b.items||[]);
+          if(mr.ok.length)matTxt="已扣材料："+mr.ok.map(function(m){
+            return m.name+" "+(Math.round(m.qty*10)/10)+m.unit }).join("、");
+          if(mr.miss.length)matTxt+=(matTxt?"\n":"")+"這些課還沒建材料表，沒扣料："+mr.miss.join("、");
+        }
+      }catch(e){ matTxt="材料扣除失敗："+e.message }
+
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
@@ -488,7 +504,9 @@ async function bkCheckout(id){
       if(autoMatched&&ownPhone)patch.memberPhone=ownPhone;
       await bkPatch("/bookings/"+id+".json",patch);
       bkClose(); bkRefresh();
+      if(matTxt)alert(matTxt);
       if(window.renderDaily)try{ renderDaily() }catch(e){}
+      if(window.renderInventory)try{ renderInventory() }catch(e){}
     }catch(e){
       alert("核銷失敗："+e.message+"\n請重新整理後確認餘額是否已變動。");
       btn.disabled=false; btn.textContent="確認核銷";
@@ -502,6 +520,9 @@ async function bkCancel(id){
   if(b.checkout&&!confirm("這筆已經核銷過，取消預約不會自動退還點數。\n請先用「修正核銷」處理餘額。仍要取消嗎？"))return;
   if(!confirm("確定取消 "+((b.customer&&b.customer.name)||"這筆")+" 的預約？\n名額會立刻釋出，客人會收到 LINE 通知。"))return;
   var reason=prompt("取消原因（可留空，會顯示在客人的通知裡）","")||"";
+  if(b.checkout&&typeof releaseInvAutoUse==="function"){
+    try{ if(releaseInvAutoUse(id)){ save(); if(window.renderInventory)renderInventory() } }catch(e){}
+  }
   await bkPatch("/bookings/"+id+".json",{status:"cancelled",cancelledAt:new Date().toISOString(),cancelReason:reason});
   if(b.line&&b.line.userId)fetch(NOTIFY+"/notify/cancel",{method:"POST",
     headers:{"Content-Type":"application/json"},

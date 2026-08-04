@@ -44,6 +44,7 @@ function getInvStore() {
   if (!S.inventory[store].items) S.inventory[store].items = [];
   if (!S.inventory[store].weeks) S.inventory[store].weeks = {};
   if (!S.inventory[store].restocks) S.inventory[store].restocks = {}; // 進貨登記，獨立於 weeks，不影響既有盤點資料
+  if (!S.inventory[store].autoUsed) S.inventory[store].autoUsed = {}; // 核銷自動耗用，同樣獨立於 weeks
   return S.inventory[store];
 }
 
@@ -193,6 +194,98 @@ function listInvRestocks(fromDateKey, toDateKey) {
   return out;
 }
 
+// ── 核銷自動耗用 ────────────────────────────────────────
+// 跟「週盤點」「進貨登記」一樣分開存放，存在 st.autoUsed，
+// 格式：{ "2026-08-04": [{itemId, qty, bookingId, course, savedAt}, ...], ... }
+// 核銷一筆課程 → 依「課程用料」把材料記進來；修正核銷 → 依 bookingId 整筆撤掉。
+// computeStockBreakdown 會在算庫存時扣掉，所以庫存數字當天就會反映，不用等週一盤點。
+function getInvAutoUsedQtyAfterTimestamp(itemId, sinceTimestamp, toDateKeyExclusive) {
+  var st = getInvStore();
+  var total = 0;
+  Object.keys(st.autoUsed).forEach(function(dateKey) {
+    if (toDateKeyExclusive && dateKey >= toDateKeyExclusive) return;
+    st.autoUsed[dateKey].forEach(function(r) {
+      if (String(r.itemId) === String(itemId) && (r.savedAt || 0) > (sinceTimestamp || 0)) total += r.qty;
+    });
+  });
+  return total;
+}
+function getInvAutoUsedQtyInRange(itemId, rangeStartMonday, exclusiveEndMonday) {
+  var st = getInvStore();
+  var total = 0;
+  Object.keys(st.autoUsed).forEach(function(dateKey) {
+    if (dateKey < rangeStartMonday || dateKey >= exclusiveEndMonday) return;
+    st.autoUsed[dateKey].forEach(function(r) {
+      if (String(r.itemId) === String(itemId)) total += r.qty;
+    });
+  });
+  return total;
+}
+function listInvAutoUsed(fromDateKey, toDateKey) {
+  var st = getInvStore();
+  var out = [];
+  Object.keys(st.autoUsed).forEach(function(dateKey) {
+    if (fromDateKey && dateKey < fromDateKey) return;
+    if (toDateKey && dateKey > toDateKey) return;
+    st.autoUsed[dateKey].forEach(function(r, idx) {
+      out.push({ dateKey: dateKey, idx: idx, itemId: r.itemId, qty: r.qty,
+                 bookingId: r.bookingId, course: r.course, savedAt: r.savedAt });
+    });
+  });
+  out.sort(function(a,b){ return a.dateKey < b.dateKey ? 1 : (a.dateKey > b.dateKey ? -1 : b.savedAt - a.savedAt); });
+  return out;
+}
+// 把某筆預約的自動耗用整筆撤掉（修正核銷、取消核銷時用）
+function releaseInvAutoUse(bookingId) {
+  if (!bookingId) return 0;
+  var st = getInvStore(), removed = 0;
+  Object.keys(st.autoUsed).forEach(function(dateKey) {
+    var keep = st.autoUsed[dateKey].filter(function(r){
+      if (String(r.bookingId) === String(bookingId)) { removed++; return false }
+      return true;
+    });
+    if (keep.length) st.autoUsed[dateKey] = keep; else delete st.autoUsed[dateKey];
+  });
+  return removed;
+}
+// 核銷時呼叫：items 是預約單上的課程 [{name,spec,qty}]
+// 回傳 {ok:[{name,qty,unit}], miss:[課程名]}，讓核銷畫面可以告訴行政扣了什麼、哪些課還沒建材料表
+function consumeInvForBooking(bookingId, dateStr, items) {
+  var res = { ok: [], miss: [] };
+  if (!bookingId || !items || !items.length) return res;
+  if (!S.recipes) return res;
+  var st = getInvStore();
+  var dateKey = String(dateStr || '').replace(/\//g, '-');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) dateKey = invFmtDate(new Date());
+  releaseInvAutoUse(bookingId);            // 先撤掉舊的，避免修正核銷時重複扣
+  var pool = {};                           // itemId -> 合併後的用量
+  items.forEach(function(it) {
+    var name = String(it.name || '').trim();
+    if (!name) return;
+    var spec = String(it.spec || '').trim();
+    var r = S.recipes[name + (spec ? '|' + spec : '')] || S.recipes[name];
+    if (!r || !r.items || !r.items.length) { res.miss.push(name + (spec ? '（' + spec + '）' : '')); return }
+    var n = +it.qty || 1;
+    r.items.forEach(function(x) {
+      var q = (+x.qty || 0) * n;
+      if (q > 0) pool[x.id] = (pool[x.id] || 0) + q;
+    });
+  });
+  var ids = Object.keys(pool);
+  if (!ids.length) return res;
+  if (!st.autoUsed[dateKey]) st.autoUsed[dateKey] = [];
+  var now = Date.now();
+  var courseTxt = items.map(function(i){ return i.name }).join('、');
+  ids.forEach(function(id) {
+    st.autoUsed[dateKey].push({ itemId: id, qty: pool[id], bookingId: bookingId,
+      course: courseTxt, savedAt: now });
+    var m = getInvItems().find(function(x){ return String(x.id) === String(id) });
+    res.ok.push({ name: m ? m.name : ('#' + id), qty: pool[id], unit: m ? (m.unit || '') : '' });
+  });
+  save();
+  return res;
+}
+
 // 計算某品項目前的「庫存量」。
 // 統一邏輯：找到「目標週或之前，最近一筆有實際盤點值」當基準（含 savedAt 時間戳記），
 // 之後依時間序往前滾算：
@@ -209,18 +302,20 @@ function computeStockBreakdown(itemId, weekKey) {
 
   var rec = getInvWeekRecord(itemId, weekKey);
   if (rec && typeof rec.stock === 'number') {
-    // 目標週本身就有盤點實際值：採用該值，再加上盤點完成之後（同一週內）新登記的進貨
+    // 目標週本身就有盤點實際值：採用該值，再加上盤點完成之後（同一週內）新登記的進貨、扣掉自動耗用
     var addNow = getInvRestockQtyAfterTimestamp(itemId, rec.savedAt || 0, targetBoundary);
-    return { total: rec.stock + addNow, base: rec.stock, baseWeek: weekKey,
-             baseLabel: '本週盤點', usedTotal: 0, restock: addNow };
+    var autoNow = getInvAutoUsedQtyAfterTimestamp(itemId, rec.savedAt || 0, targetBoundary);
+    return { total: Math.max(0, rec.stock + addNow - autoNow), base: rec.stock, baseWeek: weekKey,
+             baseLabel: '本週盤點', usedTotal: 0, restock: addNow, autoUsed: autoNow };
   }
 
   var anchor = getInvLatestStockBefore(itemId, weekKey);
   if (!anchor) {
     // 從未盤點過，但若已經有進貨登記，至少能呈現「目前累積進貨量」，比完全沒有資料好
     var totalRestock = getInvRestockQtyAfterTimestamp(itemId, 0, targetBoundary);
-    return { total: totalRestock > 0 ? totalRestock : null, base: null, baseWeek: null,
-             baseLabel: '尚未盤點', usedTotal: 0, restock: totalRestock };
+    var totalAuto = getInvAutoUsedQtyAfterTimestamp(itemId, 0, targetBoundary);
+    return { total: totalRestock > 0 ? Math.max(0, totalRestock - totalAuto) : null, base: null, baseWeek: null,
+             baseLabel: '尚未盤點', usedTotal: 0, restock: totalRestock, autoUsed: totalAuto };
   }
   var anchorRec = getInvWeekRecord(itemId, anchor.week);
   var anchorSavedAt = (anchorRec && anchorRec.savedAt) || 0;
@@ -254,9 +349,10 @@ function computeStockBreakdown(itemId, weekKey) {
   // 把「lastSavedAt 之後、目標週週日之前」登記的所有進貨，一次性加回去——
   // 不論落在哪一週，時間軸上只算一次，不會跟前面任何一段重疊。
   var add = getInvRestockQtyAfterTimestamp(itemId, lastSavedAt, targetBoundary);
-  return { total: stock + add, base: baseVal, baseWeek: baseWeek,
+  var auto = getInvAutoUsedQtyAfterTimestamp(itemId, lastSavedAt, targetBoundary);
+  return { total: Math.max(0, stock + add - auto), base: baseVal, baseWeek: baseWeek,
            baseLabel: '盤點 ' + baseWeek.slice(5).replace('-', '/'),
-           usedTotal: usedTotal, restock: add };
+           usedTotal: usedTotal, restock: add, autoUsed: auto };
 }
 
 function computeCurrentStock(itemId, weekKey) {
@@ -1042,9 +1138,18 @@ function renderInvWeekTable() {
           var parts = [];
           if (bd.base !== null) parts.push(bd.baseLabel + ' ' + bd.base);
           if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
+          if (bd.autoUsed > 0) parts.push('<span style="color:var(--gold2)">－核銷 ' + Math.round(bd.autoUsed*10)/10 + '</span>');
           if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
           curCell = '<div style="font-size:15px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
                   + '<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
+          /* 帳面 vs 實際：盤點數字填了就比對，差額標出來讓你追 */
+          if (typeof rec.stock === 'number' && bd.base !== null && bd.baseWeek !== weekKey) {
+            var gap = rec.stock - bd.total;
+            if (gap !== 0) {
+              curCell += '<div style="font-size:10.5px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
+                + (gap < 0 ? '⚠ 實際少 ' + Math.abs(gap) : '實際多 ' + gap) + '</div>';
+            }
+          }
         }
 
         var order = computeOrderQty(it.id, weekKey, it.safeStock);
