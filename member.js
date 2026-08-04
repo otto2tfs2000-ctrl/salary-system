@@ -414,13 +414,42 @@ function mbLogSale(p, pay, m){
 }
 
 /* ── 方案設定 ──────────────────────────────────────────── */
+/* 方案表上的六個方案，按一次全部建好 */
+var MB_PRESET = [
+  { name:'入門創作家',   price:11000, points:11000, bonusPoints:700,  sessions:0,  months:12, newBonus:150,  renewBonus:300,  voucher:0,    gift:'', active:true },
+  { name:'創意實踐家',   price:15000, points:15000, bonusPoints:1600, sessions:0,  months:15, newBonus:400,  renewBonus:800,  voucher:0,    gift:'', active:true },
+  { name:'藝術探索家',   price:18000, points:18000, bonusPoints:4000, sessions:0,  months:18, newBonus:800,  renewBonus:1600, voucher:0,    gift:'', active:true },
+  { name:'藝術生活家',   price:22000, points:22000, bonusPoints:5000, sessions:0,  months:20, newBonus:1200, renewBonus:2400, voucher:0,    gift:'', active:true },
+  { name:'純繪畫 30 堂', price:30000, points:1000,  bonusPoints:0,    sessions:30, months:12, newBonus:0,    renewBonus:0,    voucher:1000, gift:'', active:true },
+  { name:'純繪畫 70 堂', price:60000, points:3000,  bonusPoints:0,    sessions:70, months:24, newBonus:0,    renewBonus:0,    voucher:3000, gift:'專屬咖啡／茶包禮品兩組', active:true }
+];
+
+function mbImportPreset(){
+  var plans = mbPlans();
+  var exist = {};
+  plans.forEach(function(p){ exist[p.name] = true });
+  var add = MB_PRESET.filter(function(p){ return !exist[p.name] });
+  if (!add.length) { alert('這六個方案都已經建好了，沒有需要新增的。'); return; }
+  if (!confirm('要建立以下 ' + add.length + ' 個方案嗎？\n\n' +
+      add.map(function(p){ return '・' + p.name + '　$' + p.price.toLocaleString() }).join('\n') +
+      '\n\n建好後可以自己編輯，價格或回饋有調整就直接改。')) return;
+  add.forEach(function(p){ plans.push(JSON.parse(JSON.stringify(p))) });
+  save();
+  renderMember();
+  alert('已建立 ' + add.length + ' 個方案。請對照你的方案表確認一次數字，有出入直接按「編輯」修改。');
+}
+
 function mbPlansHtml(){
   var plans = mbPlans();
   var h = '';
   h += '<div class="card" style="margin-bottom:14px">' +
        '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
        '<div class="muted" style="font-size:12.5px">建好方案，賣的時候用選的，行政不用手打金額。舊方案改成「停用」就好，不要刪除——已經賣掉的紀錄要對得回來。</div>' +
-       '<button class="btn btn-gold" onclick="mbPlanEdit(-1)">＋ 新增方案</button></div></div>';
+       '<div style="display:flex;gap:8px">' +
+       (plans.length ? '' : '<button class="btn" onclick="mbImportPreset()">📋 匯入現有方案</button>') +
+       '<button class="btn btn-gold" onclick="mbPlanEdit(-1)">＋ 新增方案</button></div></div>' +
+       (plans.length ? '<div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="mbImportPreset()">📋 補上缺少的預設方案</button></div>' : '') +
+       '</div>';
   h += '<table><thead><tr><th>方案名稱</th><th style="width:80px">售價</th><th style="width:80px">點數</th>' +
        '<th style="width:80px">創作回饋</th><th style="width:60px">堂數</th><th style="width:60px">效期</th>' +
        '<th style="width:120px">新客／續約回饋</th><th style="width:70px">狀態</th><th style="width:110px"></th></tr></thead><tbody>';
