@@ -522,3 +522,31 @@ function mbClose(){
   var mk = document.getElementById('mb-modal');
   if (mk) mk.style.display = 'none';
 }
+
+/* ── 保險：自己掛上分頁事件 ─────────────────────────────
+   即使 app.js 的 doSwitchTab 沒接上這一頁，點分頁一樣會渲染。 */
+(function(){
+  function hook(){
+    document.addEventListener('click', function(e){
+      var t = e.target;
+      while (t && t !== document) {
+        if (t.classList && t.classList.contains('tab') && t.dataset && t.dataset.tab === 'member') {
+          setTimeout(function(){
+            var el = document.getElementById('member-body');
+            if (el && !el.innerHTML.trim()) renderMember();
+          }, 50);
+          return;
+        }
+        t = t.parentNode;
+      }
+    }, true);
+    /* 重新整理時若停在會員分頁，也要畫出來 */
+    setTimeout(function(){
+      var pg = document.getElementById('tab-member');
+      var el = document.getElementById('member-body');
+      if (pg && pg.classList.contains('active') && el && !el.innerHTML.trim()) renderMember();
+    }, 600);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
+  else hook();
+})();
