@@ -636,7 +636,14 @@ function dedDateStr(y, m, d) {
 }
 
 async function loadDeductions(dateStr) {
-  if (dedCache[dateStr] || dedLoading[dateStr]) return;
+  /* 已經有快取就直接套用：畫面每次重畫都會清空欄位，這裡要補填回去 */
+  if (dedCache[dateStr]) {
+    var b0 = document.getElementById('ded-box');
+    if (b0) b0.innerHTML = buildDedHtml(dateStr);
+    applyDeductions(dateStr);
+    return;
+  }
+  if (dedLoading[dateStr]) return;
   dedLoading[dateStr] = true;
   try {
     var r = await fetch(DED_URL + '/deductions.json');
