@@ -11,7 +11,19 @@ var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebas
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
-var TEACHERS = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
+/* 舊的寫死名單，只在「老師設定」還沒載入時當備援用 */
+var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
+/* 老師名單一律讀「老師設定」（旗艦店＝四樓），
+   這樣核銷寫進 deductions 的名字才跟每日填寫對得起來，人次才帶得進去。 */
+function bkTeachers(){
+  try{
+    if(typeof getTeachers==="function"){
+      var l=getTeachers("flagship").map(function(t){ return t.name }).filter(Boolean);
+      if(l.length)return l;
+    }
+  }catch(e){}
+  return TEACHERS_FALLBACK;
+}
 var PAYWAYS  = [
   {k:"points",  n:"點數扣抵", member:true },
   {k:"sessions",n:"堂數扣抵", member:true },
@@ -342,7 +354,7 @@ async function bkCheckout(id){
      '<input type="checkbox" id="ckProxy" style="width:16px;height:16px"> 用其他會員的點數（朋友代扣）</label>'+
      '<div id="ckProxyBox"></div></div>'+
    '<div class="bk-f"><label>上課老師</label><select id="ckT"><option value="">請選擇</option>'+
-     TEACHERS.map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+t+'</option>'}).join("")+'</select></div>'+
+     bkTeachers().map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+esc(t)+'</option>'}).join("")+'</select></div>'+
    '<div class="bk-calc" id="ckCalc"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="ckX">取消</button>'+
      '<button class="bk-save" id="ckOK">'+(old?"確認修正":"確認核銷")+'</button></div>');
