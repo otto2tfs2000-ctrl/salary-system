@@ -11,13 +11,19 @@ var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebas
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
-/* 老師名單以「老師設定」為準，讀不到才用這份備用清單 */
+/* 老師名單一律以「老師設定」為準；真的完全讀不到才用備用清單 */
 var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 function bkTeachers(){
   try{
+    var store=(typeof curStore==="object"&&curStore&&curStore.daily)?curStore.daily:"flagship";
     if(typeof getTeachers==="function"){
-      var list=getTeachers("flagship").map(function(t){ return t.name }).filter(Boolean);
+      var list=getTeachers(store).map(function(t){return t.name}).filter(Boolean);
       if(list.length)return list;
+    }
+    /* 店別篩不到時，退一步列出全部老師，總比顯示不存在的名字好 */
+    if(typeof S==="object"&&S&&S.teachers&&S.teachers.length){
+      var all=S.teachers.map(function(t){return t.name}).filter(Boolean);
+      if(all.length)return all;
     }
   }catch(e){}
   return TEACHERS_FALLBACK;
