@@ -521,6 +521,7 @@ async function bkCheckout(id){
       await bkPatch("/bookings/"+id+".json",patch);
       bkClose(); bkRefresh();
       if(matTxt)alert(matTxt);
+      try{ if(window.dedCache)delete window.dedCache[b.date] }catch(e){}
       if(window.renderDaily)try{ renderDaily() }catch(e){}
       if(window.renderInventory)try{ renderInventory() }catch(e){}
     }catch(e){

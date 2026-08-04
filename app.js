@@ -623,6 +623,117 @@ function renderDaily() {
   renderDayForm();
 }
 
+/* ══════════════════════════════════════════════════════════
+   今日核銷帶入：讀 otto2-2026 的 deductions，
+   把當天核銷的人次與業績填進下方老師欄位，行政再確認或調整。
+   ══════════════════════════════════════════════════════════ */
+var DED_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app';
+var dedCache = {};   // 'YYYY/MM/DD' -> [紀錄]
+var dedLoading = {};
+
+function dedDateStr(y, m, d) {
+  return y + '/' + String(m).padStart(2,'0') + '/' + String(d).padStart(2,'0');
+}
+
+async function loadDeductions(dateStr) {
+  if (dedCache[dateStr] || dedLoading[dateStr]) return;
+  dedLoading[dateStr] = true;
+  try {
+    var r = await fetch(DED_URL + '/deductions.json');
+    var j = await r.json() || {};
+    var out = [];
+    Object.keys(j).forEach(function(k){
+      var v = j[k];
+      if (!v || v.voided) return;
+      if (String(v.date||'').replace(/-/g,'/') !== dateStr) return;
+      out.push(Object.assign({ _id:k }, v));
+    });
+    out.sort(function(a,b){ return String(a.at||'') < String(b.at||'') ? -1 : 1 });
+    dedCache[dateStr] = out;
+  } catch(e) { dedCache[dateStr] = []; }
+  dedLoading[dateStr] = false;
+  var box = document.getElementById('ded-box');
+  if (box) box.innerHTML = buildDedHtml(dateStr);
+}
+
+function buildDedHtml(dateStr) {
+  var list = dedCache[dateStr];
+  if (!list) return '<div class="muted" style="font-size:12.5px">讀取核銷紀錄中…</div>';
+  if (!list.length) return '<div class="muted" style="font-size:12.5px">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
+
+  var teachers = getTeachers(curStore.daily);
+  var known = {}, unknown = [];
+  teachers.forEach(function(t){ known[t.name] = t; });
+
+  var totalPpl = 0, totalAmt = 0;
+  var rows = '';
+  list.forEach(function(r){
+    var ppl = +r.people || 0, amt = +r.total || 0;
+    totalPpl += ppl; totalAmt += amt;
+    var tName = r.teacher || '';
+    var bad = tName && !known[tName];
+    if (bad && unknown.indexOf(tName) < 0) unknown.push(tName);
+    var ak = [];
+    if (r.adults) ak.push('大人' + r.adults);
+    if (r.kids) ak.push('小孩' + r.kids);
+    rows += '<tr>' +
+      '<td style="font-size:12.5px">' + (r.customer || '—') + '</td>' +
+      '<td style="font-size:12px;color:var(--text3)">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
+      '<td style="font-size:12px;color:var(--text3)">' + (r.items || '—') + (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
+      '<td style="font-size:12.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
+      '<td style="text-align:right;font-size:12.5px">$' + amt.toLocaleString() + '</td>' +
+      '</tr>';
+  });
+
+  var h = '';
+  h += '<div style="overflow-x:auto"><table><thead><tr>' +
+       '<th>客人</th><th style="width:110px">人數</th><th>課程</th><th style="width:90px">老師</th><th style="width:80px">金額</th>' +
+       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:13px">' +
+       '<span>合計 <strong style="color:var(--gold2)">' + totalPpl + '</strong> 人次</span>' +
+       '<span>核銷金額 <strong style="color:var(--gold2)">$' + totalAmt.toLocaleString() + '</strong></span>' +
+       '</div>';
+  if (unknown.length) {
+    h += '<div class="info-box" style="margin-top:10px;border-color:var(--red)">' +
+         '⚠ 這些老師名字在「老師設定」裡找不到：<strong>' + unknown.join('、') + '</strong>。' +
+         '這幾筆人次帶不進去，請先到老師設定新增，或用「修正核銷」改成正確的名字。</div>';
+  }
+  h += '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+       '<button class="btn" onclick="applyDeductions(\'' + dateStr + '\')">↓ 帶入下方欄位</button>' +
+       '<span class="muted" style="font-size:12px">會覆蓋下方的人次與業績，其他欄位不動。帶入後仍要按「新增本次紀錄」才算存檔。</span>' +
+       '</div>';
+  return h;
+}
+
+function applyDeductions(dateStr) {
+  var list = dedCache[dateStr] || [];
+  if (!list.length) { alert('這天沒有核銷紀錄'); return; }
+  var teachers = getTeachers(curStore.daily);
+  var byName = {};
+  teachers.forEach(function(t){ byName[t.name] = t; });
+
+  var acc = {};   // teacherId -> {count, sales}
+  var skipped = 0;
+  list.forEach(function(r){
+    var t = byName[r.teacher || ''];
+    if (!t) { skipped++; return; }
+    if (!acc[t.id]) acc[t.id] = { count:0, sales:0 };
+    acc[t.id].count += (+r.people || 0);
+    acc[t.id].sales += (+r.total || 0);
+  });
+
+  teachers.forEach(function(t){
+    var c = document.getElementById('inp_c_' + t.id);
+    var a = acc[t.id];
+    if (c) c.value = a ? a.count : 0;
+  });
+
+  var msg = '已帶入 ' + Object.keys(acc).length + ' 位老師的人次。';
+  if (skipped) msg += '\n有 ' + skipped + ' 筆因為老師名字對不上，沒有帶入。';
+  msg += '\n\n確認數字沒問題後，記得按「新增本次紀錄」存檔。';
+  alert(msg);
+}
+
 function renderDayForm() {
   const mKey = getMonthKey();
   const store = curStore.daily;
@@ -714,7 +825,13 @@ function renderDayForm() {
     }
   }
 
+  var selY_daily = parseInt(document.getElementById('selYear').value);
+  var dedDate = dedDateStr(selY_daily, selM_daily, day);
   var html = '<div class="card">' +
+    '<div class="card-title">🧾 今日核銷 — ' + day + ' 日</div>' +
+    '<div id="ded-box">' + buildDedHtml(dedDate) + '</div>' +
+    '</div>' +
+    '<div class="card">' +
     '<div class="card-title">✏️ 新增本次紀錄 — ' + day + ' 日</div>' +
     '<div class="info-box">填入這次的數據，按「新增本次紀錄」後資料儲存，欄位自動歸零。</div>' +
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
@@ -816,6 +933,7 @@ function renderDayForm() {
   }
 
   el.innerHTML = html;
+  loadDeductions(dedDate);
 }
 
 function shiftDay(delta) {
