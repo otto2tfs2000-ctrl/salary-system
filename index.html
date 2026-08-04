@@ -49,6 +49,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
+  <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
   <div class="tab" data-tab="inventory" onclick="switchTab('inventory')">📦 庫存盤點</div>
@@ -75,6 +76,16 @@
     <button class="store-btn" onclick="switchStore('daily','guotu',this)">國圖店</button>
   </div>
   <div id="daily-content"></div>
+</div>
+
+<div id="tab-member" class="page">
+  <h2>會員與方案</h2>
+  <p class="muted" style="font-size:12.5px;margin-bottom:12px">會員資料與客人端 LINE 預約共用同一份，這裡改完客人立刻看得到。餘額是消費明細加總，不是可以直接改的欄位。</p>
+  <div id="member-body"></div>
+</div>
+
+<div id="mb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;overflow:auto;padding:20px 12px">
+  <div class="card" style="max-width:620px;margin:0 auto"><div id="mb-modal-body"></div></div>
 </div>
 
 <div id="tab-monthly" class="page">
@@ -408,11 +419,12 @@
   </div>
 </div>
 
-<script src="app.js?v=20260804a"></script>
-<script src="consumables.js?v=20260804a"></script>
-<script src="inventory.js?v=20260804a"></script>
-<script src="booking.js?v=20260804a"></script>
-<script src="recipe.js?v=20260804a"></script>
-<script src="init.js?v=20260804a"></script>
+<script src="app.js?v=20260804b"></script>
+<script src="consumables.js?v=20260804b"></script>
+<script src="inventory.js?v=20260804b"></script>
+<script src="booking.js?v=20260804b"></script>
+<script src="member.js?v=20260804b"></script>
+<script src="recipe.js?v=20260804b"></script>
+<script src="init.js?v=20260804b"></script>
 </body>
 </html>
