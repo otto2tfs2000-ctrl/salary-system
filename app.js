@@ -653,7 +653,7 @@ async function loadDeductions(dateStr) {
   } catch(e) { dedCache[dateStr] = []; }
   dedLoading[dateStr] = false;
   var box = document.getElementById('ded-box');
-  if (box) box.innerHTML = buildDedHtml(dateStr);
+  if (box) { box.innerHTML = buildDedHtml(dateStr); applyDeductions(dateStr); }
 }
 
 function buildDedHtml(dateStr) {
@@ -698,23 +698,24 @@ function buildDedHtml(dateStr) {
          '⚠ 這些老師名字在「老師設定」裡找不到：<strong>' + unknown.join('、') + '</strong>。' +
          '這幾筆人次帶不進去，請先到老師設定新增，或用「修正核銷」改成正確的名字。</div>';
   }
-  h += '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-       '<button class="btn" onclick="applyDeductions(\'' + dateStr + '\')">↓ 帶入下方欄位</button>' +
-       '<span class="muted" style="font-size:12px">會覆蓋下方的人次與業績，其他欄位不動。帶入後仍要按「新增本次紀錄」才算存檔。</span>' +
+  h += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+       '<span class="muted" style="font-size:12px">人次與營收已自動填入下方欄位，' +
+       '確認後按「新增本次紀錄」與「儲存當日營收」存檔。</span>' +
+       '<button class="btn btn-outline btn-sm" onclick="applyDeductions(\'' + dateStr + '\',1)">重新帶入</button>' +
        '</div>';
   return h;
 }
 
-function applyDeductions(dateStr) {
+function applyDeductions(dateStr, loud) {
   var list = dedCache[dateStr] || [];
-  if (!list.length) { alert('這天沒有核銷紀錄'); return; }
+  if (!list.length) { if (loud) alert('這天沒有核銷紀錄'); return; }
   var teachers = getTeachers(curStore.daily);
   var byName = {};
   teachers.forEach(function(t){ byName[t.name] = t; });
 
-  var acc = {};   // teacherId -> {count, sales}
-  var skipped = 0;
+  var acc = {}, skipped = 0, revenue = 0;
   list.forEach(function(r){
+    revenue += (+r.total || 0);
     var t = byName[r.teacher || ''];
     if (!t) { skipped++; return; }
     if (!acc[t.id]) acc[t.id] = { count:0, sales:0 };
@@ -728,10 +729,27 @@ function applyDeductions(dateStr) {
     if (c) c.value = a ? a.count : 0;
   });
 
-  var msg = '已帶入 ' + Object.keys(acc).length + ' 位老師的人次。';
-  if (skipped) msg += '\n有 ' + skipped + ' 筆因為老師名字對不上，沒有帶入。';
-  msg += '\n\n確認數字沒問題後，記得按「新增本次紀錄」存檔。';
-  alert(msg);
+  /* 當日營收＝課程＋加購的核銷總額。已經填過不一樣的數字就不覆蓋，只提示 */
+  var rev = document.getElementById('inp_rev');
+  if (rev) {
+    var cur = parseInt(rev.value) || 0;
+    if (loud || !cur || cur === (rev.dataset.autofill ? parseInt(rev.dataset.autofill) : -1)) {
+      rev.value = revenue;
+      rev.dataset.autofill = revenue;
+      var hint = document.getElementById('rev-hint');
+      if (hint) hint.textContent = '已依今日核銷帶入 $' + revenue.toLocaleString();
+    } else if (cur !== revenue) {
+      var hint2 = document.getElementById('rev-hint');
+      if (hint2) hint2.innerHTML = '<span style="color:var(--red)">今日核銷合計 $' + revenue.toLocaleString() +
+        '，與目前填的 $' + cur.toLocaleString() + ' 不同</span>';
+    }
+  }
+
+  if (loud) {
+    var msg = '已帶入 ' + Object.keys(acc).length + ' 位老師的人次，當日營收 $' + revenue.toLocaleString() + '。';
+    if (skipped) msg += '\n有 ' + skipped + ' 筆因為老師名字對不上，沒有帶入。';
+    alert(msg);
+  }
 }
 
 function renderDayForm() {
@@ -870,7 +888,7 @@ function renderDayForm() {
     (existRev ? '<div style="font-size:13px;color:var(--gold2)">目前已記錄：<strong>$' + existRev.toLocaleString() + '</strong></div>' : '') +
     '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存當日營收</button>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:8px">此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">此欄位與老師紀錄獨立，可隨時填寫更新（覆蓋舊值）</div>' +
     '</div>';
 
   // 獨立營隊登記區塊（與課程紀錄完全分開）
