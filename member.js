@@ -87,6 +87,87 @@ function mbExpiry(months){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+/* ══ 經營數字 ══════════════════════════════════════════
+   全部從 members 的 ledger 算出來，不新增任何欄位。
+   ledger 每筆有 at（時間）、type、delta、planName、price。
+   ── 未交付負債：客人已經付錢、課還沒上，這是負債不是營收。
+   ── 最後活動日：ledger 裡最新的一筆時間。有買方案沒來上課的人，
+      最後活動日就是購買日，這正是我們要抓出來的人。 */
+function mbLastAt(m){
+  var last = '';
+  var l = m.ledger || {};
+  Object.keys(l).forEach(function(k){
+    var at = l[k] && l[k].at;
+    if (at && String(at) > last) last = String(at);
+  });
+  return last || m.createdAt || '';
+}
+function mbDaysSince(iso){
+  if (!iso) return 9999;
+  var t = Date.parse(iso);
+  if (isNaN(t)) return 9999;
+  return Math.floor((Date.now() - t) / 86400000);
+}
+function mbMonthKey(d){
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+/* 這個月與上個月的 YYYY-MM */
+function mbThisMonth(){ return mbMonthKey(new Date()) }
+function mbLastMonth(){
+  var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+  return mbMonthKey(d);
+}
+/* 一次算完首頁要的所有數字，只掃一次 mbList */
+function mbStats(){
+  var s = { total: 0, withBal: 0, liability: 0, sessionsLeft: 0,
+            newThis: 0, newLast: 0, saleThis: 0, saleLast: 0,
+            sleeping: [], sleepAmt: 0, nearlyEmpty: [], expiring: [] };
+  if (!mbList) return s;
+  var tm = mbThisMonth(), lm = mbLastMonth();
+  /* 一堂課抓 800，餘額低於這個數字代表下次來就得續購 */
+  var ONE_CLASS = 800;
+  mbList.forEach(function(m){
+    s.total++;
+    var pts = +m.points || 0, ses = +m.sessions || 0;
+    if (pts > 0 || ses > 0){
+      s.withBal++;
+      if (pts > 0) s.liability += pts;   /* 1 點 = 1 元 */
+      if (ses > 0) s.sessionsLeft += ses;
+    }
+    var cm = String(m.createdAt || '').slice(0, 7);
+    if (cm === tm) s.newThis++; else if (cm === lm) s.newLast++;
+
+    /* 方案收入：同一次售出會寫好幾筆 ledger，用 sell_<時間戳> 去重，只算一次 price */
+    var seen = {};
+    var l = m.ledger || {};
+    Object.keys(l).forEach(function(k){
+      var r = l[k]; if (!r || !r.planName || !(+r.price)) return;
+      var stamp = String(k).replace(/^(sell_\d+)_.*$/, '$1');
+      if (seen[stamp]) return;
+      seen[stamp] = 1;
+      var mk = String(r.at || '').slice(0, 7);
+      if (mk === tm) s.saleThis += +r.price;
+      else if (mk === lm) s.saleLast += +r.price;
+      /* 效期到期日已經寫在 ledger 上，30 天內到期就撈出來 */
+      if (r.expiry && (pts > 0 || ses > 0)){
+        var left = Math.floor((Date.parse(r.expiry + 'T23:59:59') - Date.now()) / 86400000);
+        if (left >= 0 && left <= 30) s.expiring.push({ m: m, expiry: r.expiry, left: left });
+      }
+    });
+
+    if (pts > 0 || ses > 0){
+      var d = mbDaysSince(mbLastAt(m));
+      if (d >= 90){ s.sleeping.push({ m: m, days: d }); s.sleepAmt += pts; }
+      else if (ses === 0 && pts > 0 && pts < ONE_CLASS) s.nearlyEmpty.push({ m: m, days: d });
+      else if (ses === 1) s.nearlyEmpty.push({ m: m, days: d });
+    }
+  });
+  s.sleeping.sort(function(a, b){ return b.days - a.days });
+  s.nearlyEmpty.sort(function(a, b){ return a.days - b.days });
+  s.expiring.sort(function(a, b){ return a.left - b.left });
+  return s;
+}
+
 /* ══ 畫面 ══════════════════════════════════════════════ */
 async function renderMember(){
   var el = document.getElementById('member-body');
@@ -110,23 +191,123 @@ function mbSwitch(t){ mbTab = t; mbOpenPhone = null; renderMember(); }
 
 /* ── 會員查詢 ──────────────────────────────────────────── */
 function mbMembersHtml(){
-  var total = mbList ? mbList.length : 0;
-  var withPts = mbList ? mbList.filter(function(m){ return m.points > 0 || m.sessions > 0 }).length : 0;
+  var s = mbStats();
+  var money = function(n){ return '$' + Math.round(n).toLocaleString() };
+  var delta = function(now, prev, isMoney){
+    if (!prev) return '<span class="muted" style="font-size:11px">上月 ' + (isMoney ? money(prev) : prev) + '</span>';
+    var up = now >= prev;
+    return '<span style="font-size:11px;color:' + (up ? 'var(--green)' : '#C25E4A') + '">' +
+           (up ? '↑' : '↓') + ' 上月 ' + (isMoney ? money(prev) : prev) + '</span>';
+  };
   var h = '';
-  h += '<div class="card" style="margin-bottom:14px"><div class="row" style="gap:20px;flex-wrap:wrap">' +
-       '<div><div class="muted" style="font-size:12px">會員總數</div><div style="font-size:20px;color:var(--gold2)">' + total + '</div></div>' +
-       '<div><div class="muted" style="font-size:12px">有餘額</div><div style="font-size:20px;color:var(--gold2)">' + withPts + '</div></div>' +
-       '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
-       '<button class="btn btn-outline btn-sm" onclick="mbLoad(1).then(renderMember)">重新讀取</button>' +
-       '<button class="btn btn-gold" onclick="mbNewMember()">＋ 新增會員</button>' +
-       '</div></div></div>';
+
+  /* 三個一眼要看到的數字。會員總數不放大——知道總數不會讓人做任何事 */
+  h += '<div class="stat-grid" style="margin-bottom:16px">';
+  h += '<div class="stat-card"><div class="lbl">未交付課程（負債）</div>' +
+       '<div class="val">' + money(s.liability) + '</div>' +
+       '<div class="muted" style="font-size:11px;margin-top:5px">' + s.withBal + ' 位有餘額' +
+       (s.sessionsLeft ? '　另有 ' + s.sessionsLeft + ' 堂' : '') + '</div></div>';
+  h += '<div class="stat-card"><div class="lbl">本月新增會員</div>' +
+       '<div class="val">' + s.newThis + '</div>' +
+       '<div style="margin-top:5px">' + delta(s.newThis, s.newLast, false) + '</div></div>';
+  h += '<div class="stat-card"><div class="lbl">本月售出方案</div>' +
+       '<div class="val">' + money(s.saleThis) + '</div>' +
+       '<div style="margin-top:5px">' + delta(s.saleThis, s.saleLast, true) + '</div></div>';
+  h += '</div>';
+
+  /* 每份名單都接得上一個動作，這才是這頁的價值 */
+  h += '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">📋 該聯絡的名單</div>';
+  h += mbTodoRow('餘額還在，超過 90 天沒來',
+        s.sleepAmt ? '帳上共 ' + money(s.sleepAmt) + '，錢已經收了，最好打' : '錢已經收了，最好打',
+        s.sleeping.length, 'sleeping', s.sleeping.length ? 'var(--gold2)' : 'var(--text3)');
+  h += mbTodoRow('點數 30 天內到期',
+        '到期就歸零，先通知比較好收尾', s.expiring.length, 'expiring',
+        s.expiring.length ? '#C25E4A' : 'var(--text3)');
+  h += mbTodoRow('餘額剩不到一堂課',
+        '下次來上課就是續購的時機', s.nearlyEmpty.length, 'nearly',
+        s.nearlyEmpty.length ? 'var(--gold2)' : 'var(--text3)');
+  h += '</div>';
+
   h += '<div class="card">' +
        '<div class="card-title">🔍 找會員</div>' +
        '<input id="mb-search" placeholder="輸入電話或姓名（兩個字以上）" value="' + mbEsc(mbQuery) + '" ' +
        'style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:15px;outline:none;font-family:inherit">' +
        '<div id="mb-hits" style="margin-top:10px"></div>' +
        '</div>';
+
+  h += '<div class="row" style="display:flex;gap:8px;align-items:center;margin-top:14px">' +
+       '<span class="muted" style="font-size:12px">會員總數 ' + s.total + '</span>' +
+       '<span style="margin-left:auto;display:flex;gap:8px">' +
+       '<button class="btn btn-outline btn-sm" onclick="mbLoad(1).then(renderMember)">重新讀取</button>' +
+       '<button class="btn btn-gold btn-sm" onclick="mbNewMember()">＋ 新增會員</button>' +
+       '</span></div>';
   return h;
+}
+
+function mbTodoRow(title, sub, n, kind, color){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;' +
+    'padding:13px 0;border-bottom:1px solid var(--border)">' +
+    '<div><div style="font-size:13px">' + title + '</div>' +
+    '<div class="muted" style="font-size:11.5px;margin-top:2px">' + sub + '</div></div>' +
+    '<div style="display:flex;align-items:center;gap:13px;flex-shrink:0">' +
+    '<span style="font-size:21px;color:' + color + ';font-variant-numeric:tabular-nums">' + n + '</span>' +
+    (n ? '<button class="btn btn-outline btn-sm" onclick="mbShowList(\'' + kind + '\')">看名單</button>'
+       : '<span class="muted" style="font-size:12px">—</span>') +
+    '</div></div>';
+}
+
+/* 名單彈窗。點姓名直接開明細，行政不用再回去搜尋一次 */
+function mbShowList(kind){
+  var s = mbStats(), rows, title, note;
+  if (kind === 'sleeping'){
+    rows = s.sleeping; title = '餘額還在，超過 90 天沒來';
+    note = '依最久沒來排序。這些人的錢已經在我們這裡，回訪成本最低。';
+  } else if (kind === 'expiring'){
+    rows = s.expiring; title = '點數 30 天內到期';
+    note = '依到期日排序。到期日來自賣方案時寫入的效期。';
+  } else {
+    rows = s.nearlyEmpty; title = '餘額剩不到一堂課';
+    note = '依最近來過排序。這些人下次進門就是開口續購的時機。';
+  }
+  var h = '<h3 style="margin:0 0 3px">' + title + '　<span style="color:var(--text3);font-weight:400">' + rows.length + ' 位</span></h3>';
+  h += '<div class="muted" style="font-size:12px;margin-bottom:14px">' + note + '</div>';
+  h += '<table><thead><tr><th>姓名</th><th style="width:112px">電話</th>' +
+       '<th style="width:78px">點數</th><th style="width:56px">堂數</th>' +
+       '<th style="width:96px">' + (kind === 'expiring' ? '到期日' : '最後活動') + '</th>' +
+       '<th style="width:66px"></th></tr></thead><tbody>';
+  rows.slice(0, 200).forEach(function(r){
+    var m = r.m;
+    var right = (kind === 'expiring')
+      ? '<span style="color:' + (r.left <= 7 ? '#C25E4A' : 'var(--text2)') + '">' + r.expiry + '<br><span class="muted" style="font-size:11px">剩 ' + r.left + ' 天</span></span>'
+      : '<span class="muted">' + (r.days >= 9999 ? '無紀錄' : r.days + ' 天前') + '</span>';
+    h += '<tr>' +
+      '<td>' + mbEsc(m.name || '（未填姓名）') + '</td>' +
+      '<td class="muted">' + m.phone + '</td>' +
+      '<td style="text-align:right;color:var(--gold2)">' + (+m.points || 0).toLocaleString() + '</td>' +
+      '<td style="text-align:right">' + (+m.sessions || 0) + '</td>' +
+      '<td style="font-size:12px">' + right + '</td>' +
+      '<td><button class="btn btn-outline btn-sm" onclick="mbDetail(\'' + m.phone + '\')">明細</button></td>' +
+      '</tr>';
+  });
+  h += '</tbody></table>';
+  if (rows.length > 200) h += '<div class="muted" style="font-size:12px;margin-top:8px">只顯示前 200 筆</div>';
+  if (!rows.length) h += '<div class="empty">目前沒有人在這份名單裡</div>';
+  h += '<div class="row" style="margin-top:16px;display:flex;gap:8px">' +
+       '<button class="btn btn-outline" onclick="mbCopyList(\'' + kind + '\')">複製電話清單</button>' +
+       '<button class="btn btn-gold" style="margin-left:auto" onclick="mbClose()">關閉</button></div>';
+  mbModal(h);
+}
+
+/* 電話一次複製起來，貼到 LINE 群發或簡訊都好用 */
+function mbCopyList(kind){
+  var s = mbStats();
+  var rows = kind === 'sleeping' ? s.sleeping : (kind === 'expiring' ? s.expiring : s.nearlyEmpty);
+  var txt = rows.map(function(r){ return r.m.phone + ' ' + (r.m.name || '') }).join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ alert('已複製 ' + rows.length + ' 筆') },
+      function(){ prompt('手動複製：', txt) });
+  } else prompt('手動複製：', txt);
 }
 
 function mbDrawHits(){
