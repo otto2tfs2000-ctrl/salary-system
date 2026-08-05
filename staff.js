@@ -109,7 +109,8 @@ async function renderStaff(){
                      .map(function(a){ return a.n }).join("、") || "—") + '</td>' +
         '<td>' + (s.active === false ? '<span class="badge b-red">停用</span>'
                                      : '<span class="badge b-green">啟用</span>') + '</td>' +
-        '<td style="display:flex;gap:6px">' +
+        '<td style="display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="stAppLink(' + i + ')">APP 連結</button>' +
           '<button class="btn btn-outline btn-sm" onclick="stEdit(' + i + ')">編輯</button>' +
           (ME && s.uid === ME.userId ? '' :
             '<button class="btn btn-del btn-sm" onclick="stRemove(' + i + ')">移除</button>') +
@@ -218,6 +219,58 @@ function stEdit(i){
   h += '<div class="row" style="margin-top:20px;display:flex;gap:8px">' +
        '<button class="btn btn-outline" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="margin-left:auto" onclick="stSaveEdit(' + i + ')">儲存</button></div>';
+  mbModal(h);
+}
+
+/* ══ 加到主畫面用的專屬連結 ═════════════════════════════
+   iPhone 把「主畫面 APP」和 Safari 當成兩個分開的容器。
+   LINE 登入是整頁跳去 access.line.me，一離開本站就會被丟到
+   Safari，授權完人也留在 Safari，主畫面 APP 收不到登入結果
+   → 每次開都要重登。
+
+   這條連結全程不離開本站，在哪個容器開就存在哪個容器，
+   所以加到主畫面之後就不用再登入了。
+   ══════════════════════════════════════════════════════ */
+function stNewKey(){
+  return Array.prototype.map.call(
+    crypto.getRandomValues(new Uint8Array(12)),
+    function(b){ return ("0" + b.toString(16)).slice(-2) }).join("");
+}
+
+async function stAppLink(i, regen){
+  var s = stList[i]; if (!s) return;
+  var key = regen ? null : s.appKey;
+  if (!key){
+    key = stNewKey();
+    try {
+      await fetch(STAFF_DB + "/staff/" + s.uid + "/appKey.json", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(key)
+      });
+      s.appKey = key;
+    } catch(e){ alert("產生失敗，請檢查網路連線"); return }
+  }
+  var link = STAFF_URL + "?k=" + s.uid + "." + key;
+  var h = '<h3 style="margin:0 0 4px">' + stEsc(s.name || "（未命名）") + ' 的 APP 連結</h3>';
+  h += '<div class="muted" style="font-size:12px;margin-bottom:14px">' +
+       '這條連結等於這個人的帳號，開了就是已登入狀態。</div>';
+  h += '<div style="background:#fff;border:1px solid var(--border);border-radius:7px;' +
+       'padding:10px 12px;font-size:12px;word-break:break-all;margin-bottom:12px">' + link + '</div>';
+  h += '<div class="info-box" style="margin:0 0 16px;font-size:12.5px;line-height:1.75">' +
+       '<b>傳給對方時要交代：</b><br>' +
+       '① 在 LINE 裡<b>長按連結、選複製</b>，貼到 Safari 開。<br>' +
+       '　 直接點會用 LINE 內建瀏覽器，加不了主畫面。<br>' +
+       '② 開起來會直接進系統，不用登入。<br>' +
+       '③ 按下面分享鍵 → 加入主畫面。以後點那個圖示就好。<br>' +
+       '④ 這條是他專屬的，不要轉給別人。</div>';
+  h += '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap">' +
+       '<button class="btn btn-outline" onclick="mbClose()">關閉</button>' +
+       '<button class="btn btn-outline" onclick="stAppLink(' + i + ',1)">重新產生</button>' +
+       '<button class="btn btn-gold" style="margin-left:auto" ' +
+       'onclick="stCopy(\'' + link + '\')">複製連結</button></div>';
+  h += '<div class="muted" style="font-size:11.5px;margin-top:12px;line-height:1.7">' +
+       '重新產生會讓舊連結失效，但對方手機上<b>已經存好的登入狀態不受影響</b>。<br>' +
+       '要真的擋住一個人，請在「編輯」裡取消勾選「啟用這個帳號」。</div>';
   mbModal(h);
 }
 
