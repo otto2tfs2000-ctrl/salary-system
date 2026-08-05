@@ -226,14 +226,17 @@ async function bkRender(){
      '<div><b>'+doneCount+'/'+bkList.length+'</b><span>已核銷</span></div>'+
      '<div><b>$'+sum.toLocaleString()+'</b><span>本日核銷金額</span></div>'+
    '</div>'+
-   SLOTS.concat(["其他"]).map(function(sl){
+   (function(){ var ci=0;
+    return SLOTS.concat(["其他"]).map(function(sl){
       var g=bkList.filter(function(b){
         return sl==="其他" ? SLOTS.indexOf(b.slot)<0 : (b.slot===sl||b.slot2===sl) });
       if(!g.length)return "";
-      return '<div class="bk-slot"><div class="bk-sh">'+sl+'　<span>'+
+      var cls="bk-slot c"+(ci++%2);
+      return '<div class="'+cls+'"><div class="bk-sh">'+sl+'　<span>'+
         g.reduce(function(s,b){return s+(+b.people||0)},0)+' 位</span></div>'+
         g.map(bkCard).join("")+'</div>';
-   }).join("")+
+    }).join("");
+   })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>')+
    '<button class="bk-add" id="bkAdd">＋ 手動登記</button>';
 
@@ -862,10 +865,16 @@ css.textContent=
   "padding:15px 10px;text-align:center;box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
 ".bk-stat b{display:block;font-size:25px;font-weight:700;color:var(--bkNavy);line-height:1.15}"+
 ".bk-stat span{font-size:11.5px;color:var(--bkMute);margin-top:3px;display:block}"+
-".bk-slot{margin-bottom:24px}"+
-".bk-sh{font-size:12.5px;font-weight:700;color:var(--bkMute);letter-spacing:1.2px;"+
-  "padding:0 2px 9px;border:0;text-transform:uppercase}"+
-".bk-sh span{font-weight:400;letter-spacing:0;text-transform:none;color:#A8AEBC}"+
+".bk-slot{margin-bottom:22px;border-radius:16px;padding:12px 12px 14px;"+
+  "border-left:6px solid transparent}"+
+".bk-slot.c0{background:#EDF1F8;border-left-color:#B4C4DC}"+
+".bk-slot.c1{background:#FAF1E4;border-left-color:#E2C293}"+
+".bk-sh{position:sticky;top:0;z-index:5;font-size:15px;font-weight:800;color:#2E3750;"+
+  "letter-spacing:.6px;margin:-12px -12px 4px;padding:10px 12px 10px 16px;"+
+  "border:0;border-radius:16px 16px 0 0}"+
+".bk-slot.c0>.bk-sh{background:#EDF1F8}"+
+".bk-slot.c1>.bk-sh{background:#FAF1E4}"+
+".bk-sh span{font-weight:500;letter-spacing:0;font-size:13px;color:#77809A}"+
 ".bk-card{background:#fff;border:0;border-radius:14px;padding:16px 17px;margin-top:10px;"+
   "box-shadow:0 1px 3px rgba(16,24,40,.06);transition:.15s}"+
 ".bk-card:hover{box-shadow:0 3px 10px rgba(16,24,40,.09)}"+
