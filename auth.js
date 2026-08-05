@@ -19,6 +19,18 @@ var AUTH_KEY        = "otto2_staff_session";
 
 var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered} */
 
+/* 這個人能不能做某個動作。key：checkout（核銷）、void（作廢）、sellPlan（賣方案）
+   還沒登記在名單裡的人一律放行，否則第一次設定管理員時會把自己鎖死。
+   名單裡有這個人，就照他的 acts 走。 */
+function can(k){
+  if (!ME) return true;
+  var st = ME.staff;
+  if (!st) return true;
+  if (st.active === false) return false;
+  if (st.role === "owner") return true;
+  return Array.isArray(st.acts) && st.acts.indexOf(k) >= 0;
+}
+
 function authSaved(){
   try { return JSON.parse(sessionStorage.getItem(AUTH_KEY) || "null") } catch(e){ return null }
 }
@@ -32,6 +44,9 @@ function authClear(){
 
 /* 導去 LINE 授權頁。state 是防造假用的一次性亂數 */
 function authGoLine(){
+  /* 帶著邀請碼去登入，回來時才知道要建哪個帳號 */
+  var iv = new URLSearchParams(location.search).get("invite");
+  if (iv) { try { sessionStorage.setItem("otto2_invite", iv) } catch(e){} }
   var state = Math.random().toString(36).slice(2) + Date.now().toString(36);
   try { sessionStorage.setItem("otto2_auth_state", state) } catch(e){}
   var u = "https://access.line.me/oauth2/v2.1/authorize" +
@@ -86,19 +101,43 @@ function authShowError(title, detail){
   );
 }
 
+/* 依權限收掉看不到的分頁。
+   這只是介面，真正擋住是資料庫規則的工作（下一步）。 */
+function authApplyTabs(){
+  if (!ME) return;
+  var st = ME.staff;
+  /* 名單裡還沒有這個人：先只留今日排課，避免什麼都看不到 */
+  var allowed = (st && Array.isArray(st.tabs) && st.tabs.length) ? st.tabs : null;
+  if (!allowed) return;
+  var first = null;
+  document.querySelectorAll(".tabs .tab").forEach(function(el){
+    var k = el.dataset.tab;
+    if (allowed.indexOf(k) < 0) el.style.display = "none";
+    else if (!first) first = k;
+  });
+  /* 目前這頁不在權限內就跳到第一個看得到的 */
+  var cur = document.querySelector(".page.active");
+  var curKey = cur ? String(cur.id).replace("tab-", "") : "";
+  if (first && allowed.indexOf(curKey) < 0 && window.switchTab) switchTab(first);
+}
+
 /* 登入成功後在右上角顯示是誰 */
 function authBadge(){
   if (!ME) return;
   var bar = document.querySelector(".topbar > div:last-child");
   if (!bar || document.getElementById("auth-badge")) return;
+  var role = ME.staff && ME.staff.role;
+  var roleName = role === "owner" ? "管理員" : role === "admin" ? "行政" : role === "teacher" ? "老師" : "未登記";
   var el = document.createElement("div");
   el.id = "auth-badge";
   el.style.cssText = "display:flex;align-items:center;gap:8px;font-size:12px;color:#6b665e";
   el.innerHTML =
     (ME.picture ? '<img src="' + ME.picture + '" style="width:24px;height:24px;border-radius:50%;object-fit:cover">' : '') +
-    '<span>' + (ME.displayName || "已登入") + '</span>' +
+    '<span title="' + ME.userId + '">' + (ME.displayName || "已登入") + '</span>' +
+    '<span style="color:#948e83">' + roleName + '</span>' +
     '<span onclick="authClear()" style="cursor:pointer;color:#948e83;text-decoration:underline">登出</span>';
   bar.insertBefore(el, bar.firstChild);
+  authApplyTabs();
 }
 
 /* ── 主流程 ── */
@@ -115,7 +154,11 @@ async function authInit(){
     authShowLogin("上次登入沒有完成（" + err + "），再試一次。");
     return;
   }
-  if (!code){ authShowLogin(); return }
+  if (!code){
+    var iv = q.get("invite");
+    authShowLogin(iv ? "這是一組邀請連結。用 LINE 登入之後，帳號就會自動建立好。" : null);
+    return;
+  }
 
   var expect = null;
   try { expect = sessionStorage.getItem("otto2_auth_state") } catch(e){}
@@ -129,7 +172,8 @@ async function authInit(){
     var r = await fetch(AUTH_API + "/auth/line", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: code, redirectUri: AUTH_REDIRECT })
+      body: JSON.stringify({ code: code, redirectUri: AUTH_REDIRECT,
+        invite: (function(){ try { return sessionStorage.getItem("otto2_invite") || "" } catch(e){ return "" } })() })
     });
     var j = await r.json();
     if (!j.ok){
@@ -138,7 +182,7 @@ async function authInit(){
     }
     ME = j;
     authStore(j);
-    try { sessionStorage.removeItem("otto2_auth_state") } catch(e){}
+    try { sessionStorage.removeItem("otto2_auth_state"); sessionStorage.removeItem("otto2_invite") } catch(e){}
     /* 把網址上的 code 清掉，重整時才不會拿失效的 code 再換一次 */
     history.replaceState(null, "", AUTH_REDIRECT);
     authHideScreen();

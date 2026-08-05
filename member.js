@@ -17,6 +17,8 @@ function mbNorm(p){
   return d;
 }
 function mbNow(){ return new Date().toISOString() }
+/* 賣方案一按就是幾萬塊入帳，沒權限的人不顯示這顆 */
+function mbCan(k){ return (typeof can === "function") ? can(k) : true }
 function mbToday(){
   var d = new Date();
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
@@ -335,7 +337,7 @@ function mbDrawHits(){
       '<td style="text-align:right">' + m.bonus + '</td>' +
       '<td style="display:flex;gap:6px">' +
         '<button class="btn btn-outline btn-sm" onclick="mbDetail(\'' + m.phone + '\')">明細</button>' +
-        '<button class="btn btn-sm btn-gold" onclick="mbSell(\'' + m.phone + '\')">賣方案</button>' +
+        (mbCan('sellPlan') ? '<button class="btn btn-sm btn-gold" onclick="mbSell(\'' + m.phone + '\')">賣方案</button>' : '') +
       '</td></tr>';
   });
   h += '</tbody></table>';
@@ -386,7 +388,7 @@ function mbDetail(phone){
   });
   h += '</tbody></table></div>';
   h += '<div class="row" style="margin-top:14px;gap:8px">' +
-       '<button class="btn btn-gold" style="flex:1" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' +
+       (mbCan('sellPlan') ? '<button class="btn btn-gold" style="flex:1" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' : '') +
        '<button class="btn" style="flex:1" onclick="mbClose()">關閉</button></div>';
   mbModal(h);
 }

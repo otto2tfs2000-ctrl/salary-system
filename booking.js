@@ -35,6 +35,8 @@ var PAYWAYS  = [
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
 var salf = function(p){ return SAL_URL.replace(/\/$/,"")+p };
 var bonusOf = function(a){ return Math.floor((+a||0)/500) };
+/* 權限判斷。auth.js 還沒載入時一律放行，避免整個畫面壞掉 */
+function bkCan(k){ return (typeof can === "function") ? can(k) : true }
 /* ── 加購項目可選的材料 ──
    直接讀「庫存盤點」旗艦店的品項，跟課程用料同一份資料，不另外維護一張表。
    顏料整類不列：那是課程本身在用的，不會單獨賣給客人。 */
@@ -291,8 +293,9 @@ function bkCard(b){
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
-      '<button class="bk-b ck" data-ck="'+b.id+'">'+(c?"修正核銷":"核銷")+'</button>'+
-      (c?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
+      /* 核銷會扣點數、作廢會退帳，沒有權限的人不顯示這兩顆 */
+      (bkCan("checkout")?'<button class="bk-b ck" data-ck="'+b.id+'">'+(c?"修正核銷":"核銷")+'</button>':"")+
+      (c&&bkCan("void")?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
