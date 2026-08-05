@@ -257,6 +257,12 @@ async function stRemove(i){
 }
 
 /* ── 邀請 ── */
+/* openExternalBrowser=1 是 LINE 專用參數：
+   從 LINE 對話點連結時，強制用手機的預設瀏覽器開，不要用 LINE 內建瀏覽器。
+   LINE 內建瀏覽器跑不了 LINE Login，會直接報「無法正常執行」。 */
+function stInviteLink(token){
+  return STAFF_URL + "?invite=" + token + "&openExternalBrowser=1";
+}
 function stToken(){
   return "iv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
@@ -272,7 +278,7 @@ async function stMakeInvite(){
       createdAt: new Date().toISOString(), used: false,
       createdBy: (ME && ME.displayName) || "" })
   });
-  var link = STAFF_URL + "?invite=" + token;
+  var link = stInviteLink(token);
   document.getElementById("st-inv-out").innerHTML =
     '<div class="info-box" style="margin:0"><div style="font-size:12px;margin-bottom:8px">' +
     '給 ' + stEsc(name) + ' 的連結（只能用一次）</div>' +
@@ -288,7 +294,7 @@ function stCopy(txt){
       function(){ prompt("手動複製：", txt) });
   } else prompt("手動複製：", txt);
 }
-function stCopyInvite(token){ stCopy(STAFF_URL + "?invite=" + token) }
+function stCopyInvite(token){ stCopy(stInviteLink(token)) }
 async function stKillInvite(k){
   var iv = stInvites[k]; if (!iv) return;
   if (!confirm("作廢給「" + (iv.name || "—") + "」的邀請連結？")) return;
