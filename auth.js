@@ -207,6 +207,39 @@ async function authGate(){
 }
 
 /* ── 主流程 ── */
+/* ══ 主畫面 APP 專用登入（專屬連結）══════════════════════
+   iPhone 把「主畫面 APP」和 Safari 當成兩個分開的容器，
+   資料不互通。而 LINE 登入是整頁跳去 access.line.me，
+   一離開本站就會被丟到 Safari，授權完人也留在 Safari，
+   主畫面 APP 那邊永遠收不到登入結果 → 每次開都要重登。
+
+   這條路全程不離開本站，所以在哪個容器開，就存在哪個容器。
+   連結格式： .../salary-system/?k=<LINE userId>.<金鑰>
+   金鑰放在 otto2-2026 的 staff/{userId}/appKey
+   ════════════════════════════════════════════════════ */
+var AUTH_STAFF_DB = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+async function authKeyLogin(raw){
+  var i = String(raw).indexOf(".");
+  if (i < 1){ authShowLogin("這條連結格式不對，跟管理員重新要一次。"); return }
+  var uid = raw.slice(0, i), key = raw.slice(i + 1);
+  authScreen('<div style="font-size:14px;color:#6b665e">登入中…</div>');
+  try {
+    var r  = await fetch(AUTH_STAFF_DB + "/staff/" + encodeURIComponent(uid) + ".json");
+    var st = r.ok ? await r.json() : null;
+    if (!st || !st.appKey || st.appKey !== key || st.active === false){
+      authShowLogin("這條連結已經失效，跟管理員重新要一次。");
+      return;
+    }
+    ME = { userId: uid, displayName: st.name || "", picture: "", staff: st, registered: true };
+    authStore(ME);
+    history.replaceState(null, "", AUTH_REDIRECT);   /* 把金鑰從網址上藏掉 */
+    await authGate();
+  } catch(e){
+    authShowError("連不上資料庫", e.message);
+  }
+}
+
 async function authInit(){
   /* 已經登入過就直接放行 */
   var s = authSaved();
@@ -215,9 +248,14 @@ async function authInit(){
     await authRefreshStaff();
     var old = document.getElementById("auth-badge");
     if (old) old.remove();
+    if (location.search.indexOf("k=") >= 0) history.replaceState(null, "", AUTH_REDIRECT);
     await authGate();
     return;
   }
+
+  /* 專屬連結（主畫面 APP 走這條，不會跳出去 LINE） */
+  var kq = new URLSearchParams(location.search).get("k");
+  if (kq){ await authKeyLogin(kq); return; }
 
   /* 從 LINE 回來，網址上會帶 code */
   var q = new URLSearchParams(location.search);
