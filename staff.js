@@ -286,7 +286,14 @@ async function stMakeInvite(){
     'font-size:12px;word-break:break-all;margin-bottom:9px">' + link + '</div>' +
     '<button class="btn btn-gold btn-sm" onclick="stCopy(\'' + link + '\')">複製連結</button></div>';
   document.getElementById("st-inv-name").value = "";
+  /* 重畫一次，讓新產生的這組出現在「還沒被使用」清單，
+     舊清單也不會被這段 HTML 蓋掉 */
   await stLoad(1);
+  var keep = document.getElementById("st-inv-out").innerHTML;
+  renderStaff().then(function(){
+    var box = document.getElementById("st-inv-out");
+    if (box) box.innerHTML = keep;
+  });
 }
 function stCopy(txt){
   if (navigator.clipboard && navigator.clipboard.writeText){
