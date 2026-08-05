@@ -86,7 +86,10 @@ var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c)
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
 var bkIndex = {}, bkIndexReady = false;
 var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
-var SEAT_CAP = 5;                 /* 每位老師可帶人數 */
+var CAP_PER_TEACHER = 5;          /* 每位老師可帶人數 */
+var SEAT_CAP        = 13;         /* 單一時段人數天花板 */
+/* 沒特別指定時，每個星期幾的預設可開課老師數（跟預約後台一致） */
+var BK_BASE_WEEK = {0:0,1:2,2:2,3:2,4:2,5:2,6:3};
 var bkCourses = null, bkSched = null;
 
 /* 讀 Google 試算表（跟客人端同一份資料） */
@@ -122,22 +125,55 @@ async function bkLoadCourses(){
     bkCourses=out;
   }catch(e){ bkCourses=[]; }
 }
-async function bkLoadSched(){
-  if(bkSched)return;
+async function bkLoadSched(force){
+  if(bkSched&&!force)return;
+  var m={};
+  /* 1) 試算表「班表」當底（第 3 欄是老師數） */
   try{
     var rows=await bkGviz("班表");
     if(rows.length&&/日期|週/.test(String(rows[0][0])))rows.shift();
-    var m={};
     rows.forEach(function(r){
       var d=String(r[0]||"").trim().replace(/-/g,"/");
-      if(d)m[d]=bkNum(r[1]);
+      var v=String(r[2]==null?"":r[2]).trim();
+      if(d&&v!=="")m[d]=Math.max(0,bkNum(v));
     });
-    bkSched=m;
-  }catch(e){ bkSched={}; }
+  }catch(e){}
+  /* 2) Firebase /schedule 蓋過去（預約後台按 ＋／− 存的就是這裡） */
+  try{
+    var j=await (await fetch(bkf("/schedule.json"))).json();
+    if(j)for(var k in j){
+      var v2=j[k];
+      if(v2!==null&&v2!==undefined&&v2!=="")
+        m[String(k).replace(/-/g,"/")]=Math.max(0,+v2||0);
+    }
+  }catch(e){}
+  bkSched=m;
+}
+/* 沒特別指定的日子，看星期幾 */
+function bkBaseOn(d){
+  var p=String(d).split("/").map(Number);
+  var w=new Date(p[0],p[1]-1,p[2]).getDay();
+  return BK_BASE_WEEK[w]==null?1:BK_BASE_WEEK[w];
+}
+function bkTeachersOn(d){
+  if(bkSched&&bkSched[d]!=null)return bkSched[d];
+  return bkBaseOn(d);
+}
+function bkCapOf(d){ return Math.min(bkTeachersOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+/* 改老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
+async function bkSetTeachers(dateStr,val){
+  if(!bkSched)bkSched={};
+  if(val===null)delete bkSched[dateStr]; else bkSched[dateStr]=val;
+  var path=bkf("/schedule/"+dateStr.replace(/\//g,"-")+".json");
+  try{
+    if(val===null)await fetch(path,{method:"DELETE"});
+    else await fetch(path,{method:"PUT",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(val)});
+  }catch(e){ alert("班表儲存失敗，請檢查網路連線") }
 }
 /* 那個時段還剩幾位 */
 function bkSlotInfo(dateStr,slot){
-  var cap=(bkSched&&bkSched[dateStr]!=null?bkSched[dateStr]:1)*SEAT_CAP;
+  var cap=bkCapOf(dateStr);
   var rows=bkList.filter(function(b){
     return b.date===dateStr&&(b.slot===slot||b.slot2===slot)&&
       b.status!=="cancelled"&&b.status!=="expired";
@@ -205,13 +241,18 @@ async function bkMember(phone){
 async function bkRender(){
   var root=document.getElementById("bkRoot"); if(!root)return;
   if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
-    await bkLoad(); await bkLoadIndex(); bkBusy=false; }
+    await bkLoad(); await bkLoadIndex(); await bkLoadSched(); bkBusy=false; }
   var d=bkDate, today=ds(new Date())===ds(d);
+  var dsNow=ds(d);
+  var tOn=bkTeachersOn(dsNow), tSet=!!(bkSched&&bkSched[dsNow]!=null);
   var totalPeople=bkList.reduce(function(s,b){return s+(+b.people||0)},0);
   var doneCount=bkList.filter(function(b){return b.checkout}).length;
   var sum=bkList.reduce(function(s,b){return s+(b.checkout?(+b.checkout.total||0):0)},0);
   var totKid=bkList.reduce(function(s,b){ var x=bkAK(b); return s+(+x.k||0) },0);
   var pplSub=totKid?"含小孩 "+totKid:"";
+  /* 有沒有哪個時段爆掉 */
+  var capNow=bkCapOf(dsNow);
+  var over=SLOTS.filter(function(s){ return bkSlotInfo(dsNow,s).used>capNow });
 
   root.innerHTML=
    '<div class="bk-bar">'+
@@ -221,28 +262,41 @@ async function bkRender(){
      '<button class="bk-nav bk-tdy" id="bkToday">今天</button>'+
    '</div>'+
    '<div class="bk-stat">'+
+     '<div class="bk-tcard"><b>'+
+       '<button class="bk-tbtn" id="bkTMinus">−</button>'+
+       '<span class="bk-tnum">'+tOn+'</span>'+
+       '<button class="bk-tbtn" id="bkTPlus">＋</button></b>'+
+       '<span>可開課老師・'+(tSet?"已指定":"預設")+'</span></div>'+
      '<div><b>'+bkList.length+'</b><span>預約組數</span></div>'+
      '<div><b>'+totalPeople+'</b><span>總人數'+(pplSub?"・"+pplSub:"")+'</span></div>'+
      '<div><b>'+doneCount+'/'+bkList.length+'</b><span>已核銷</span></div>'+
      '<div><b>$'+sum.toLocaleString()+'</b><span>本日核銷金額</span></div>'+
    '</div>'+
+   (over.length?'<div class="bk-over">⚠️ '+over.join("、")+
+     ' 超過表定上限（每時段 '+capNow+' 位），請確認人手。</div>':"")+
+   '<button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
    (function(){ var ci=0;
     return SLOTS.concat(["其他"]).map(function(sl){
       var g=bkList.filter(function(b){
         return sl==="其他" ? SLOTS.indexOf(b.slot)<0 : (b.slot===sl||b.slot2===sl) });
       if(!g.length)return "";
       var cls="bk-slot c"+(ci++%2);
-      return '<div class="'+cls+'"><div class="bk-sh">'+sl+'　<span>'+
-        g.reduce(function(s,b){return s+(+b.people||0)},0)+' 位</span></div>'+
+      var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
+      var full=sl!=="其他"&&n>capNow;
+      return '<div class="'+cls+'"><div class="bk-sh">'+sl+'　<span'+(full?' class="bk-shfull"':'')+'>'+
+        n+(sl==="其他"?"":" / "+capNow)+' 位'+(full?"・超載":"")+'</span></div>'+
         g.map(bkCard).join("")+'</div>';
     }).join("");
    })()+
-   (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>')+
-   '<button class="bk-add" id="bkAdd">＋ 手動登記</button>';
+   (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
 
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
+  document.getElementById("bkTMinus").onclick=function(){
+    bkSetTeachers(dsNow,Math.max(0,bkTeachersOn(dsNow)-1)); bkRender() };
+  document.getElementById("bkTPlus").onclick=function(){
+    bkSetTeachers(dsNow,Math.min(6,bkTeachersOn(dsNow)+1)); bkRender() };
   document.getElementById("bkAdd").onclick=bkManual;
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
@@ -315,6 +369,91 @@ async function bkCache(phone,type,delta){
   await bkPatch("/members/"+phone+"/cache.json",c);
 }
 async function bkRefresh(){ bkMembers=null; await bkLoad(); bkRender() }
+
+/* ══ 班表設定（獨立分頁・月曆）════════════════════════
+   一格 = 一天。中間大字是可開課老師數，下面是該時段名額。
+   沒手動指定的日子照 BK_BASE_WEEK 走，格子會淡一點。
+   ════════════════════════════════════════════════════ */
+var bkCalY=null, bkCalM=null;
+function bk2(n){ return String(n).length<2?"0"+n:String(n) }
+
+async function bkSchedRender(){
+  var root=document.getElementById("schedRoot"); if(!root)return;
+  if(bkCalY==null){ var t=new Date(); bkCalY=t.getFullYear(); bkCalM=t.getMonth()+1 }
+  if(!bkSched){ root.innerHTML='<div class="bk-empty">載入班表中…</div>'; await bkLoadSched() }
+
+  var first=new Date(bkCalY,bkCalM-1,1), days=new Date(bkCalY,bkCalM,0).getDate();
+  var lead=(first.getDay()+6)%7;                  /* 月曆從週一起算 */
+  var todayK=ds(new Date());
+  var h='<div class="bk-cbar">'+
+    '<button class="bk-nav" id="bkCPrev">‹</button>'+
+    '<div class="bk-ctitle">'+bkCalY+' 年 '+bkCalM+' 月</div>'+
+    '<button class="bk-nav" id="bkCNext">›</button>'+
+    '<button class="bk-nav bk-tdy" id="bkCNow">本月</button></div>';
+  h+='<div class="bk-cgrid">';
+  ["一","二","三","四","五","六","日"].forEach(function(w){
+    h+='<div class="bk-cwd">'+w+'</div>' });
+  var i, seats=0, openDays=0;
+  for(i=0;i<lead;i++)h+='<div class="bk-mday void"></div>';
+  for(i=1;i<=days;i++){
+    var k=bkCalY+"/"+bk2(bkCalM)+"/"+bk2(i);
+    var t2=bkTeachersOn(k), cap=bkCapOf(k);
+    var set=bkSched&&bkSched[k]!=null;
+    if(t2>0){ seats+=cap*SLOTS.length; openDays++ }
+    h+='<button class="bk-mday'+(t2===0?" off":"")+(set?" set":"")+
+       (k===todayK?" now":"")+'" data-d="'+k+'">'+
+       '<span class="d">'+i+'</span>'+
+       '<span class="n">'+(t2===0?"休":t2)+'</span>'+
+       '<span class="c">'+(t2===0?"不開課":cap+" 位")+'</span></button>';
+  }
+  h+='</div>';
+  h+='<div class="bk-cfoot">本月開課 '+openDays+' 天・可容納 '+seats.toLocaleString()+' 人次'+
+     '（每天 '+SLOTS.length+' 個時段）<br>'+
+     '深色外框代表你手動指定過，淺色是照星期幾的預設值。點任一天可以改。</div>';
+  root.innerHTML=h;
+
+  document.getElementById("bkCPrev").onclick=function(){
+    bkCalM--; if(bkCalM<1){ bkCalM=12; bkCalY-- } bkSchedRender() };
+  document.getElementById("bkCNext").onclick=function(){
+    bkCalM++; if(bkCalM>12){ bkCalM=1; bkCalY++ } bkSchedRender() };
+  document.getElementById("bkCNow").onclick=function(){
+    var t=new Date(); bkCalY=t.getFullYear(); bkCalM=t.getMonth()+1; bkSchedRender() };
+  root.querySelectorAll("[data-d]").forEach(function(el){
+    el.onclick=function(){ bkSchedPick(el.dataset.d) } });
+}
+
+/* 點某一天，跳出 休／1～6 讓你選 */
+function bkSchedPick(k){
+  var p=k.split("/").map(Number);
+  var cur=bkTeachersOn(k), base=bkBaseOn(k), isSet=!!(bkSched&&bkSched[k]!=null);
+  var h='<h3 style="margin:0 0 4px">'+k+'（'+WD[new Date(p[0],p[1]-1,p[2]).getDay()]+'）</h3>';
+  h+='<div class="bk-hint" style="padding:0 2px 14px">目前 '+cur+' 位老師・每時段 '+
+     bkCapOf(k)+' 位（'+(isSet?"手動指定":"星期預設")+'）</div>';
+  h+='<div class="bk-nopts">';
+  for(var n=0;n<=6;n++){
+    var cap=Math.min(n*CAP_PER_TEACHER,SEAT_CAP);
+    h+='<button class="bk-nopt'+(n===cur?" on":"")+'" data-n="'+n+'">'+
+       (n===0?"休":n)+'<small>'+(n===0?"不開課":cap+" 位")+'</small></button>';
+  }
+  h+='</div>';
+  if(isSet)h+='<button class="bk-cancel" style="width:100%;margin-top:12px" id="bkNReset">'+
+    '恢復預設（'+base+' 位）</button>';
+  h+='<div class="bk-act"><button class="bk-cancel" onclick="bkClose()">關閉</button></div>';
+  h+='<div class="bk-hint" style="padding:12px 2px 0">改完立即生效，客人端該日名額同步更新。'+
+     '已經約進來的預約不會被取消，若因此超載，今日排課頁會顯示紅色警示。</div>';
+  bkSheet(h);
+  document.querySelectorAll(".bk-nopt").forEach(function(el){
+    el.onclick=async function(){
+      await bkSetTeachers(k,+el.dataset.n); bkClose(); bkSchedRender();
+      if(ds(bkDate)===k&&document.getElementById("bkRoot"))bkRender();
+    } });
+  var rs=document.getElementById("bkNReset");
+  if(rs)rs.onclick=async function(){
+    await bkSetTeachers(k,null); bkClose(); bkSchedRender();
+    if(ds(bkDate)===k&&document.getElementById("bkRoot"))bkRender();
+  };
+}
+window.bkSchedRender=bkSchedRender;
 
 /* ── 彈窗 ── */
 function bkSheet(html){
@@ -867,6 +1006,48 @@ css.textContent=
 ".bk-stat span{font-size:11.5px;color:var(--bkMute);margin-top:3px;display:block}"+
 ".bk-slot{margin-bottom:22px;border-radius:16px;padding:12px 12px 14px;"+
   "border-left:6px solid transparent}"+
+/* 可開課老師計數卡 */
+".bk-tcard>b{display:flex;align-items:center;justify-content:center;gap:9px}"+
+".bk-tbtn{width:30px;height:30px;border-radius:9px;border:1px solid #D6DCE8;"+
+  "background:#fff;color:#1E2B4F;font-size:17px;line-height:1;cursor:pointer;"+
+  "font-family:inherit;transition:.15s;flex:0 0 auto}"+
+".bk-tbtn:hover{background:#EDF1FA;border-color:#9FB0CE}"+
+".bk-tbtn:active{transform:scale(.94)}"+
+".bk-tnum{min-width:30px;text-align:center}"+
+/* 超載警示 */
+".bk-over{background:#FBEAE8;color:#C9453B;border-radius:12px;padding:12px 15px;"+
+  "font-size:13.5px;line-height:1.6;margin-bottom:16px;font-weight:500}"+
+".bk-add-top{margin:0 0 20px}"+
+".bk-shfull{color:#C9453B;font-weight:600}"+
+/* 班表設定月曆 */
+".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
+".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
+".bk-cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}"+
+".bk-cwd{text-align:center;font-size:12.5px;color:#8A90A0;padding-bottom:4px}"+
+".bk-mday{display:flex;flex-direction:column;align-items:center;justify-content:center;"+
+  "gap:1px;aspect-ratio:1/1.12;border:1px solid #E3E6EC;border-radius:12px;"+
+  "background:#fff;cursor:pointer;font-family:inherit;transition:.15s;padding:4px}"+
+".bk-mday:hover{border-color:#9FB0CE;background:#F6F8FC}"+
+".bk-mday .d{font-size:12px;color:#8A90A0}"+
+".bk-mday .n{font-size:21px;font-weight:700;color:#1E2B4F;line-height:1.15}"+
+".bk-mday .c{font-size:10.5px;color:#A8AEBC}"+
+".bk-mday.set{border-color:#1E2B4F;border-width:2px;background:#EDF1FA}"+
+".bk-mday.off{background:#F4F4F6;opacity:.6}"+
+".bk-mday.off .n{color:#8A90A0;font-size:17px}"+
+".bk-mday.now .d{color:#C99A3B;font-weight:700}"+
+".bk-mday.void{border:1px dashed #EAECF0;background:transparent;cursor:default}"+
+".bk-mday.void:hover{border-color:#EAECF0;background:transparent}"+
+".bk-cfoot{margin-top:18px;font-size:12.5px;color:#8A90A0;line-height:1.8}"+
+".bk-nopts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}"+
+".bk-nopt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:13px 4px;"+
+  "border:1px solid #E3E6EC;border-radius:11px;background:#fff;cursor:pointer;"+
+  "font-size:17px;font-weight:600;color:#1E2B4F;font-family:inherit;transition:.15s}"+
+".bk-nopt:hover{border-color:#9FB0CE;background:#F6F8FC}"+
+".bk-nopt small{font-size:10.5px;font-weight:400;color:#8A90A0}"+
+".bk-nopt.on{background:#1E2B4F;color:#fff;border-color:#1E2B4F}"+
+".bk-nopt.on small{color:#C3CCDF}"+
+"@media(max-width:560px){.bk-cgrid{gap:4px}.bk-mday .n{font-size:17px}"+
+  ".bk-mday .c{font-size:9px}.bk-nopts{grid-template-columns:repeat(3,1fr)}}"+
 ".bk-slot.c0{background:#EDF1F8;border-left-color:#B4C4DC}"+
 ".bk-slot.c1{background:#FAF1E4;border-left-color:#E2C293}"+
 ".bk-sh{position:sticky;top:0;z-index:5;font-size:20px;font-weight:800;color:#1F2A44;"+

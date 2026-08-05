@@ -15,6 +15,7 @@ var STAFF_URL = "https://otto2tfs2000-ctrl.github.io/salary-system/";
 /* 分頁清單，key 要跟 index.html 的 data-tab 一致 */
 var STAFF_TABS = [
   { k:"today",       n:"今日排課" },
+  { k:"sched",       n:"班表設定" },
   { k:"daily",       n:"每日填寫" },
   { k:"member",      n:"會員" },
   { k:"monthly",     n:"月報總覽" },
@@ -36,7 +37,7 @@ var STAFF_ACTS = [
 var STAFF_ROLES = {
   teacher: { n:"老師",   tabs:["today","monthly","recipe"], acts:[] },
   admin:   { n:"行政／業務",
-             tabs:["today","daily","member","monthly","consumables","inventory","recipe"],
+             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe"],
              acts:["checkout","void","sellPlan"] },
   owner:   { n:"管理員", tabs:STAFF_TABS.map(function(t){ return t.k }),
              acts:STAFF_ACTS.map(function(a){ return a.k }) }

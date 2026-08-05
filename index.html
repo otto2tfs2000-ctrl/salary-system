@@ -51,6 +51,7 @@
 <div class="tabs">
   <div class="side-brand">Otto2<span>ARTCLUB</span></div>
   <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課</div>
+  <div class="tab" data-tab="sched" onclick="switchTab('sched')">🗓️ 班表設定</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
@@ -62,6 +63,8 @@
 </div>
 
 <div id="tab-today" class="page active"><div id="bkRoot"></div></div>
+
+<div id="tab-sched" class="page"><div id="schedRoot"></div></div>
 
 <div id="tab-recipe" class="page">
   <h2>課程用料與毛利</h2>
@@ -424,14 +427,14 @@
 </div>
 
 <script src="auth.js?v=20260806a"></script>
-<script src="app.js?v=20260805p"></script>
+<script src="app.js?v=20260806c"></script>
 <script src="consumables.js?v=20260805p"></script>
 <script src="inventory.js?v=20260805p"></script>
-<script src="booking.js?v=20260805s"></script>
+<script src="booking.js?v=20260806c"></script>
 <script src="member.js?v=20260805p"></script>
 <script src="recipe.js?v=20260805p"></script>
 <script src="init.js?v=20260805p"></script>
-<script src="staff.js?v=20260806b"></script>
+<script src="staff.js?v=20260806c"></script>
 <script>
 /* 手機上點完分頁就把側欄收起來，不然選單會一直擋住內容 */
 document.querySelectorAll('.tabs .tab').forEach(function(el){
