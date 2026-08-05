@@ -31,15 +31,41 @@ function can(k){
   return Array.isArray(st.acts) && st.acts.indexOf(k) >= 0;
 }
 
+/* 用 localStorage 不用 sessionStorage：關掉分頁還記得，不用每次重登。
+   存 30 天，超過就要求再登入一次。 */
+var AUTH_DAYS = 30;
 function authSaved(){
-  try { return JSON.parse(sessionStorage.getItem(AUTH_KEY) || "null") } catch(e){ return null }
+  try {
+    var v = JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
+    if (!v || !v.userId) return null;
+    if (v.savedAt && Date.now() - v.savedAt > AUTH_DAYS * 86400000) return null;
+    return v;
+  } catch(e){ return null }
 }
 function authStore(v){
-  try { sessionStorage.setItem(AUTH_KEY, JSON.stringify(v)) } catch(e){}
+  try {
+    v.savedAt = Date.now();
+    localStorage.setItem(AUTH_KEY, JSON.stringify(v));
+  } catch(e){}
 }
 function authClear(){
-  try { sessionStorage.removeItem(AUTH_KEY) } catch(e){}
+  try { localStorage.removeItem(AUTH_KEY) } catch(e){}
   location.href = AUTH_REDIRECT;
+}
+
+/* 每次開頁面重抓一次自己的權限。
+   這樣管理員改完設定，對方重整就生效，不用叫他登出再登入。 */
+async function authRefreshStaff(){
+  if (!ME || !ME.userId) return;
+  try {
+    var r = await fetch("https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/staff/" +
+      ME.userId + ".json");
+    if (!r.ok) return;
+    var st = await r.json();
+    ME.staff = st || null;
+    ME.registered = !!(st && st.active !== false);
+    authStore(ME);
+  } catch(e){}
 }
 
 /* 導去 LINE 授權頁。state 是防造假用的一次性亂數 */
@@ -144,7 +170,15 @@ function authBadge(){
 async function authInit(){
   /* 已經登入過就直接放行 */
   var s = authSaved();
-  if (s && s.userId){ ME = s; authHideScreen(); authBadge(); return }
+  if (s && s.userId){
+    ME = s; authHideScreen(); authBadge();
+    await authRefreshStaff();
+    /* 權限可能剛被改過，重畫一次徽章與分頁 */
+    var old = document.getElementById("auth-badge");
+    if (old) old.remove();
+    authBadge();
+    return;
+  }
 
   /* 從 LINE 回來，網址上會帶 code */
   var q = new URLSearchParams(location.search);

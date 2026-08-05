@@ -295,3 +295,26 @@ async function stKillInvite(k){
   await fetch(STAFF_DB + "/staffInvites/" + iv.token + ".json", { method: "DELETE" });
   await stLoad(1); renderStaff();
 }
+
+
+/* ── 保險：自己掛分頁事件 ─────────────────────────────
+   不依賴 app.js 有沒有接上這一頁，也涵蓋「重整後直接停在老師設定」的情況。 */
+(function(){
+  function hook(){
+    document.addEventListener("click", function(e){
+      var t = e.target;
+      while (t && t !== document.body){
+        if (t.classList && t.classList.contains("tab") && t.dataset && t.dataset.tab === "settings"){
+          setTimeout(renderStaff, 30);
+          return;
+        }
+        t = t.parentNode;
+      }
+    });
+    /* 重新整理後停在這一頁時，也要畫出來 */
+    var p = document.getElementById("tab-settings");
+    if (p && p.classList.contains("active")) setTimeout(renderStaff, 300);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+})();
