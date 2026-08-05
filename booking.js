@@ -657,6 +657,9 @@ async function bkVoid(id){
     }catch(e){}
     await bkPatch("/bookings/"+id+".json",
       {status:"new",checkout:null,voidedCheckout:Object.assign({},c,{voidedAt:now})});
+    /* 每日明細與月報讀的是存檔過的當日營收快照，不是 deductions，
+       所以作廢之後要主動叫它重算，否則數字會一直停在原地 */
+    if(typeof recalcDayRevenue==="function")await recalcDayRevenue(b.date);
     bkRefresh();
     if(window.renderDaily)try{ renderDaily() }catch(e){}
   }catch(e){

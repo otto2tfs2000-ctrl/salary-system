@@ -989,8 +989,13 @@ function updateRevTotal(dedRev) {
 function saveRevOnly(store, mKey, day, dedRev) {
   var extra = parseInt(document.getElementById('inp_rev_extra')?.value) || 0;
   var rev = (+dedRev || 0) + extra;
-  if (!rev) { alert('核銷與其他收入都是 0，沒有東西可以儲存'); return; }
+  /* 0 也要能存進去。核銷作廢或當天業績記錯時，得有辦法把數字清乾淨，
+     否則舊的快照會一直留在每日明細跟月報上。 */
   var rk = dayKey(store, mKey, day);
+  var had = +(S.daily[rk] && S.daily[rk].revenue) || 0;
+  if (!rev && had && !confirm('要把這天的營收清成 $0 嗎？\n\n目前記錄是 $' + had.toLocaleString() +
+      '，清掉之後月報與薪資也會跟著變。')) return;
+  if (!rev && !had) { alert('這天本來就沒有營收紀錄，不用儲存'); return; }
   if (!S.daily[rk]) S.daily[rk] = { entries:[] };
   S.daily[rk].revenue = rev;          /* 總額，月報與薪資讀這個 */
   S.daily[rk].revenueExtra = extra;   /* 手動填的部分，重算時才知道要留多少 */
@@ -999,6 +1004,37 @@ function saveRevOnly(store, mKey, day, dedRev) {
   // 顯示成功提示
   var btn = document.querySelector('[onclick*="saveRevOnly"]');
   if (btn) { var orig = btn.textContent; btn.textContent = '✅ 已儲存 $' + rev.toLocaleString(); btn.style.background='var(--green)'; setTimeout(function(){ btn.textContent=orig; btn.style.background='var(--gold)'; }, 2000); }
+}
+
+/* 作廢核銷之後，把那天已經存檔的營收快照重算一次。
+   每日明細與月報讀的是 S.daily[].revenue，不是 deductions，
+   所以核銷作廢了但這個數字不會自己變，得主動改。 */
+async function recalcDayRevenue(dateStr) {
+  try {
+    var p = String(dateStr || '').split('/');
+    if (p.length !== 3) return;
+    var y = +p[0], m = +p[1], d = +p[2];
+    var mKey = y + '-' + String(m).padStart(2, '0');
+    var rk = dayKey('flagship', mKey, d);
+    var rec = S.daily[rk];
+    if (!rec || rec.revenue == null) return;      /* 那天根本沒存過營收就不用動 */
+    dedRefresh(dateStr);                          /* 先把核銷快取清掉重讀 */
+    var r = await fetch(DED_URL + '/deductions.json');
+    var j = (await r.json()) || {};
+    var dedRev = 0;
+    Object.keys(j).forEach(function(k){
+      var v = j[k];
+      if (!v || v.voided) return;
+      if (String(v.date) !== dateStr) return;
+      dedRev += (+v.total || 0);
+    });
+    var extra = (rec.revenueExtra != null) ? (+rec.revenueExtra || 0)
+              : Math.max(0, (+rec.revenue || 0) - dedRev);
+    rec.revenue = dedRev + extra;
+    rec.revenueExtra = extra;
+    save();
+    if (typeof renderDaily === 'function') renderDaily();
+  } catch(e) {}
 }
 
 function submitEntry(store, mKey, day) {
