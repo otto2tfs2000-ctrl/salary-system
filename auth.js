@@ -20,12 +20,13 @@ var AUTH_KEY        = "otto2_staff_session";
 var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered} */
 
 /* 這個人能不能做某個動作。key：checkout（核銷）、void（作廢）、sellPlan（賣方案）
-   還沒登記在名單裡的人一律放行，否則第一次設定管理員時會把自己鎖死。
-   名單裡有這個人，就照他的 acts 走。 */
+   名單裡沒有這個人 → 一律不行。名單整個是空的（系統剛裝好）才放行，
+   讓第一個人有辦法把自己設成管理員。 */
+var AUTH_BOOTSTRAP = false;   /* 名單是空的 */
 function can(k){
-  if (!ME) return true;
+  if (!ME) return AUTH_BOOTSTRAP;
   var st = ME.staff;
-  if (!st) return true;
+  if (!st) return AUTH_BOOTSTRAP;
   if (st.active === false) return false;
   if (st.role === "owner") return true;
   return Array.isArray(st.acts) && st.acts.indexOf(k) >= 0;
@@ -132,9 +133,9 @@ function authShowError(title, detail){
 function authApplyTabs(){
   if (!ME) return;
   var st = ME.staff;
-  /* 名單裡還沒有這個人：先只留今日排課，避免什麼都看不到 */
-  var allowed = (st && Array.isArray(st.tabs) && st.tabs.length) ? st.tabs : null;
-  if (!allowed) return;
+  if (!st && AUTH_BOOTSTRAP) return;      /* 系統剛裝好，全開讓人設定管理員 */
+  var allowed = (st && Array.isArray(st.tabs)) ? st.tabs : [];
+  if (st && st.role === "owner") return;   /* 管理員看全部 */
   var first = null;
   document.querySelectorAll(".tabs .tab").forEach(function(el){
     var k = el.dataset.tab;
@@ -166,17 +167,53 @@ function authBadge(){
   authApplyTabs();
 }
 
+/* 名單裡沒有這個人 → 擋在門外，並顯示他的 LINE ID 讓管理員能加人 */
+function authShowNotAllowed(){
+  authScreen(
+    '<div style="font-family:Georgia,serif;font-size:18px;color:#a67c28">Otto2 ARTCLUB</div>' +
+    '<div style="font-size:11px;color:#948e83;letter-spacing:2.4px;margin-top:3px">員工後台</div>' +
+    '<div style="font-size:14px;font-weight:600;color:#2b2926;margin:22px 0 8px">' +
+      (ME && ME.displayName ? ME.displayName + '，' : '') + '這個帳號還沒有權限</div>' +
+    '<div style="font-size:13px;color:#6b665e;line-height:1.75;margin-bottom:18px">' +
+      '請向管理員索取邀請連結，或把下面這串 ID 給管理員。</div>' +
+    '<div style="background:#f0ece2;border-radius:8px;padding:10px;font-size:11px;' +
+      'color:#6b665e;word-break:break-all;margin-bottom:18px">' + ((ME && ME.userId) || "") + '</div>' +
+    '<button onclick="authClear()" style="width:100%;padding:12px;border:1px solid #d0c9ba;' +
+      'border-radius:9px;background:#fff;color:#6b665e;font-size:14px;cursor:pointer;font-family:inherit">' +
+      '換一個帳號登入</button>'
+  );
+}
+
+/* 名單整個是空的嗎？是的話允許第一個人自己設成管理員 */
+async function authCheckBootstrap(){
+  try {
+    var r = await fetch("https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/staff.json?shallow=true");
+    var j = r.ok ? await r.json() : null;
+    AUTH_BOOTSTRAP = !j || !Object.keys(j).length;
+  } catch(e){ AUTH_BOOTSTRAP = false; }
+  return AUTH_BOOTSTRAP;
+}
+
+/* 登入後統一判斷放不放行 */
+async function authGate(){
+  await authCheckBootstrap();
+  var st = ME && ME.staff;
+  if (st && st.active !== false){ authHideScreen(); authBadge(); return true }
+  if (AUTH_BOOTSTRAP){ authHideScreen(); authBadge(); return true }
+  authShowNotAllowed();
+  return false;
+}
+
 /* ── 主流程 ── */
 async function authInit(){
   /* 已經登入過就直接放行 */
   var s = authSaved();
   if (s && s.userId){
-    ME = s; authHideScreen(); authBadge();
+    ME = s;
     await authRefreshStaff();
-    /* 權限可能剛被改過，重畫一次徽章與分頁 */
     var old = document.getElementById("auth-badge");
     if (old) old.remove();
-    authBadge();
+    await authGate();
     return;
   }
 
@@ -219,8 +256,7 @@ async function authInit(){
     try { sessionStorage.removeItem("otto2_auth_state"); sessionStorage.removeItem("otto2_invite") } catch(e){}
     /* 把網址上的 code 清掉，重整時才不會拿失效的 code 再換一次 */
     history.replaceState(null, "", AUTH_REDIRECT);
-    authHideScreen();
-    authBadge();
+    await authGate();
     console.log("登入成功：", j.displayName, j.userId, "名單狀態：", j.registered ? "已登記" : "尚未登記");
   } catch(e){
     authShowError("連不上登入服務", e.message);
