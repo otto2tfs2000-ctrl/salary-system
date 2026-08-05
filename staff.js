@@ -297,24 +297,22 @@ async function stKillInvite(k){
 }
 
 
-/* ── 保險：自己掛分頁事件 ─────────────────────────────
-   不依賴 app.js 有沒有接上這一頁，也涵蓋「重整後直接停在老師設定」的情況。 */
+/* ── 保險：自己盯著這一頁 ─────────────────────────────
+   不依賴 app.js 的分頁切換，也不依賴點擊事件——
+   直接每半秒看一次「老師設定是不是打開著、卡片是不是空的」，
+   是的話就畫。畫完就停手，不會一直重畫。 */
 (function(){
-  function hook(){
-    document.addEventListener("click", function(e){
-      var t = e.target;
-      while (t && t !== document.body){
-        if (t.classList && t.classList.contains("tab") && t.dataset && t.dataset.tab === "settings"){
-          setTimeout(renderStaff, 30);
-          return;
-        }
-        t = t.parentNode;
-      }
-    });
-    /* 重新整理後停在這一頁時，也要畫出來 */
+  var drawnFor = null;
+  function tick(){
     var p = document.getElementById("tab-settings");
-    if (p && p.classList.contains("active")) setTimeout(renderStaff, 300);
+    var box = document.getElementById("staff-body");
+    if (!p || !box) return;
+    var on = p.classList.contains("active");
+    if (!on){ drawnFor = null; return }
+    if (drawnFor === "on" && box.innerHTML.trim()) return;
+    drawnFor = "on";
+    try { renderStaff() } catch(e){ console.log("renderStaff 失敗", e) }
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
-  else hook();
+  setInterval(tick, 500);
+  setTimeout(tick, 200);
 })();
