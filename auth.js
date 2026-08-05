@@ -71,10 +71,12 @@ async function authRefreshStaff(){
 
 /* 導去 LINE 授權頁。state 是防造假用的一次性亂數 */
 function authGoLine(){
-  /* 帶著邀請碼去登入，回來時才知道要建哪個帳號 */
-  var iv = new URLSearchParams(location.search).get("invite");
-  if (iv) { try { sessionStorage.setItem("otto2_invite", iv) } catch(e){} }
-  var state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  /* 邀請碼直接塞進 state 一起送去 LINE。
+     LINE 會把 state 原封不動還回來，所以中間就算換了瀏覽器分頁也不會弄丟。
+     （之前存在瀏覽器暫存區，跳去 LINE App 授權再跳回來就不見了。） */
+  var iv = new URLSearchParams(location.search).get("invite") || "";
+  var rnd = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var state = iv ? (rnd + "~" + iv) : rnd;
   try { sessionStorage.setItem("otto2_auth_state", state) } catch(e){}
   var u = "https://access.line.me/oauth2/v2.1/authorize" +
     "?response_type=code" +
@@ -231,6 +233,9 @@ async function authInit(){
     return;
   }
 
+  /* 從 state 把邀請碼拆回來 */
+  var invite = "";
+  if (state && state.indexOf("~") > 0) invite = state.split("~").slice(1).join("~");
   var expect = null;
   try { expect = sessionStorage.getItem("otto2_auth_state") } catch(e){}
   if (expect && state && state !== expect){
@@ -243,8 +248,7 @@ async function authInit(){
     var r = await fetch(AUTH_API + "/auth/line", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: code, redirectUri: AUTH_REDIRECT,
-        invite: (function(){ try { return sessionStorage.getItem("otto2_invite") || "" } catch(e){ return "" } })() })
+      body: JSON.stringify({ code: code, redirectUri: AUTH_REDIRECT, invite: invite })
     });
     var j = await r.json();
     if (!j.ok){
