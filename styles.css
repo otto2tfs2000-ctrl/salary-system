@@ -1,74 +1,241 @@
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f5f0;--bg2:#ffffff;--bg3:#f0ece2;
+  --gold:#c9a84c;--gold2:#a67c28;--gold3:#8a6a1f;
+  --text:#2b2926;--text2:#6b665e;--text3:#948e83;
+  --border:#e2ddd2;--border2:#d0c9ba;
+  --green:#3d9b6a;--red:#d64545;
+  --side:#26241F;--side2:#2F2C27;--side-text:#9B958A;--side-gold:#D9B863;
+  --sideW:178px;
+  --shadow:0 1px 3px rgba(43,41,38,.04),0 8px 24px -14px rgba(43,41,38,.10);
+  --shadow-sm:0 1px 2px rgba(43,41,38,.04);
+  --serif:Georgia,'Noto Serif TC',serif;
+  --radius:14px;
+}
+html{-webkit-text-size-adjust:100%}
+body{font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;line-height:1.65;
+  -webkit-font-smoothing:antialiased;padding-left:var(--sideW)}
+.num,.in-num,.stat-card .val,.total-row td,td.num{font-variant-numeric:tabular-nums}
+
+/* ══ 側欄 ══
+   分頁從上面那排橫捲改成固定在左側。九個分頁一次全看得見，
+   主畫面寬度整片留給資料。body 用 padding-left 讓出位置。 */
+.tabs{position:fixed;left:0;top:0;bottom:0;width:var(--sideW);z-index:210;
+  background:var(--side);display:flex;flex-direction:column;padding:20px 0 24px;
+  overflow-y:auto;overflow-x:hidden;border:none;-webkit-overflow-scrolling:touch;
+  scrollbar-width:thin}
+.tabs::-webkit-scrollbar{width:5px}
+.tabs::-webkit-scrollbar-thumb{background:#413C34;border-radius:3px}
+.side-brand{padding:2px 20px 22px;color:var(--side-gold);font-size:15px;letter-spacing:.5px;
+  font-family:var(--serif);line-height:1.2}
+.side-brand span{display:block;font-family:'Noto Sans TC',sans-serif;font-size:9.5px;
+  color:#7A746A;letter-spacing:2.4px;margin-top:3px}
+.tab{padding:10px 20px;font-size:12.5px;color:var(--side-text);cursor:pointer;
+  border:none;white-space:nowrap;line-height:1.5;
+  transition:background .14s,color .14s;border-left:2px solid transparent}
+.tab:hover{color:#EDE8DF;background:var(--side2)}
+.tab.active{color:#1C1A16;background:var(--side-gold);border-left-color:var(--side-gold);font-weight:500}
+.side-scrim{display:none}
+.side-toggle{display:none;background:transparent;border:none;font-size:19px;
+  color:var(--text2);cursor:pointer;padding:2px 8px 2px 0;line-height:1;font-family:inherit}
+
+.topbar{background:#fff;border-bottom:1px solid var(--border);padding:13px 26px;display:flex;
+  align-items:center;justify-content:space-between;gap:14px;position:sticky;top:0;z-index:200;
+  box-shadow:var(--shadow-sm)}
+.logo{font-size:15px;font-weight:600;color:var(--gold2);letter-spacing:.2px}
+.logo-sub{font-size:11px;color:var(--text3);margin-top:1px;letter-spacing:.3px}
+.sync-wrap{display:flex;align-items:center;gap:7px;font-size:12px}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex-shrink:0;background:var(--text3)}
+.dot.ok{background:var(--green)}.dot.saving{background:var(--gold);animation:pulse 1s infinite}.dot.err{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.month-nav{display:flex;align-items:center;gap:8px}
+.month-nav select{background:var(--bg3);border:1px solid var(--border);color:var(--text);
+  padding:6px 10px;border-radius:7px;font-size:13px;cursor:pointer;outline:none;font-family:inherit}
+
+.page{display:none;padding:26px 28px 64px;max-width:1240px;margin:0 auto}.page.active{display:block}
+.page h2{font-family:var(--serif);font-size:20px;font-weight:400;color:var(--text);
+  letter-spacing:.3px;margin-bottom:4px}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:22px 24px;margin-bottom:18px;box-shadow:var(--shadow)}
+.card-title{font-size:13.5px;font-weight:600;color:var(--gold2);margin-bottom:18px;
+  padding-bottom:12px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;letter-spacing:.3px}
+
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:13px;margin-bottom:15px}
+.cm-add-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:15px}
+.fg label{display:block;font-size:10.5px;color:var(--text3);margin-bottom:5px;
+  text-transform:uppercase;letter-spacing:.8px}
+.fg input,.fg select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);
+  padding:9px 12px;border-radius:8px;font-size:13px;outline:none;font-family:inherit;
+  transition:border-color .15s,box-shadow .15s}
+.fg input:focus,.fg select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.13)}
+
+.btn{padding:9px 20px;border-radius:8px;border:none;cursor:pointer;font-size:13px;
+  font-weight:500;transition:background .15s,border-color .15s,color .15s;font-family:inherit}
+.btn-gold{background:var(--gold);color:#2b2410}.btn-gold:hover{background:var(--gold2);color:#fff}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold2)}
+.btn-sm{padding:6px 13px;font-size:12px;border-radius:6px}
+.btn-del{background:transparent;border:1px solid #e8c9c5;color:#c06858}
+.btn-del:hover{background:#fdf1ef;border-color:var(--red);color:var(--red)}
+.btn-dl{background:rgba(91,155,213,.12);border:1px solid rgba(91,155,213,.3);color:#3f7fb5}
+.btn-dl:hover{background:rgba(91,155,213,.22)}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--bg3);color:var(--text3);font-weight:500;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.8px;padding:11px 13px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child{border-top-left-radius:9px}th:last-child{border-top-right-radius:9px}
+td{padding:12px 13px;border-bottom:1px solid rgba(43,41,38,.06);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(201,168,76,.045)}
+#inv-item-list tr.drag-over{box-shadow:inset 0 2px 0 var(--gold)}
+#inv-item-list tr[draggable="true"]:active{cursor:grabbing}
+
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.b-gold{background:rgba(201,168,76,.12);color:var(--gold2);border:1px solid rgba(201,168,76,.25)}
+.b-blue{background:rgba(91,155,213,.12);color:#3f7fb5;border:1px solid rgba(91,155,213,.25)}
+.b-purple{background:rgba(155,114,207,.12);color:#7b53b8;border:1px solid rgba(155,114,207,.25)}
+.b-green{background:rgba(61,155,106,.12);color:#2f7a52;border:1px solid rgba(61,155,106,.25)}
+.b-gray{background:rgba(160,156,150,.08);color:var(--text2);border:1px solid var(--border)}
+.b-red{background:rgba(214,69,69,.1);color:var(--red);border:1px solid rgba(214,69,69,.3)}
+
+.in-num{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 8px;
+  border-radius:6px;width:70px;font-size:13px;text-align:center;outline:none;font-family:inherit;
+  transition:border-color .15s,box-shadow .15s}
+.in-num:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.13)}
+.in-num.md{width:90px}.in-num.lg{width:110px}
+input[type="number"]::-webkit-outer-spin-button,input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type="number"]{-moz-appearance:textfield}
+.in-num.salary{background:rgba(201,168,76,.06);border-color:rgba(201,168,76,.2)}
+.in-num.salary:focus{border-color:var(--gold)}
+.total-row td{background:rgba(201,168,76,.07)!important;font-weight:600;color:var(--gold2);
+  border-top:1px solid rgba(201,168,76,.25)}
+
+.store-tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.store-btn{padding:7px 17px;border-radius:8px;border:1px solid var(--border);background:transparent;
+  color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s;font-family:inherit}
+.store-btn:hover{border-color:var(--gold);color:var(--gold2)}
+.store-btn.active{background:var(--gold);border-color:var(--gold);color:#2b2410;font-weight:600}
+
+/* 統計數字用襯線體，這是整套視覺的重心 */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;
+  margin-bottom:20px;background:var(--border);border:1px solid var(--border);
+  border-radius:11px;overflow:hidden}
+.stat-card{background:#FAF9F5;border-radius:0;padding:15px 17px;border:none}
+.stat-card .lbl{font-size:10.5px;color:var(--text3);margin-bottom:4px;letter-spacing:1px}
+.stat-card .val{font-family:var(--serif);font-size:27px;font-weight:400;color:var(--text);line-height:1.15}
+
+.info-box{background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.18);border-radius:9px;
+  padding:12px 15px;font-size:13px;color:var(--gold3);margin-bottom:16px;line-height:1.65}
+.empty{text-align:center;padding:44px 20px;color:var(--text3);font-size:13px}
+.muted{color:var(--text3);font-size:12px}
+.auto-val{color:var(--gold2);font-weight:500}
+.zero-val{color:var(--text3)}
+
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:14px}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--gold);
+  border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lock-overlay{position:fixed;inset:0;background:rgba(255,255,255,.97);display:flex;
+  align-items:center;justify-content:center;z-index:500}
+.lock-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:36px 40px;
+  text-align:center;max-width:320px;width:90%;box-shadow:0 4px 24px rgba(43,41,38,.10)}
+.lock-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);
+  padding:11px 14px;border-radius:9px;font-size:16px;outline:none;text-align:center;
+  font-family:inherit;letter-spacing:2px;margin-bottom:14px}
+.lock-input:focus{border-color:var(--gold)}
+
+.day-meta{display:flex;gap:16px;flex-wrap:wrap}
+.day-meta-item{display:flex;align-items:center;gap:8px;font-size:13px}
+.day-meta-item label{color:var(--text3);font-size:12px}
+.entry-log{background:var(--bg3);border-radius:9px;padding:13px 16px;margin-bottom:14px}
+tr.dragging{opacity:.4}
+tr.drag-over td{border-top:2px solid var(--gold)!important}
+tr[draggable]{cursor:grab}
+
 /* ══════════════════════════════════════════════════════════
-   帳號與權限（老師設定分頁最上方）
-
-   資料放在 otto2-2026：
-   /staff/{LINE userId} = { name, role, tabs:[], active, addedAt, addedBy }
-   /staffInvites/{token} = { role, name, createdAt, used, usedBy }
-
-   做法是邀請制：你產生一組一次性連結給對方，對方用 LINE 打開、
-   授權完成就自動綁定，你不需要知道任何人的 LINE ID。
+   手機版
+   側欄改成滑出式，預設收起來。另外處理三個會害人按錯的老問題：
+   表格撐寬整頁、輸入框小於 16px 被 iOS 自動放大、頂欄換行把內容蓋住。
    ══════════════════════════════════════════════════════════ */
+@media (max-width:900px){
+  body{padding-left:0}
+  .tabs{transform:translateX(-100%);transition:transform .22s ease;box-shadow:none;width:210px}
+  body.side-open .tabs{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.28)}
+  body.side-open .side-scrim{display:block;position:fixed;inset:0;z-index:205;
+    background:rgba(28,26,22,.42)}
+  .side-toggle{display:block}
+  .tab{padding:13px 20px;font-size:14px}
+  .side-brand{padding:2px 20px 20px;font-size:16px}
 
-var STAFF_DB  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
-var STAFF_URL = "https://otto2tfs2000-ctrl.github.io/salary-system/";
+  .topbar{position:static;padding:11px 14px;align-items:center;gap:10px}
+  .topbar>div:last-child{gap:10px!important;flex-wrap:wrap;justify-content:flex-end}
+  .logo{font-size:14px;line-height:1.35}
+  .logo-sub{font-size:10.5px}
+  .page{padding:16px 12px 70px}
 
-/* 分頁清單，key 要跟 index.html 的 data-tab 一致 */
-var STAFF_TABS = [
-  { k:"today",       n:"今日排課" },
-  { k:"daily",       n:"每日填寫" },
-  { k:"member",      n:"會員" },
-  { k:"monthly",     n:"月報總覽" },
-  { k:"consumables", n:"耗材記帳" },
-  { k:"inventory",   n:"庫存盤點" },
-  { k:"recipe",      n:"課程用料" },
-  { k:"salary",      n:"本月薪資" },
-  { k:"settings",    n:"老師設定" }
-];
+  .card{padding:16px 14px;margin-bottom:14px;border-radius:12px;
+    overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card table{min-width:560px}
+  .card-title{margin-bottom:14px;padding-bottom:10px;position:sticky;left:0}
 
-/* 能按的動作，跟分頁分開管。
-   看得到畫面不等於能動錢——核銷扣點數、作廢退庫存、賣方案是幾萬塊入帳。 */
-var STAFF_ACTS = [
-  { k:"checkout", n:"核銷",   d:"扣點數、扣材料、記當日營收" },
-  { k:"void",     n:"作廢核銷", d:"回補點數與材料，改動已成立的帳" },
-  { k:"sellPlan", n:"賣方案",  d:"發點數給客人，金額直接進業績" }
-];
+  /* 16px 是 iOS 不自動放大的門檻，別再往下調 */
+  .fg input,.fg select,.in-num,.month-nav select,input,select,textarea{font-size:16px}
+  .fg input,.fg select{padding:11px 12px}
+  .in-num{padding:9px 8px;width:78px}
+  .in-num.md{width:96px}.in-num.lg{width:112px}
 
-var STAFF_ROLES = {
-  teacher: { n:"老師",   tabs:["today","monthly","recipe"], acts:[] },
-  admin:   { n:"行政／業務",
-             tabs:["today","daily","member","monthly","consumables","inventory","recipe"],
-             acts:["checkout","void","sellPlan"] },
-  owner:   { n:"管理員", tabs:STAFF_TABS.map(function(t){ return t.k }),
-             acts:STAFF_ACTS.map(function(a){ return a.k }) }
-};
+  .btn{padding:12px 20px;font-size:14px;min-height:44px}
+  .btn-sm{padding:9px 14px;font-size:13px;min-height:38px}
+  .store-btn{padding:10px 16px;font-size:13.5px;min-height:42px}
 
-var stList = null, stInvites = null, stLoading = false;
-
-function stEsc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
-  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) }
-
-async function stLoad(force){
-  if (stLoading) return;
-  if (stList && !force) return;
-  stLoading = true;
-  try {
-    var a = await (await fetch(STAFF_DB + "/staff.json")).json() || {};
-    stList = Object.keys(a).map(function(uid){
-      return Object.assign({ uid: uid }, a[uid] || {});
-    });
-    var b = await (await fetch(STAFF_DB + "/staffInvites.json")).json() || {};
-    stInvites = Object.keys(b).map(function(t){
-      return Object.assign({ token: t }, b[t] || {});
-    }).filter(function(i){ return !i.used });
-  } catch(e){ stList = stList || []; stInvites = stInvites || []; }
-  stLoading = false;
+  .form-grid,.cm-add-grid{grid-template-columns:repeat(2,1fr);gap:11px}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
+  .stat-card{padding:12px 13px}
+  .stat-card .val{font-size:22px}
+  th{padding:10px;font-size:10px}
+  td{padding:11px 10px}
+  .day-meta{gap:10px}
+}
+@media (max-width:420px){
+  .form-grid,.cm-add-grid{grid-template-columns:1fr}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
 }
 
-/* 目前登入者是不是管理員。沒有任何帳號時，先讓第一個人有辦法把自己設進去 */
-function stIsOwner(){
-  if (!ME || !ME.userId) return false;
-  var me = (stList || []).filter(function(s){ return s.uid === ME.userId })[0];
-  return !!(me && me.role === "owner" && me.active !== false);
+/* ══════════════════════════════════════════════════════════
+   勾選框 / 單選鈕
+   上面 .fg input 那條 width:100% 是給文字輸入框用的，
+   但它把勾選框也一起撐成整行寬，害旁邊的文字被擠成一個字一行。
+   這裡把勾選框拉回固定尺寸，放在檔案最後才蓋得過手機版那段。
+   ══════════════════════════════════════════════════════════ */
+input[type="checkbox"],
+input[type="radio"],
+.fg input[type="checkbox"],
+.fg input[type="radio"]{
+  width:16px;height:16px;min-width:16px;max-width:16px;
+  flex:0 0 16px;padding:0;margin:0;
+  accent-color:var(--gold2);cursor:pointer;
+  vertical-align:middle
+}
+/* 勾選框旁邊的文字：正常橫排，不要被壓成直的 */
+label.chk{display:flex;align-items:center;gap:8px;font-size:13px;
+  cursor:pointer;text-transform:none;letter-spacing:normal;color:var(--text)}
+label.chk>span{flex:1;min-width:0;line-height:1.5}
+label.chk.top{align-items:flex-start}
+label.chk.top input{margin-top:3px}
+
+@media (max-width:900px){
+  input[type="checkbox"],
+  input[type="radio"],
+  .fg input[type="checkbox"],
+  .fg input[type="radio"]{
+    width:18px;height:18px;min-width:18px;max-width:18px;
+    flex:0 0 18px;padding:0;font-size:16px
+  }
+}  return !!(me && me.role === "owner" && me.active !== false);
 }
 function stNobodyYet(){ return !stList || !stList.length }
 
