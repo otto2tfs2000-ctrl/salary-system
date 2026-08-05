@@ -189,26 +189,32 @@ function stEdit(i){
   });
   h += '</select></div>';
   h += '<div class="fg"><label>看得到的分頁</label><div id="st-e-tabs" style="display:grid;' +
-       'grid-template-columns:repeat(2,1fr);gap:7px;margin-top:6px">';
+       'grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:6px">';
   STAFF_TABS.forEach(function(t){
-    h += '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">' +
-         '<input type="checkbox" value="' + t.k + '"' + (tabs.indexOf(t.k) >= 0 ? " checked" : "") + '>' +
-         t.n + '</label>';
+    h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">' +
+         '<input type="checkbox" value="' + t.k + '"' + (tabs.indexOf(t.k) >= 0 ? " checked" : "") +
+         ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
+         '<span style="white-space:nowrap">' + t.n + '</span></label>';
   });
   h += '</div></div>';
   h += '<div class="fg" style="margin-top:16px"><label>可執行的動作</label>' +
        '<div id="st-e-acts" style="margin-top:6px">';
   STAFF_ACTS.forEach(function(a){
-    h += '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;' +
-         'cursor:pointer;padding:6px 0">' +
-         '<input type="checkbox" value="' + a.k + '" style="margin-top:3px"' +
-         ((s.acts || []).indexOf(a.k) >= 0 ? " checked" : "") + '>' +
-         '<span>' + a.n + '<span class="muted" style="display:block;font-size:11.5px">' + a.d + '</span></span>' +
+    h += '<label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;' +
+         'cursor:pointer;padding:7px 0">' +
+         '<input type="checkbox" value="' + a.k + '"' +
+         ((s.acts || []).indexOf(a.k) >= 0 ? " checked" : "") +
+         ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:3px 0 0">' +
+         '<span style="flex:1;min-width:0">' + a.n +
+         '<span class="muted" style="display:block;font-size:11.5px;line-height:1.5;margin-top:2px">' +
+         a.d + '</span></span>' +
          '</label>';
   });
   h += '</div></div>';
-  h += '<label style="display:flex;align-items:center;gap:7px;font-size:13px;margin-top:16px;cursor:pointer">' +
-       '<input type="checkbox" id="st-e-active"' + (s.active !== false ? " checked" : "") + '>啟用這個帳號</label>';
+  h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:16px;cursor:pointer">' +
+       '<input type="checkbox" id="st-e-active"' + (s.active !== false ? " checked" : "") +
+       ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
+       '<span style="white-space:nowrap">啟用這個帳號</span></label>';
   h += '<div class="row" style="margin-top:20px;display:flex;gap:8px">' +
        '<button class="btn btn-outline" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="margin-left:auto" onclick="stSaveEdit(' + i + ')">儲存</button></div>';
