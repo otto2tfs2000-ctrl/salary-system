@@ -44,7 +44,8 @@ async function mbLoad(force){
       var m = j[phone] || {}, c = m.cache || {};
       return { phone: phone, name: m.name || '', note: m.note || '',
                points: +c.points || 0, sessions: +c.sessions || 0, bonus: +c.bonus || 0,
-               ledger: m.ledger || {}, createdAt: m.createdAt || '' };
+               ledger: m.ledger || {}, createdAt: m.createdAt || '',
+               archived: m.archived || null };
     });
   } catch(e) { mbList = []; }
   mbLoading = false;
@@ -56,6 +57,8 @@ function mbFind(q){
   if (s.length < 2) return [];
   var digits = s.replace(/\D/g, '');
   return mbList.filter(function(m){
+    /* 封存的不出現在一般搜尋，除非打完整電話把它找出來 */
+    if (m.archived && mbNorm(m.phone) !== digits) return false;
     return (digits.length >= 3 && mbNorm(m.phone).indexOf(digits) >= 0) ||
            (m.name && m.name.indexOf(s) >= 0);
   }).slice(0, 20);
@@ -129,6 +132,7 @@ function mbStats(){
   /* 一堂課抓 800，餘額低於這個數字代表下次來就得續購 */
   var ONE_CLASS = 800;
   mbList.forEach(function(m){
+    if (m.archived) return;          /* 封存的不算進統計與待辦 */
     s.total++;
     var pts = +m.points || 0, ses = +m.sessions || 0;
     if (pts > 0 || ses > 0){
@@ -390,7 +394,108 @@ function mbDetail(phone){
   h += '<div class="row" style="margin-top:14px;gap:8px">' +
        (mbCan('sellPlan') ? '<button class="btn btn-gold" style="flex:1" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' : '') +
        '<button class="btn" style="flex:1" onclick="mbClose()">關閉</button></div>';
+  h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);text-align:right">' +
+       '<button class="btn btn-sm" style="color:var(--red);border-color:#EBD3D0" ' +
+       'onclick="mbAskDelete(\'' + phone + '\')">刪除這位會員</button></div>';
   mbModal(h);
+}
+
+/* ══ 刪除會員 ═══════════════════════════════════════════
+   ledger 是帳，客人的消費紀錄都串在上面。有紀錄或有餘額的
+   會員直接砍掉，那些歷史消費就變成沒有對應的人，月報也對
+   不起來。所以分兩種：
+     ・完全乾淨的（沒餘額、沒紀錄）→ 可以真的刪掉
+     ・有紀錄或有餘額的            → 只能封存，資料留著
+   兩種都要打電話號碼確認，避免手滑。
+   ═════════════════════════════════════════════════════ */
+function mbAskDelete(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var sum    = mbSum(m.ledger);
+  var nLog   = Object.keys(m.ledger || {}).length;
+  var hasBal = (sum.points > 0 || sum.sessions > 0 || sum.bonus > 0 || sum.voucher > 0);
+  var clean  = (!nLog && !hasBal);
+
+  var h = '<h3 style="margin:0 0 2px;color:var(--red)">刪除會員</h3>' +
+    '<div class="muted" style="font-size:12.5px;margin-bottom:16px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
+
+  if (hasBal){
+    h += '<div class="info-box" style="border-color:var(--red);margin-bottom:14px;line-height:1.8">' +
+      '<b>這位會員還有餘額：</b><br>' +
+      (sum.points   > 0 ? '・可用點數 ' + sum.points.toLocaleString() + ' 點<br>' : '') +
+      (sum.sessions > 0 ? '・剩餘堂數 ' + sum.sessions + ' 堂<br>' : '') +
+      (sum.bonus    > 0 ? '・紅利 ' + sum.bonus + ' 點<br>' : '') +
+      (sum.voucher  > 0 ? '・表框折價金 $' + sum.voucher.toLocaleString() + '<br>' : '') +
+      '錢已經收了，刪掉等於帳上憑空少一筆。建議先把餘額處理完再說。</div>';
+  }
+  if (nLog){
+    h += '<div class="info-box" style="margin-bottom:14px;line-height:1.8">' +
+      '這位會員有 <b>' + nLog + '</b> 筆消費／儲值紀錄。<br>' +
+      '這些是月報和業績的來源，刪掉之後<b>救不回來</b>。</div>';
+  }
+  if (clean){
+    h += '<div class="info-box" style="margin-bottom:14px;line-height:1.8">' +
+      '這筆資料完全乾淨，沒有餘額也沒有任何紀錄，可以安全刪除。<br>' +
+      '常見於電話打錯或重複建檔。</div>';
+  } else {
+    h += '<div class="info-box" style="margin-bottom:14px;line-height:1.8">' +
+      '<b>建議改用「封存」：</b>會員從名單和待辦提醒上消失，但資料和紀錄都留著，' +
+      '月報不受影響，之後想找回來也還在。</div>';
+  }
+
+  h += '<div class="fg" style="margin-bottom:14px"><label>請輸入這位會員的完整電話以確認</label>' +
+       '<input id="mb-del-c" inputmode="numeric" placeholder="' + m.phone + '" autocomplete="off"></div>' +
+       '<div id="mb-del-err" style="color:var(--red);font-size:12.5px;margin-bottom:12px"></div>';
+
+  h += '<div class="row" style="gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
+       '<button class="btn" style="flex:1" onclick="mbDoDelete(\'' + phone + '\',0)">封存</button>' +
+       (clean ? '<button class="btn" style="flex:1;color:var(--red);border-color:#EBD3D0" onclick="mbDoDelete(\'' + phone + '\',1)">永久刪除</button>' : '') +
+       '</div>';
+  if (!clean){
+    h += '<div class="muted" style="font-size:11.5px;margin-top:12px;line-height:1.7">' +
+         '有餘額或有紀錄的會員不提供永久刪除。真的要清掉，請先把餘額歸零、' +
+         '確認紀錄結算過，再回來操作。</div>';
+  }
+  mbModal(h);
+  setTimeout(function(){ var el = document.getElementById('mb-del-c'); if (el) el.focus() }, 60);
+}
+
+async function mbDoDelete(phone, hard){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err   = document.getElementById('mb-del-err');
+  var typed = (document.getElementById('mb-del-c') || {}).value || '';
+  if (mbNorm(typed) !== phone){
+    if (err) err.textContent = '電話號碼不符，請完整輸入 ' + phone + ' 再試一次。';
+    return;
+  }
+  if (err) err.textContent = '處理中…';
+  try {
+    if (hard){
+      await fetch(mbf('/members/' + phone + '.json'), { method:'DELETE' });
+      /* LINE 綁定一起清掉，不然客人端還會對應到這支電話 */
+      try {
+        var idx = await (await fetch(mbf('/lineIndex.json'))).json() || {};
+        for (var uid in idx){
+          if (idx[uid] === phone) await fetch(mbf('/lineIndex/' + uid + '.json'), { method:'DELETE' });
+        }
+      } catch(e){}
+      mbList = mbList.filter(function(x){ return x.phone !== phone });
+    } else {
+      var rec = { at: mbNow(), by: (typeof ME !== 'undefined' && ME ? (ME.displayName || '') : '') };
+      await fetch(mbf('/members/' + phone + '/archived.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(rec) });
+      m.archived = rec;
+    }
+  } catch(e){
+    if (err) err.textContent = '操作失敗，請檢查網路連線。';
+    return;
+  }
+  mbClose();
+  mbOpenPhone = null;
+  renderMember();
 }
 
 /* 用 ledger 重算 cache，修掉對不起來的餘額 */
