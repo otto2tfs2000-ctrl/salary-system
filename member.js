@@ -221,6 +221,20 @@ function mbMembersHtml(){
        '<div style="margin-top:5px">' + delta(s.saleThis, s.saleLast, true) + '</div></div>';
   h += '</div>';
 
+  /* 最常用的動作放最上面：找人、重讀、建檔 */
+  h += '<div class="card" style="margin-bottom:16px">' +
+       '<div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:11px">' +
+       '<div class="card-title" style="margin:0">🔍 找會員</div>' +
+       '<span style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
+       '<span class="muted" style="font-size:12px">共 ' + s.total + ' 位</span>' +
+       '<button class="btn btn-outline btn-sm" onclick="mbLoad(1).then(renderMember)">重新讀取</button>' +
+       '<button class="btn btn-gold btn-sm" onclick="mbNewMember()">＋ 新增會員</button>' +
+       '</span></div>' +
+       '<input id="mb-search" placeholder="輸入電話或姓名（兩個字以上）" value="' + mbEsc(mbQuery) + '" ' +
+       'style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:15px;outline:none;font-family:inherit">' +
+       '<div id="mb-hits" style="margin-top:10px"></div>' +
+       '</div>';
+
   /* 每份名單都接得上一個動作，這才是這頁的價值 */
   h += '<div class="card" style="margin-bottom:16px">';
   h += '<div class="card-title">📋 該聯絡的名單</div>';
@@ -235,19 +249,6 @@ function mbMembersHtml(){
         s.nearlyEmpty.length ? 'var(--gold2)' : 'var(--text3)');
   h += '</div>';
 
-  h += '<div class="card">' +
-       '<div class="card-title">🔍 找會員</div>' +
-       '<input id="mb-search" placeholder="輸入電話或姓名（兩個字以上）" value="' + mbEsc(mbQuery) + '" ' +
-       'style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:15px;outline:none;font-family:inherit">' +
-       '<div id="mb-hits" style="margin-top:10px"></div>' +
-       '</div>';
-
-  h += '<div class="row" style="display:flex;gap:8px;align-items:center;margin-top:14px">' +
-       '<span class="muted" style="font-size:12px">會員總數 ' + s.total + '</span>' +
-       '<span style="margin-left:auto;display:flex;gap:8px">' +
-       '<button class="btn btn-outline btn-sm" onclick="mbLoad(1).then(renderMember)">重新讀取</button>' +
-       '<button class="btn btn-gold btn-sm" onclick="mbNewMember()">＋ 新增會員</button>' +
-       '</span></div>';
   return h;
 }
 
