@@ -1008,12 +1008,13 @@ css.textContent=
   "border-left:6px solid transparent}"+
 /* 可開課老師計數卡 */
 ".bk-tcard>b{display:flex;align-items:center;justify-content:center;gap:9px}"+
-".bk-tbtn{width:30px;height:30px;border-radius:9px;border:1px solid #D6DCE8;"+
-  "background:#fff;color:#1E2B4F;font-size:17px;line-height:1;cursor:pointer;"+
-  "font-family:inherit;transition:.15s;flex:0 0 auto}"+
+".bk-tbtn{width:28px;height:28px;border-radius:8px;border:1px solid #D6DCE8;"+
+  "background:#fff;color:#5B6272;font-size:15px;line-height:1;cursor:pointer;"+
+  "font-family:inherit;transition:.15s;flex:0 0 auto;padding:0}"+
 ".bk-tbtn:hover{background:#EDF1FA;border-color:#9FB0CE}"+
 ".bk-tbtn:active{transform:scale(.94)}"+
-".bk-tnum{min-width:30px;text-align:center}"+
+".bk-stat .bk-tnum{display:block;min-width:34px;text-align:center;margin-top:0;"+
+  "font-size:25px;font-weight:700;color:var(--bkNavy);line-height:1.15}"+
 /* 超載警示 */
 ".bk-over{background:#FBEAE8;color:#C9453B;border-radius:12px;padding:12px 15px;"+
   "font-size:13.5px;line-height:1.6;margin-bottom:16px;font-weight:500}"+
