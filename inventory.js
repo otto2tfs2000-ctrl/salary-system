@@ -250,7 +250,37 @@ function releaseInvAutoUse(bookingId) {
 }
 // 核銷時呼叫：items 是預約單上的課程 [{name,spec,qty}]
 // 回傳 {ok:[{name,qty,unit}], miss:[課程名]}，讓核銷畫面可以告訴行政扣了什麼、哪些課還沒建材料表
-function consumeInvForBooking(bookingId, dateStr, items) {
+/* 找出這張預約單會用到哪些「二選一」群組，給核銷畫面列出來讓老師選。
+   回傳 [{key, course, grp, opts:[{id,name,unit}]}]。
+   key 是課程加群組名，同一張單裡兩堂課各有畫布群組時才分得開。 */
+function invRecipeGroups(items) {
+  var out = [];
+  if (!items || !items.length || !S.recipes) return out;
+  items.forEach(function(it) {
+    var name = String(it.name || '').trim();
+    if (!name) return;
+    var spec = String(it.spec || '').trim();
+    var ck = name + (spec ? '|' + spec : '');
+    var r = S.recipes[ck] || S.recipes[name];
+    if (!r || !r.items) return;
+    var seen = {};
+    r.items.forEach(function(x) {
+      var g = String(x.grp || '').trim();
+      if (!g) return;
+      if (!seen[g]) {
+        seen[g] = { key: ck + '||' + g, course: name, grp: g, opts: [] };
+        out.push(seen[g]);
+      }
+      var m = getInvItems().find(function(y){ return String(y.id) === String(x.id) });
+      seen[g].opts.push({ id: x.id, name: m ? m.name : ('#' + x.id), unit: m ? (m.unit || '') : '' });
+    });
+  });
+  /* 只有一個選項的群組不用問，跟沒分組一樣 */
+  return out.filter(function(g){ return g.opts.length > 1 });
+}
+
+// picks: { 群組key: 選中的 itemId }。沒給就用群組裡的第一個。
+function consumeInvForBooking(bookingId, dateStr, items, picks) {
   var res = { ok: [], miss: [] };
   if (!bookingId || !items || !items.length) return res;
   if (!S.recipes) return res;
@@ -258,15 +288,30 @@ function consumeInvForBooking(bookingId, dateStr, items) {
   var dateKey = String(dateStr || '').replace(/\//g, '-');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) dateKey = invFmtDate(new Date());
   releaseInvAutoUse(bookingId);            // 先撤掉舊的，避免修正核銷時重複扣
+  picks = picks || {};
   var pool = {};                           // itemId -> 合併後的用量
   items.forEach(function(it) {
     var name = String(it.name || '').trim();
     if (!name) return;
     var spec = String(it.spec || '').trim();
-    var r = S.recipes[name + (spec ? '|' + spec : '')] || S.recipes[name];
+    var ck = name + (spec ? '|' + spec : '');
+    var r = S.recipes[ck] || S.recipes[name];
     if (!r || !r.items || !r.items.length) { res.miss.push(name + (spec ? '（' + spec + '）' : '')); return }
     var n = +it.qty || 1;
+    /* 每個群組先決定要扣哪一項：行政選了就用選的，沒選就用第一個 */
+    var chosen = {};
     r.items.forEach(function(x) {
+      var g = String(x.grp || '').trim();
+      if (!g || chosen[g] !== undefined) return;
+      var k = ck + '||' + g;
+      var want = picks[k];
+      var hit = want != null && r.items.some(function(y){
+        return String(y.grp || '').trim() === g && String(y.id) === String(want) });
+      chosen[g] = hit ? String(want) : String(x.id);
+    });
+    r.items.forEach(function(x) {
+      var g = String(x.grp || '').trim();
+      if (g && chosen[g] !== String(x.id)) return;   // 這組沒選到它，不扣
       var q = (+x.qty || 0) * n;
       if (q > 0) pool[x.id] = (pool[x.id] || 0) + q;
     });

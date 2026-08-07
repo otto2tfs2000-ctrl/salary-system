@@ -653,6 +653,9 @@ async function bkCheckout(id){
      只有現金流那邊分成兩天——訂金記收款那天，尾款記核銷這天。 */
   var depAmt=old?(+old.depositAmt||0):bkDepPaid(b);
   var depWay=old?(old.depositWay||""):(bkDepState(b).way||"");
+  /* 二選一的材料。課程用料裡標了群組的，核銷時讓老師當場選一個，
+     客人不用知道規格，庫存也不會兩個都被扣。 */
+  var picks=(old&&old.matPicks)?JSON.parse(JSON.stringify(old.matPicks)):{};
   var autoMatched=false;
   var ppl=+b.people||1;
   var _ak=bkAK(b);
@@ -678,11 +681,38 @@ async function bkCheckout(id){
      '<div id="ckProxyBox"></div></div>'+
    '<div class="bk-f"><label>上課老師</label><select id="ckT"><option value="">請選擇</option>'+
      bkTeachers().map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+esc(t)+'</option>'}).join("")+'</select></div>'+
+   '<div id="ckMats"></div>'+
    '<div class="bk-calc" id="ckCalc"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="ckX">取消</button>'+
      '<button class="bk-save" id="ckOK">'+(old?"確認修正":"確認核銷")+'</button></div>');
 
   document.getElementById("ckX").onclick=bkClose;
+
+  /* 課程用料裡標了群組的材料，一組列一行讓老師點選。
+     沒標群組的課程完全不受影響，這一區直接不出現。 */
+  function drawMats(){
+    var box=document.getElementById("ckMats"); if(!box)return;
+    var gs=[];
+    try{
+      if(typeof invRecipeGroups==="function")gs=invRecipeGroups(b.items||[])||[];
+    }catch(e){ gs=[] }
+    if(!gs.length){ box.innerHTML=""; return }
+    var h='<div class="bk-f"><label>材料選擇</label>';
+    gs.forEach(function(g){
+      if(picks[g.key]==null)picks[g.key]=String(g.opts[0].id);
+      h+='<div class="bk-mgrp"><div class="bk-mgh">'+esc(g.grp)+
+         '<span>'+esc(g.course)+'</span></div><div class="bk-ways">'+
+         g.opts.map(function(o){
+           return '<div class="bk-way'+(String(picks[g.key])===String(o.id)?" on":"")+
+             '" data-mg="'+esc(g.key)+'" data-mo="'+esc(o.id)+'">'+esc(o.name)+'</div>' }).join("")+
+         '</div></div>';
+    });
+    h+='<div class="bk-left">扣庫存只扣選中的那一項。</div></div>';
+    box.innerHTML=h;
+    box.querySelectorAll("[data-mg]").forEach(function(el){
+      el.onclick=function(){ picks[el.dataset.mg]=el.dataset.mo; drawMats() } });
+  }
+  drawMats();
 
   function drawWho(){
     var w=document.getElementById("ckWho");
@@ -906,7 +936,7 @@ async function bkCheckout(id){
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
-          depositAmt:depAmt,depositWay:depWay,due:due,
+          depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
           adults:nAdult,kids:nKid,
           teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
@@ -1257,6 +1287,10 @@ css.textContent=
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
 ".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+".bk-mgrp{margin-bottom:11px}"+
+".bk-mgh{font-size:12.5px;font-weight:600;color:var(--bkInk);margin-bottom:6px;"+
+  "display:flex;align-items:baseline;gap:7px}"+
+".bk-mgh span{font-size:11.5px;font-weight:400;color:var(--bkMute)}"+
 ".bk-tag.d{background:var(--bkOkBg);color:var(--bkOk)}"+
 ".bk-sub{font-size:13px;color:var(--bkMute);margin-top:5px;line-height:1.6}"+
 ".bk-note{font-size:12.5px;color:#8A6400;margin-top:5px}"+
