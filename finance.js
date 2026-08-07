@@ -37,10 +37,24 @@ var FN_CULTURE = "culture";   /* 文化幣 */
 /* 這幾種是扣既有餘額，不是收錢，現金流完全不算 */
 var FN_NONCASH = ["points","sessions","voucher"];
 
+/* 手動補登可以選的類別。前兩個算販售，後兩個算預收 */
+var FN_CATS = [
+  {k:"course", n:"課程營收",  g:"sell"},
+  {k:"goods",  n:"商品營收",  g:"sell"},
+  {k:"voucher",n:"票券販售",  g:"pre"},
+  {k:"stored", n:"方案販售",  g:"pre"}
+];
+/* 補登的收款方式。多了「不進現金流」給點數扣抵、贈送那種用 */
+var FN_MWAYS = FN_WAYS.concat([
+  {k:FN_CULTURE,n:"文化幣"},
+  {k:"none",    n:"不進現金流"}
+]);
+
 var fnMode = "day";           /* day / month */
 var fnDate = new Date();
 var fnDed  = null;            /* 全部核銷紀錄 */
 var fnDep  = null;            /* 全部訂金紀錄 */
+var fnMan  = null;            /* 手動補登 */
 var fnErr  = "";
 
 function fnPad(n){ return String(n).padStart(2,"0") }
@@ -74,7 +88,7 @@ function fnShift(step){
    deductions 和 deposits 都整包抓下來再在前端篩。
    資料量還小，這樣寫最單純；之後筆數大了再改成按月份分片。 */
 async function fnLoad(force){
-  if(fnDed&&fnDep&&!force)return;
+  if(fnDed&&fnDep&&fnMan&&!force)return;
   fnErr="";
   try{
     var a=await (await fetch(fnf("/deductions.json"))).json();
@@ -85,7 +99,13 @@ async function fnLoad(force){
     var b=await (await fetch(fnf("/deposits.json"))).json();
     fnDep=[]; Object.keys(b||{}).forEach(function(k){
       var v=b[k]; if(!v||v.voided)return; fnDep.push(v) });
-  }catch(e){ fnDep=[]; fnErr+="訂金紀錄讀取失敗："+e.message }
+  }catch(e){ fnDep=[]; fnErr+="訂金紀錄讀取失敗："+e.message+"　" }
+  try{
+    var c=await (await fetch(fnf("/manual.json"))).json();
+    fnMan=[]; Object.keys(c||{}).forEach(function(k){
+      var v=c[k]; if(!v||v.voided)return; fnMan.push(Object.assign({_id:k},v)) });
+    fnMan.sort(function(x,y){ return String(x.date)<String(y.date)?-1:1 });
+  }catch(e){ fnMan=[]; fnErr+="補登紀錄讀取失敗："+e.message }
 }
 
 /* ── 業績 ── */
@@ -115,8 +135,15 @@ function fnSales(){
         price:price,pay:x.pay||"",kind:(+x.sessions>0)?"票券":"儲值金"});
     });
   });
+  /* 手動補登：夯客時期的舊帳、純賣材料那種沒有預約單的收入 */
+  (fnMan||[]).forEach(function(r){
+    if(!fnInRange(r.date))return;
+    var amt=+r.amount||0; if(!amt)return;
+    if(o[r.cat]!=null)o[r.cat]+=amt;
+  });
   o.sellSub=o.course+o.goods;
   o.preSub =o.voucher+o.stored;
+  o.manual =(fnMan||[]).filter(function(r){ return fnInRange(r.date) });
   return o;
 }
 
@@ -162,10 +189,94 @@ function fnCash(){
     });
   });
 
+  (fnMan||[]).forEach(function(r){
+    if(!fnInRange(r.date))return;
+    var amt=+r.amount||0; if(!amt)return;
+    var k=r.way||"none";
+    if(k==="none"||FN_NONCASH.indexOf(k)>=0)return;
+    if(k===FN_CULTURE){ cult.checkout+=amt; return }
+    if(o[k])o[k].checkout+=amt;
+  });
+
   var sumCk=0,sumDp=0;
   FN_WAYS.forEach(function(w){ sumCk+=o[w.k].checkout; sumDp+=o[w.k].deposit });
   return {by:o,culture:cult,checkout:sumCk,deposit:sumDp,total:sumCk+sumDp,
           notes:note.filter(function(v,i,a){return a.indexOf(v)===i})};
+}
+
+/* ── 手動補登 ──
+   兩個用途：夯客時期的舊帳補回來、純賣材料那種沒有預約單的收入。
+   一筆同時餵兩張表：類別決定算哪種業績，收款方式決定進哪個現金流欄位。
+   點數扣抵、贈送那種選「不進現金流」，業績算、錢不算。 */
+function fnManBox(list){
+  var h='<div class="fn-sec"><div class="fn-st">手動補登'+
+        '<span>夯客舊帳、賣材料等沒有預約單的收入</span></div>';
+  h+='<div class="fn-block"><div class="fn-mf">'+
+     '<div class="fn-mi"><label>日期</label><input type="date" id="fnMDate"></div>'+
+     '<div class="fn-mi"><label>類別</label><select id="fnMCat">'+
+       FN_CATS.map(function(c){ return '<option value="'+c.k+'">'+c.n+'</option>' }).join("")+
+     '</select></div>'+
+     '<div class="fn-mi"><label>金額</label><input id="fnMAmt" inputmode="numeric" placeholder="0"></div>'+
+     '<div class="fn-mi"><label>收款方式</label><select id="fnMWay">'+
+       FN_MWAYS.map(function(w){ return '<option value="'+w.k+'">'+w.n+'</option>' }).join("")+
+     '</select></div>'+
+     '<div class="fn-mi wide"><label>備註</label>'+
+       '<input id="fnMNote" placeholder="例：夯客 8/3 營收、賣顏料一罐"></div>'+
+     '<div class="fn-mi"><label>&nbsp;</label>'+
+       '<button class="fn-add" id="fnMAdd">新增一筆</button></div>'+
+     '</div>';
+  if(!list.length)
+    h+='<div class="fn-none">這個範圍還沒有補登紀錄</div>';
+  else{
+    var sum=list.reduce(function(s,r){ return s+(+r.amount||0) },0);
+    h+='<div class="fn-mlist">';
+    list.forEach(function(r){
+      var cat=FN_CATS.filter(function(c){return c.k===r.cat})[0];
+      var way=FN_MWAYS.filter(function(w){return w.k===r.way})[0];
+      h+='<div class="fn-mrow"><span class="d">'+fnEsc(String(r.date).slice(5))+'</span>'+
+         '<span class="c">'+fnEsc(cat?cat.n:r.cat||"")+'</span>'+
+         '<span class="w">'+fnEsc(way?way.n:r.way||"")+'</span>'+
+         '<span class="n">'+fnEsc(r.note||"")+'</span>'+
+         '<span class="a">'+fnMoney(r.amount)+'</span>'+
+         '<button class="fn-del" data-del="'+fnEsc(r._id)+'">✕</button></div>';
+    });
+    h+='<div class="fn-sub"><span>補登小計</span><b>'+fnMoney(sum)+'</b></div></div>';
+  }
+  h+='</div></div>';
+  return h;
+}
+
+async function fnManAdd(){
+  var d=document.getElementById("fnMDate").value;
+  var cat=document.getElementById("fnMCat").value;
+  var amt=Math.round(+document.getElementById("fnMAmt").value||0);
+  var way=document.getElementById("fnMWay").value;
+  var note=document.getElementById("fnMNote").value.trim();
+  if(!d){ alert("請選日期"); return }
+  if(!(amt>0)){ alert("金額要大於 0"); return }
+  var btn=document.getElementById("fnMAdd");
+  btn.disabled=true; btn.textContent="存檔中…";
+  try{
+    await fetch(fnf("/manual.json"),{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({date:d.replace(/-/g,"/"),cat:cat,amount:amt,way:way,
+        note:note,dept:"4F",
+        by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"",
+        at:new Date().toISOString(),voided:false})});
+    fnMan=null; await fnLoad(true); fnRender();
+  }catch(e){
+    alert("存檔失敗："+e.message);
+    btn.disabled=false; btn.textContent="新增一筆";
+  }
+}
+async function fnManDel(id){
+  if(!confirm("刪掉這筆補登？兩張表的數字都會跟著變。"))return;
+  try{
+    await fetch(fnf("/manual/"+id+".json"),{method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({voided:true,voidAt:new Date().toISOString()})});
+    fnMan=null; await fnLoad(true); fnRender();
+  }catch(e){ alert("刪除失敗："+e.message) }
 }
 
 /* ── 畫面 ── */
@@ -182,7 +293,7 @@ function fnRow(label,amt,base,cls){
 
 function fnRender(){
   var root=document.getElementById("fnRoot"); if(!root)return;
-  if(!fnDed||!fnDep){
+  if(!fnDed||!fnDep||!fnMan){
     root.innerHTML='<div class="fn-load">讀取中…</div>';
     fnLoad().then(fnRender); return;
   }
@@ -257,14 +368,22 @@ function fnRender(){
     h+='<div class="fn-warn">'+c.notes.map(fnEsc).join("<br>")+'</div>';
   h+='</div>';
 
+  h+=fnManBox(s.manual||[]);
+
   root.innerHTML=h;
+  var md=document.getElementById("fnMDate");
+  if(md)md.value=(fnMode==="day"?fnDs(fnDate):fnDs(new Date())).replace(/\//g,"-");
+  var ma=document.getElementById("fnMAdd");
+  if(ma)ma.onclick=fnManAdd;
+  root.querySelectorAll("[data-del]").forEach(function(el){
+    el.onclick=function(){ fnManDel(el.dataset.del) } });
   document.getElementById("fnDay").onclick=function(){ fnMode="day"; fnRender() };
   document.getElementById("fnMon").onclick=function(){ fnMode="month"; fnRender() };
   document.getElementById("fnPrev").onclick=function(){ fnShift(-1) };
   document.getElementById("fnNext").onclick=function(){ fnShift(1) };
   document.getElementById("fnNow").onclick=function(){ fnDate=new Date(); fnRender() };
   document.getElementById("fnRe").onclick=function(){
-    fnDed=null; fnDep=null; fnRender() };
+    fnDed=null; fnDep=null; fnMan=null; fnRender() };
 }
 window.renderFinance=fnRender;
 
@@ -332,9 +451,32 @@ window.renderFinance=fnRender;
   ".fn-note{font-size:11.5px;color:var(--fnMute);margin-top:8px;line-height:1.6}"+
   ".fn-warn{background:#FDF4E3;color:#8A6400;font-size:12.5px;padding:11px 13px;"+
     "border-radius:10px;margin-bottom:12px;line-height:1.7}"+
+  ".fn-mf{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;"+
+    "align-items:end;margin-bottom:4px}"+
+  ".fn-mi.wide{grid-column:span 2}"+
+  ".fn-mi label{display:block;font-size:11.5px;color:var(--fnMute);margin-bottom:4px}"+
+  ".fn-mi input,.fn-mi select{width:100%;height:38px;padding:0 10px;border:1px solid #E3E6EC;"+
+    "border-radius:9px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--fnInk)}"+
+  ".fn-add{width:100%;height:38px;border:0;border-radius:9px;background:var(--fnNavy);"+
+    "color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}"+
+  ".fn-add:disabled{opacity:.6;cursor:default}"+
+  ".fn-none{font-size:12.5px;color:var(--fnMute);padding:14px 0 2px}"+
+  ".fn-mlist{margin-top:14px;border-top:1px solid var(--fnLine);padding-top:6px}"+
+  ".fn-mrow{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:13px;"+
+    "border-bottom:1px solid #F4F5F8}"+
+  ".fn-mrow .d{flex:0 0 44px;color:var(--fnMute);font-variant-numeric:tabular-nums}"+
+  ".fn-mrow .c{flex:0 0 84px}"+
+  ".fn-mrow .w{flex:0 0 72px;color:var(--fnMute);font-size:12.5px}"+
+  ".fn-mrow .n{flex:1;min-width:0;color:var(--fnMute);font-size:12.5px;"+
+    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+  ".fn-mrow .a{flex:0 0 84px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}"+
+  ".fn-del{flex:0 0 auto;width:26px;height:26px;border:0;border-radius:7px;background:#FBF0EF;"+
+    "color:#C9453B;font-size:12px;cursor:pointer;font-family:inherit;line-height:1}"+
   "@media(max-width:640px){.fn-rl{min-width:104px;font-size:12.5px}"+
     ".fn-ra{flex-basis:80px;font-size:13px}.fn-rp{flex-basis:44px}"+
-    ".fn-nav b{min-width:110px;font-size:14px}}";
+    ".fn-nav b{min-width:110px;font-size:14px}"+
+    ".fn-mf{grid-template-columns:1fr 1fr}.fn-mi.wide{grid-column:span 2}"+
+    ".fn-mrow{flex-wrap:wrap;gap:6px 10px}.fn-mrow .n{flex:1 0 100%;order:9}}";
   var st=document.createElement("style");
   st.textContent=css; document.head.appendChild(st);
 })();
