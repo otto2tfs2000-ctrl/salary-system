@@ -58,6 +58,7 @@
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
+  <div class="tab" data-tab="finance" onclick="switchTab('finance')">💵 業績與現金流</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
   <div class="tab" data-tab="inventory" onclick="switchTab('inventory')">📦 庫存盤點</div>
   <div class="tab" data-tab="recipe" onclick="switchTab('recipe')">🎨 課程用料</div>
@@ -96,6 +97,8 @@
 <div id="mb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;overflow:auto;padding:20px 12px">
   <div class="card" style="max-width:620px;margin:0 auto"><div id="mb-modal-body"></div></div>
 </div>
+
+<div id="tab-finance" class="page"><div id="fnRoot"></div></div>
 
 <div id="tab-monthly" class="page">
   <div class="store-tabs">
@@ -430,13 +433,14 @@
 </div>
 
 <script src="auth.js?v=20260806a"></script>
-<script src="app.js?v=20260806c"></script>
+<script src="app.js?v=20260807a"></script>
 <script src="consumables.js?v=20260805p"></script>
 <script src="inventory.js?v=20260805p"></script>
-<script src="booking.js?v=20260807b"></script>
+<script src="booking.js?v=20260807c"></script>
 <script src="member.js?v=20260806e"></script>
 <script src="recipe.js?v=20260805p"></script>
 <script src="init.js?v=20260805p"></script>
+<script src="finance.js?v=20260807a"></script>
 <script src="staff.js?v=20260806c"></script>
 <script>
 /* 手機上點完分頁就把側欄收起來，不然選單會一直擋住內容 */

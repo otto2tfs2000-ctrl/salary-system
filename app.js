@@ -395,6 +395,7 @@ function doSwitchTab(tab) {
   if (tab==='recipe') renderRecipe();
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
+  if (tab==='finance' && window.renderFinance) renderFinance();
   if (tab==='salary') renderSalary();
   if (tab==='consumables') renderConsumables();
   if (tab==='inventory') renderInventory();

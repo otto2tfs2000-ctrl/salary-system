@@ -30,7 +30,10 @@ var PAYWAYS  = [
   {k:"cash",    n:"現金",     member:false},
   {k:"linepay", n:"LINE Pay", member:false},
   {k:"card",    n:"刷卡",     member:false},
-  {k:"transfer",n:"匯款",     member:false}
+  {k:"transfer",n:"匯款",     member:false},
+  /* 文化幣是政府核銷，錢不是當下進帳戶。業績照算，
+     現金流那邊會獨立列在「應收」，不混進當日總收款 */
+  {k:"culture", n:"文化幣",   member:false}
 ];
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
 /* ── 訂金 ──────────────────────────────────────────────
