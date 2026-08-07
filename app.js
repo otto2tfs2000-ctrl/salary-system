@@ -1148,9 +1148,9 @@ function renderMonthly() {
       var um = getUnmatchedSales(selM_monthly, deptForUnmatched);
       if (!um.amt) return '';
       var names = Array.from(um.staffList).join('、');
-      return '<div class="stat-card" style="border-color:var(--red,#c0392b)"><div class="lbl" style="color:var(--red,#c0392b)">⚠️ 未列入合計</div><div class="val" style="color:var(--red,#c0392b);font-size:16px">$' + um.amt.toLocaleString() + '</div><div style="font-size:11px;color:var(--text3);margin-top:4px">業務姓名「' + names + '」對不到老師設定，這筆錢在會館業績系統裡有算，但這裡沒列入業績合計</div></div>';
+      return '<div class="stat-card hi" style="background:rgba(192,57,43,.05);border-color:rgba(192,57,43,.32)"><div class="lbl" style="color:var(--red,#c0392b)">⚠️ 未列入合計</div><div class="val" style="color:var(--red,#c0392b);font-size:16px">$' + um.amt.toLocaleString() + '</div><div style="font-size:11px;color:var(--text3);margin-top:4px">業務姓名「' + names + '」對不到老師設定，這筆錢在會館業績系統裡有算，但這裡沒列入業績合計</div></div>';
     })() +
-    (function(){ var _y=parseInt(document.getElementById('selYear').value); var _m=parseInt(document.getElementById('selMonth').value); var totalRev=0; for(var dd=1;dd<=getDaysInMonth(_y,_m);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card" style="border-color:var(--gold)"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
+    (function(){ var _y=parseInt(document.getElementById('selYear').value); var _m=parseInt(document.getElementById('selMonth').value); var totalRev=0; for(var dd=1;dd<=getDaysInMonth(_y,_m);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card hi"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
     '</div>';
 
   var tRows = '';
