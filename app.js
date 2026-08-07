@@ -1138,9 +1138,9 @@ function renderMonthly() {
     '<div class="stat-card"><div class="lbl">教學人次</div><div class="val">' + tCount + '</div></div>' +
     '<div class="stat-card"><div class="lbl">外派人次</div><div class="val">' + (tOutside||'—') + '</div></div>' +
     '<div class="stat-card"><div class="lbl">營隊人次</div><div class="val">' + (tCamp||'—') + '</div></div>' +
-    '<div class="stat-card"><div class="lbl">新客</div><div class="val">' + totals.newCust + '</div></div>' +
-    '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">講師費合計</div><div class="val">$' + tLec.toLocaleString() + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">舊客</div><div class="val">' + totals.oldCust + '</div></div>' +
+    '<div class="stat-card"><div class="lbl">新客</div><div class="val">' + totals.newCust + '</div></div>' +
     '<div class="stat-card"><div class="lbl">業績合計</div><div class="val">$' + tSales.toLocaleString() + '</div></div>' +
     (function(){
       var deptForUnmatched = (store==='flagship') ? '4F' : null;
