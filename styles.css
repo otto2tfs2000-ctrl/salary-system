@@ -120,13 +120,15 @@ input[type="number"]{-moz-appearance:textfield}
 .store-btn.active{background:var(--gold);border-color:var(--gold);color:#2b2410;font-weight:600}
 
 /* 統計數字用襯線體，這是整套視覺的重心 */
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px;
-  margin-bottom:20px}
+/* 固定四欄。用 auto-fill 會依螢幕寬度塞滿一排，
+   八張卡在寬螢幕變成 7＋1，最後一張孤零零留在第二排 */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:20px}
 /* 每張卡各自有框。之前是靠格子背景透出來當分隔線，
    最後一排沒填滿時空格會連成一大片灰色 */
 .stat-card{background:#FAF9F5;border:1px solid var(--border);border-radius:11px;padding:15px 17px}
-/* 重點數字跨兩格，視覺上自成一區 */
-.stat-card.hi{grid-column:span 2;background:rgba(201,168,76,.06);border-color:rgba(201,168,76,.32)}
+/* 重點數字用金色底標出來，不跨格——跨格會多佔一個位子，整排就對不齊 */
+.stat-card.hi{background:rgba(201,168,76,.06);border-color:rgba(201,168,76,.32)}
+@media (max-width:1024px){.stat-grid{grid-template-columns:repeat(3,1fr)}}
 .stat-card .lbl{font-size:10.5px;color:var(--text3);margin-bottom:4px;letter-spacing:1px}
 .stat-card .val{font-family:var(--serif);font-size:27px;font-weight:400;color:var(--text);line-height:1.15}
 
