@@ -33,6 +33,47 @@ var PAYWAYS  = [
   {k:"transfer",n:"匯款",     member:false}
 ];
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
+/* ── 訂金 ──────────────────────────────────────────────
+   客人在 LIFF 預約時就選好方式了，金額固定 900，
+   所以行政只要按一顆「已收」，不用再打一次金額和方式。
+   收款日期預設今天，但要能改——客人昨天匯、今天才確認很常見，
+   現金流必須記在錢真的進來那一天。
+
+   儲值金扣點不是收現金，不進現金流，核銷時照常扣點，
+   所以那條路線不顯示按鈕，只標示狀態。
+   ───────────────────────────────────────────────────── */
+var DEPOSIT_AMT = 900;
+function bkDepWay(m){
+  var s=String(m||"").toLowerCase();
+  if(s.indexOf("point")>=0||s.indexOf("儲值")>=0||s.indexOf("扣點")>=0)return "points";
+  if(s.indexOf("line")>=0)return "linepay";
+  if(s.indexOf("transfer")>=0||s.indexOf("bank")>=0||s.indexOf("匯")>=0)return "transfer";
+  if(s.indexOf("cash")>=0||s.indexOf("現金")>=0)return "cash";
+  if(s.indexOf("card")>=0||s.indexOf("刷")>=0)return "card";
+  return "";
+}
+function bkWayName(k){
+  var p=PAYWAYS.filter(function(x){return x.k===k})[0];
+  return p?p.n:"未指定";
+}
+/* 訂金狀態：none（不用收）／points（預扣點數）／wait（待收）／paid（已收） */
+function bkDepState(b){
+  var d=b&&b.deposit;
+  if(!d)return {s:"none"};
+  var w=bkDepWay(d.method||d.name);
+  /* 現場登記寫的是 method:"other"、amount:0，那種不用收訂金 */
+  if(!w&&!(+d.amount>0)&&d.status!=="paid")return {s:"none"};
+  if(w==="points")return {s:"points"};
+  var amt=(+d.amount>0)?+d.amount:DEPOSIT_AMT;
+  if(d.status==="paid")
+    return {s:"paid",way:bkDepWay(d.paidWay)||w,amt:amt,date:d.paidDate||"",by:d.by||""};
+  return {s:"wait",way:w,amt:amt};
+}
+/* 已收多少訂金可以在核銷時扣抵。預扣點數那條不算，它走點數流程 */
+function bkDepPaid(b){
+  var d=bkDepState(b);
+  return d.s==="paid"?(+d.amt||0):0;
+}
 var salf = function(p){ return SAL_URL.replace(/\/$/,"")+p };
 var bonusOf = function(a){ return Math.floor((+a||0)/500) };
 /* 權限判斷。auth.js 還沒載入時一律放行，避免整個畫面壞掉 */
@@ -300,6 +341,7 @@ async function bkRender(){
   document.getElementById("bkAdd").onclick=bkManual;
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
+  root.querySelectorAll("[data-dp]").forEach(function(el){ el.onclick=function(){ bkDeposit(el.dataset.dp) } });
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
   root.querySelectorAll("[data-vd]").forEach(function(el){ el.onclick=function(){ bkVoid(el.dataset.vd) } });
   root.querySelectorAll("[data-cx]").forEach(function(el){ el.onclick=function(){ bkCancel(el.dataset.cx) } });
@@ -323,9 +365,20 @@ function bkPplText(b){
   return n+" 位"+(parts.length?"（"+parts.join("・")+"）":"");
 }
 function bkCard(b){
-  var c=b.checkout, unpaid=b.deposit&&b.deposit.status!=="paid"&&!c;
+  var c=b.checkout, dp=bkDepState(b);
+  var unpaid=dp.s==="wait"&&!c;
+  var depPaid=dp.s==="paid"&&!c;
   var items=(b.items||[]).map(function(i){
     return esc(i.name)+(i.spec?"("+esc(i.spec)+")":"")+" ×"+(i.qty||1) }).join("、");
+  /* 待收就把方式一起寫出來，行政才知道要去 LINE Pay 還是銀行對帳，不用點進去看 */
+  var depTag="";
+  if(dp.s==="wait")
+    depTag='<span class="bk-tag w">待收 $'+dp.amt.toLocaleString()+'・'+esc(bkWayName(dp.way))+'</span>';
+  else if(dp.s==="paid")
+    depTag='<span class="bk-tag d">訂金 $'+dp.amt.toLocaleString()+'・'+esc(bkWayName(dp.way))+
+      (dp.date?'　'+esc(dp.date.slice(5)):'')+'</span>';
+  else if(dp.s==="points")
+    depTag='<span class="bk-tag s">訂金・儲值金預扣</span>';
   var doneHtml="";
   if(c){
     var lines='<div class="bk-dline"><span>課程</span><b>$'+(+c.courseAmt||0).toLocaleString()+'</b></div>';
@@ -333,16 +386,20 @@ function bkCard(b){
       lines+='<div class="bk-dline"><span>加購・'+esc(a.name||"未命名")+'</span><b>$'+
         (+a.amt||0).toLocaleString()+'</b></div>';
     });
-    lines+='<div class="bk-dline tot"><span>合計</span><b>$'+(+c.total||0).toLocaleString()+'</b></div>';
+    if(+c.depositAmt)
+      lines+='<div class="bk-dline"><span>已收訂金・'+esc(bkWayName(c.depositWay))+'</span><b>−$'+
+        (+c.depositAmt).toLocaleString()+'</b></div>';
+    lines+='<div class="bk-dline tot"><span>'+(+c.depositAmt?"當日應收":"合計")+'</span><b>$'+
+      ((+c.depositAmt)?(+c.due||0):(+c.total||0)).toLocaleString()+'</b></div>';
     doneHtml='<div class="bk-done"><div class="bk-dhead">已核銷'+
       (c.teacher?'<span>'+esc(c.teacher)+'</span>':'')+'</div>'+lines+
       '<div class="bk-dpay">'+esc(c.summary||"")+
       (c.bonus?'　·　紅利 +'+c.bonus:'')+'</div></div>';
   }
-  return '<div class="bk-card'+(c?" ok":(unpaid?" wait":""))+'">'+
+  return '<div class="bk-card'+(c?" ok":(unpaid?" wait":(depPaid?" dep":"")))+'">'+
     '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
       (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
-      (unpaid?'<span class="bk-tag w">待付訂金</span>':'')+
+      depTag+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+'</div>'+
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
@@ -350,6 +407,11 @@ function bkCard(b){
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
+      /* 訂金只在還沒核銷前能改。核銷後那筆金額已經寫進扣課明細，
+         這裡再動就會跟每日填寫對不起來 */
+      ((!c&&(dp.s==="wait"||dp.s==="paid")&&bkCan("checkout"))
+        ?'<button class="bk-b dp'+(dp.s==="paid"?" done":"")+'" data-dp="'+b.id+'">'+
+          (dp.s==="paid"?"訂金 ✓":"收訂金")+'</button>':"")+
       /* 核銷會扣點數、作廢會退帳，沒有權限的人不顯示這兩顆 */
       (bkCan("checkout")?'<button class="bk-b ck" data-ck="'+b.id+'">'+(c?"修正核銷":"核銷")+'</button>':"")+
       (c&&bkCan("void")?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
@@ -466,6 +528,106 @@ function bkSheet(html){
 }
 function bkClose(){ var m=document.getElementById("bkMask"); if(m)m.classList.remove("on") }
 
+/* ══ 訂金登記 ══
+   一顆按鈕就能收完：金額、方式都從預約單帶過來，行政通常直接按確認。
+   日期可以改，因為客人昨天匯款、今天才對到帳的情況很常見，
+   現金流要記在錢真的進來那天，不是行政按按鈕那天。 */
+async function bkDeposit(id){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  var dp=bkDepState(b);
+  if(dp.s!=="wait"&&dp.s!=="paid")return;
+  var amt=dp.amt||DEPOSIT_AMT;
+  var way=dp.way||"linepay";
+  var today=ds(new Date());
+  var date=dp.date||today;
+  var paid=dp.s==="paid";
+  /* 只列真的會收到錢的方式，點數／堂數不是訂金 */
+  var ways=PAYWAYS.filter(function(p){ return !p.member });
+
+  bkSheet(
+   '<h3>'+(paid?"訂金紀錄":"登記訂金")+'</h3>'+
+   '<div class="bk-sh2">'+b.date+'　'+esc(b.actualTime||b.slot)+'　'+
+     esc(b.customer&&b.customer.name||"")+'</div>'+
+   (paid?'<div class="bk-warn">這筆已經登記過了。改完會覆蓋原本的紀錄。</div>'
+        :'<div class="bk-info">客人在預約時選的是 <b>'+esc(bkWayName(dp.way))+
+          '</b>，請先確認錢真的收到了再按確認。</div>')+
+   '<div class="bk-f"><label>訂金金額</label>'+
+     '<input id="dpAmt" inputmode="numeric" value="'+amt+'"></div>'+
+   '<div class="bk-f"><label>實際收款方式</label><div class="bk-ways" id="dpWays"></div></div>'+
+   '<div class="bk-f"><label>收款日期</label>'+
+     '<input id="dpDate" type="date" value="'+date.replace(/\//g,"-")+'">'+
+     '<div class="bk-left" style="margin-top:5px">客人哪天付的就填哪天，不是今天登記就填今天。</div></div>'+
+   '<div class="bk-act">'+
+     (paid?'<button class="bk-cancel" id="dpDel">取消收款</button>':'')+
+     '<button class="bk-cancel" id="dpX">關閉</button>'+
+     '<button class="bk-save" id="dpOK">'+(paid?"確認修改":"確認已收")+'</button></div>');
+
+  document.getElementById("dpX").onclick=bkClose;
+
+  function drawWays(){
+    document.getElementById("dpWays").innerHTML=ways.map(function(p){
+      return '<div class="bk-way'+(way===p.k?" on":"")+'" data-w="'+p.k+'">'+p.n+'</div>' }).join("");
+    document.querySelectorAll("#dpWays [data-w]").forEach(function(el){
+      el.onclick=function(){ way=el.dataset.w; drawWays() } });
+  }
+  drawWays();
+
+  var del=document.getElementById("dpDel");
+  if(del)del.onclick=async function(){
+    if(!confirm("要把這筆訂金改回「待收」嗎？現金流那邊也會一起撤掉。"))return;
+    this.disabled=true;
+    try{
+      await bkPatch("/bookings/"+id+"/deposit.json",
+        {status:"wait",paidWay:null,paidDate:null,paidAt:null,by:null});
+      if(b.deposit&&b.deposit.logId)
+        await fetch(salf("/deposits/"+b.deposit.logId+".json"),{method:"PATCH",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({voided:true,voidAt:new Date().toISOString()})});
+      await bkPatch("/bookings/"+id+"/deposit.json",{logId:null});
+      bkClose(); bkRefresh();
+    }catch(e){ alert("撤銷失敗："+e.message); this.disabled=false }
+  };
+
+  document.getElementById("dpOK").onclick=async function(){
+    var a=Math.round(+document.getElementById("dpAmt").value||0);
+    var d=document.getElementById("dpDate").value;
+    if(!(a>0)){ alert("訂金金額要大於 0"); return }
+    if(!d){ alert("請填收款日期"); return }
+    if(!way){ alert("請選收款方式"); return }
+    var dstr=d.replace(/-/g,"/");
+    if(dstr>ds(new Date())&&!confirm("收款日期比今天還晚，確定嗎？"))return;
+
+    var btn=this; btn.disabled=true; btn.textContent="處理中…";
+    var now=new Date().toISOString();
+    try{
+      /* 現金流要的是「哪天、用哪種方式、收到多少」，所以另外寫一筆帳，
+         不能只存在預約單上——預約單會被核銷覆蓋，帳要留得住 */
+      var logId=(b.deposit&&b.deposit.logId)||"";
+      var log={date:dstr,bookingId:id,dept:"4F",kind:"deposit",
+        customer:(b.customer&&b.customer.name)||"",
+        phone:(b.customer&&b.customer.phone)||b.memberPhone||"",
+        amount:a,way:way,wayName:bkWayName(way),
+        classDate:b.date,slot:b.actualTime||b.slot||"",
+        by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"",at:now,voided:false};
+      if(logId){
+        await fetch(salf("/deposits/"+logId+".json"),{method:"PUT",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(log)});
+      }else{
+        var r=await (await fetch(salf("/deposits.json"),{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(log)})).json();
+        logId=r&&r.name||"";
+      }
+      await bkPatch("/bookings/"+id+"/deposit.json",{
+        status:"paid",amount:a,paidWay:way,paidDate:dstr,paidAt:now,
+        by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"",logId:logId});
+      bkClose(); bkRefresh();
+    }catch(e){
+      alert("登記失敗："+e.message);
+      btn.disabled=false; btn.textContent=paid?"確認修改":"確認已收";
+    }
+  };
+}
+
 /* ══ 核銷 ══ */
 async function bkCheckout(id){
   var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
@@ -484,6 +646,10 @@ async function bkCheckout(id){
     if(a.materialId&&!(+a.qty>0))a.qty=1;
   });
   var teacher=old?old.teacher:"";
+  /* 訂金已收就從當日應收扣掉。金額還是記全額（業績），
+     只有現金流那邊分成兩天——訂金記收款那天，尾款記核銷這天。 */
+  var depAmt=old?(+old.depositAmt||0):bkDepPaid(b);
+  var depWay=old?(old.depositWay||""):(bkDepState(b).way||"");
   var autoMatched=false;
   var ppl=+b.people||1;
   var _ak=bkAK(b);
@@ -587,6 +753,12 @@ async function bkCheckout(id){
     var h="課程 <b>$"+course.amt.toLocaleString()+"</b>";
     if(addTotal)h+="　加價 <b>$"+addTotal.toLocaleString()+"</b>";
     h+="　合計 <b>$"+total.toLocaleString()+"</b><br>";
+    if(depAmt){
+      h+="已收訂金 <b>−$"+depAmt.toLocaleString()+"</b>（"+esc(bkWayName(depWay))+"）　"+
+         "當日應收 <b>$"+Math.max(0,total-depAmt).toLocaleString()+"</b><br>";
+      if(total-depAmt<0)
+        h+='<div class="bk-err">訂金比總金額還多，請先確認課程費用有沒有填錯</div>';
+    }
     if(payer){
       var usePt=(course.way==="points"?course.amt:0)+
         addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
@@ -665,7 +837,8 @@ async function bkCheckout(id){
       if(!addons[i].amt){ alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"); return }
       if(ap&&ap.member&&!payer){ alert("加價項目不能用點數，這筆沒有綁會員"); return }
     }
-    var usePt=(course.way==="points"?course.amt:0)+
+    var courseDue=Math.max(0,course.amt-depAmt);
+    var usePt=(course.way==="points"?courseDue:0)+
       addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
     if(payer&&usePt>(payer.cache&&payer.cache.points||0)&&
        !confirm("點數不足，扣完會變成負數。確定嗎？"))return;
@@ -697,11 +870,14 @@ async function bkCheckout(id){
         if(bonus){ await bkLedger(payer.phone,{type:"bonus",delta:bonus,
           reason:"扣課回饋"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"bonus",bonus); }
       }
-      /* 拆付款：每一種方式各記一筆金額，方便每日登記分流 */
-      var byWay={}; byWay[course.way]=(byWay[course.way]||0)+course.amt;
+      /* 拆付款：每一種方式各記一筆金額，方便每日登記分流。
+         訂金不寫在這裡——它已經在收款那天記過一筆 deposits，
+         寫兩次現金流就會多算一筆。 */
+      var byWay={}; if(courseDue)byWay[course.way]=(byWay[course.way]||0)+courseDue;
       addons.forEach(function(a){ byWay[a.way]=(byWay[a.way]||0)+(+a.amt||0) });
       var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
       var total=course.amt+addTotal;
+      var due=Math.max(0,total-depAmt);
       var dt=new Date(b.date.replace(/\//g,"-")+"T00:00:00");
       var addonTxt=addons.map(function(a){
         return (a.name||"未命名")+" $"+(+a.amt||0).toLocaleString() }).join("、");
@@ -712,6 +888,7 @@ async function bkCheckout(id){
         courseAmt:course.amt,coursePay:course.way,
         addons:addons,addonTotal:addTotal,addonText:addonTxt,
         total:total,byWay:byWay,bonus:bonus,
+        depositAmt:depAmt,depositWay:depWay,due:due,
         items:(b.items||[]).map(function(i){return i.name}).join("、"),
         bookingId:id,at:now,voided:false};
       var logId="";
@@ -722,9 +899,11 @@ async function bkCheckout(id){
 
       var sumTxt=PAYWAYS.filter(function(p){return byWay[p.k]}).map(function(p){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
+      if(depAmt)sumTxt=(sumTxt?sumTxt+"　·　":"")+"訂金 "+bkWayName(depWay)+" $"+depAmt.toLocaleString();
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
+          depositAmt:depAmt,depositWay:depWay,due:due,
           adults:nAdult,kids:nKid,
           teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
@@ -1064,12 +1243,18 @@ css.textContent=
 ".bk-card:hover{box-shadow:0 3px 10px rgba(16,24,40,.09)}"+
 ".bk-card.ok{background:#FBFDFC;box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkOk)}"+
 ".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
+/* 收了訂金但還沒核銷：藍色。掃一眼就分得出誰完全還沒收到錢 */
+".bk-card.dep{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 #4C6FB1}"+
+".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
+".bk-b.dp:hover{background:#F8EBD3}"+
+".bk-b.dp.done{background:var(--bkOkBg);color:var(--bkOk);font-weight:500}"+
 ".bk-who b{font-size:16px;color:var(--bkInk);font-weight:600}"+
 ".bk-tag{display:inline-block;font-size:11px;padding:2.5px 9px;border-radius:99px;"+
   "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
 ".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+".bk-tag.d{background:var(--bkOkBg);color:var(--bkOk)}"+
 ".bk-sub{font-size:13px;color:var(--bkMute);margin-top:5px;line-height:1.6}"+
 ".bk-note{font-size:12.5px;color:#8A6400;margin-top:5px}"+
 ".bk-done{margin-top:12px;background:var(--bkOkBg);padding:11px 13px;border-radius:10px}"+
