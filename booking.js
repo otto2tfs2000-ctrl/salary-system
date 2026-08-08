@@ -11,6 +11,10 @@ var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebas
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
+/* 手動登記可以選的時段比表定多。SLOTS 拿來算表定容量，不能亂加，
+   所以額外開一份給下拉選單用。半點開始的那幾個是現場常見的加開。 */
+var SLOTS_MANUAL = ["09:30-12:00","10:00-12:00","13:30-16:00",
+                    "14:00-16:00","15:30-18:00","16:00-18:00"];
 /* 舊的寫死名單，只在「老師設定」還沒載入時當備援用 */
 var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 /* 老師名單一律讀「老師設定」（旗艦店＝四樓），
@@ -344,6 +348,7 @@ async function bkRender(){
   document.getElementById("bkAdd").onclick=bkManual;
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
+  root.querySelectorAll("[data-ed]").forEach(function(el){ el.onclick=function(){ bkManual(el.dataset.ed) } });
   root.querySelectorAll("[data-dp]").forEach(function(el){ el.onclick=function(){ bkDeposit(el.dataset.dp) } });
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
   root.querySelectorAll("[data-vd]").forEach(function(el){ el.onclick=function(){ bkVoid(el.dataset.vd) } });
@@ -410,6 +415,9 @@ function bkCard(b){
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
+      /* 手動登記打錯很常見。核銷後就不給改了，那時金額已經寫進帳。 */
+      ((!c&&b.source==="manual")
+        ?'<button class="bk-b ed" data-ed="'+b.id+'">修改</button>':"")+
       /* 訂金只在還沒核銷前能改。核銷後那筆金額已經寫進扣課明細，
          這裡再動就會跟每日填寫對不起來 */
       ((!c&&(dp.s==="wait"||dp.s==="paid")&&bkCan("checkout"))
@@ -1038,39 +1046,57 @@ async function bkCancel(id){
 }
 
 /* ══ 手動登記（代客人預約）══ */
-async function bkManual(){
-  bkSheet('<h3>手動登記預約</h3><div class="bk-sh2">代客人預約、現場加開</div>'+
-   '<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
-     '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>'+
+async function bkManual(editId){
+  /* 帶 editId 就是改一筆既有的。手動登記常常打錯人數或選錯時段，
+     原本只能取消重開，客人的 LINE 通知會再發一次。 */
+  var eb=editId?bkList.filter(function(x){return x.id===editId})[0]:null;
+  if(editId&&!eb)return;
+  var ec=eb&&eb.items&&eb.items[0];
+  bkSheet('<h3>'+(eb?"修改預約":"手動登記預約")+'</h3><div class="bk-sh2">'+
+   (eb?"改完會直接覆蓋，不會重發通知":"代客人預約、現場加開")+'</div>'+
+   (eb?'':'<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
+     '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
-       '<input id="mDate" type="date" value="'+ds(bkDate).replace(/\//g,"-")+'"></div>'+
+       '<input id="mDate" type="date" value="'+(eb?String(eb.date).replace(/\//g,"-"):ds(bkDate).replace(/\//g,"-"))+'"></div>'+
      '<div class="bk-f"><label>時段</label><select id="mSlot"></select>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
    '<div class="bk-f"><label>課程</label><select id="mCourse"><option value="">載入中…</option></select>'+
      '<div class="bk-left" id="mCInfo"></div></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
-       '<input id="mAdult" inputmode="numeric" value="1"></div>'+
+       '<input id="mAdult" inputmode="numeric" value="'+(eb?(+eb.adults||0):1)+'"></div>'+
      '<div class="bk-f"><label>小孩</label>'+
-       '<input id="mKid" inputmode="numeric" value="0"></div>'+
-     '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric">'+
+       '<input id="mKid" inputmode="numeric" value="'+(eb?(+eb.kids||0):0)+'"></div>'+
+     '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
        '<div class="bk-left">選課程後自動帶入</div></div></div>'+
    '<input type="hidden" id="mPeople" value="1">'+
-   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName"></div>'+
-     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel"></div></div>'+
-   '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓"></textarea></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
+       esc(eb&&eb.customer&&eb.customer.name||"")+'"></div>'+
+     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
+       esc(eb&&eb.customer&&eb.customer.phone||"")+'"></div></div>'+
+   '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
+       esc(eb&&eb.customer&&eb.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="mX">取消</button>'+
-     '<button class="bk-save" id="mOK">登記</button></div>');
+     '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
 
   /* 時段 */
   var slotSel=document.getElementById("mSlot");
-  slotSel.innerHTML=SLOTS.map(function(s){return "<option>"+s+"</option>"}).join("")+"<option>其他</option>";
+  slotSel.innerHTML=SLOTS_MANUAL.map(function(s){return "<option>"+s+"</option>"}).join("")+"<option>其他</option>";
+  if(eb&&eb.slot){
+    /* 舊資料的時段可能不在清單裡，補一個選項免得被改掉 */
+    if(SLOTS_MANUAL.indexOf(eb.slot)<0&&eb.slot!=="其他")
+      slotSel.insertAdjacentHTML("afterbegin","<option>"+esc(eb.slot)+"</option>");
+    slotSel.value=eb.slot;
+  }
   function showLeft(){
     var d=document.getElementById("mDate").value.replace(/-/g,"/");
     var sl=slotSel.value, el=document.getElementById("mLeft");
-    if(sl==="其他"){ el.innerHTML=""; return }
+    if(sl==="其他"||SLOTS.indexOf(sl)<0){
+      el.innerHTML=sl==="其他"?"":'<span class="bk-cap">加開時段，沒有表定上限</span>';
+      return;
+    }
     var s=bkSlotInfo(d,sl), ppl=+document.getElementById("mPeople").value||1;
     /* 實際人數永遠擺第一位。老師現場可能已自行超收，
        行政若只記得表定數字會再加上去，容易一路加到爆。 */
@@ -1115,11 +1141,19 @@ async function bkManual(){
     info.innerHTML="單價 $"+c.price.toLocaleString()+(c.dur?"　時長 "+esc(c.dur):"");
   }
   cSel.onchange=fillAmt;
+  if(ec){
+    /* 用課名加規格回頭找出是哪一門，找不到就留在「不指定」讓金額照舊 */
+    var ci=-1;
+    bkCourses.forEach(function(c,i){
+      if(ci<0&&c.name===ec.name&&String(c.spec||"")===String(ec.spec||""))ci=i });
+    if(ci>=0){ cSel.value=String(ci); }
+  }
   showLeft();
 
   /* 會員搜尋 */
   await bkLoadMembers();
-  document.getElementById("mFind").oninput=function(){
+  var findEl=document.getElementById("mFind");
+  if(findEl)findEl.oninput=function(){
     picked=null; document.getElementById("mPick").innerHTML="";
     var r=bkSearch(this.value), h=document.getElementById("mHits");
     if(this.value.trim().length<2){ h.innerHTML=""; return }
@@ -1159,7 +1193,7 @@ async function bkManual(){
     var c=ci===""?null:bkCourses[+ci];
     var amt=+g("mAmt")||0;
     var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
-    if(sl!=="其他"){
+    if(sl!=="其他"&&SLOTS.indexOf(sl)>=0){
       var si=bkSlotInfo(d,sl);
       if(si.cap>0&&si.left<ppl&&
          !confirm("這個時段目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
@@ -1170,18 +1204,26 @@ async function bkManual(){
     }
     var rec={date:d,slot:sl,people:ppl,adults:nA,kids:nK,
       items:c?[{name:c.name,spec:c.spec,qty:ppl,price:c.price}]
-             :(g("mNote")?[]:[]),
+             :(eb?(eb.items||[]):[]),
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
       status:"new",source:"manual",ts:new Date().toISOString()};
     if(picked)rec.memberPhone=picked.phone;
     var wantNotify=document.getElementById("mNotify");
     if(pickedUid)rec.line={userId:pickedUid};
-    var btn=this; btn.disabled=true; btn.textContent="登記中…";
+    var btn=this; btn.disabled=true; btn.textContent=eb?"儲存中…":"登記中…";
     try{
+      if(eb){
+        /* 用 PATCH 不用 PUT：核銷、訂金、報到那些欄位要留著，
+           這裡只改行政填的那幾格。 */
+        delete rec.status; delete rec.ts;
+        rec.editedAt=new Date().toISOString();
+        rec.editedBy=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
+        await bkPatch("/bookings/"+editId+".json",rec);
+      }else
       await fetch(bkf("/bookings.json"),{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
-      if(pickedUid&&wantNotify&&wantNotify.checked){
+      if(!eb&&pickedUid&&wantNotify&&wantNotify.checked){
         fetch(NOTIFY+"/notify/booking",{method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(Object.assign({},rec,{
@@ -1194,7 +1236,8 @@ async function bkManual(){
       bkClose();
       bkDate=new Date(d.replace(/\//g,"-")+"T00:00:00");
       bkRefresh();
-    }catch(e){ alert("登記失敗："+e.message); btn.disabled=false; btn.textContent="登記" }
+    }catch(e){ alert((eb?"儲存":"登記")+"失敗："+e.message);
+      btn.disabled=false; btn.textContent=eb?"儲存修改":"登記" }
   };
 }
 
@@ -1278,6 +1321,8 @@ css.textContent=
 ".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
 /* 收了訂金但還沒核銷：藍色。掃一眼就分得出誰完全還沒收到錢 */
 ".bk-card.dep{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 #4C6FB1}"+
+".bk-b.ed{background:#F2F3F6;color:#5F6577}"+
+".bk-b.ed:hover{background:#E8EAEF}"+
 ".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
 ".bk-b.dp:hover{background:#F8EBD3}"+
 ".bk-b.dp.done{background:var(--bkOkBg);color:var(--bkOk);font-weight:500}"+
