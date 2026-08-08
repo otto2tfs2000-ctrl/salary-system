@@ -1047,7 +1047,7 @@ function mbImpSetBatch(v){ mbImpBatch = v.trim() }
 function mbImpSetType(v){ mbImpType = v; mbImpRows = null; renderMember() }
 
 function mbImportHtml(){
-  var h = '';
+  var h = mbNewBatchHtml();
   var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
 
   h += '<div class="card" style="margin-bottom:16px">';
@@ -1523,4 +1523,146 @@ async function mbDelLedger(phone, key){
   } catch(e){ alert('刪除失敗：' + e.message); return }
   mbDetail(phone);
   if (typeof mbDrawHits === 'function') mbDrawHits();
+}
+
+/* ══════════════════════════════════════════════════════════
+   批次建立會員
+   批次匯入餘額只認得已經存在的會員，名單裡沒有的會被跳過。
+   舊平台有 1,400 多位，系統裡只有 1,000 多位，中間的差額要
+   先建起來，餘額才貼得進去。
+
+   只建立不存在的：已經有的原封不動，姓名餘額都不碰。
+   所以整份名單重貼幾次都沒關係，第二次會全部顯示「已存在」。
+   ══════════════════════════════════════════════════════════ */
+var mbNewRaw = '', mbNewRows = null, mbNewBusy = false;
+
+/* 一行一筆：電話 [Tab／逗號] 姓名。姓名可以空白。
+   跟餘額匯入不同——這裡第二欄是姓名不是數量，所以不抓數字。 */
+function mbNewParse(raw){
+  var out = [];
+  String(raw || '').split(/\r?\n/).forEach(function(line, i){
+    var t = line.trim();
+    if (!t) return;
+    var cells = t.split(/[\t,，]|\s{2,}/).map(function(c){ return c.trim() });
+    var phone = mbNorm(cells[0] || '');
+    /* 姓名取第二欄；如果第二欄是純數字（貼到餘額檔了）就當作沒填 */
+    var name = (cells[1] || '').trim();
+    if (/^-?\d+(\.\d+)?$/.test(name)) name = '';
+    if (!phone || phone.length < 8){ out.push({ line:i+1, raw:t, state:'bad', err:'電話看不出來' }); return }
+    out.push({ line:i+1, phone:phone, name:name });
+  });
+  return out;
+}
+
+function mbNewAnalyze(){
+  var rows = mbNewParse(mbNewRaw), seen = {};
+  rows.forEach(function(r){
+    if (r.state === 'bad') return;
+    if (seen[r.phone]) { r.state = 'dup'; r.err = '這批裡重複出現'; return }
+    seen[r.phone] = true;
+    var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+    if (m) { r.state = 'exists'; r.name = m.name || r.name; return }
+    r.state = 'new';
+  });
+  mbNewRows = rows;
+  renderMember();
+}
+
+async function mbNewRun(){
+  if (mbNewBusy) return;
+  var rows = (mbNewRows || []).filter(function(r){ return r.state === 'new' });
+  if (!rows.length) { alert('沒有要建立的會員'); return }
+  if (!confirm('要建立 ' + rows.length + ' 位新會員嗎？\n\n' +
+               '已經存在的不會被動到，餘額也不會有任何變化。\n' +
+               '建好之後再回來貼餘額，就不會有人被跳過了。')) return;
+
+  mbNewBusy = true; renderMember();
+  var now = mbNow(), okN = 0, failN = 0, failMsg = '';
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var rec = { phone: r.phone, name: r.name || '', note: '', createdAt: now,
+                importedMember: true,
+                cache: { points: 0, sessions: 0, bonus: 0, voucher: 0 } };
+    try {
+      await fetch(mbf('/members/' + r.phone + '.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(rec) });
+      mbList.push({ phone: r.phone, name: rec.name, note: '', points: 0, sessions: 0,
+                    bonus: 0, ledger: {}, createdAt: now });
+      okN++;
+    } catch(e){
+      failN++;
+      if (!failMsg) failMsg = r.phone + '：' + e.message;
+    }
+    if (i % 20 === 19){
+      var el = document.getElementById('mb-new-prog');
+      if (el) el.textContent = '建立中… ' + (i+1) + ' / ' + rows.length;
+    }
+  }
+  mbNewBusy = false;
+  await mbLoad(1);
+  mbNewAnalyze();
+  alert('完成：成功 ' + okN + ' 位' + (failN ? ('，失敗 ' + failN + ' 位\n' + failMsg) : '') +
+        '\n\n接下來就可以回上面貼餘額了。');
+}
+
+function mbNewGo(){
+  var r = document.getElementById('mb-new-raw');
+  mbNewRaw = r ? r.value : '';
+  if (!mbNewRaw.trim()) { alert('請先貼上名單'); return }
+  mbNewAnalyze();
+}
+function mbNewClear(){ mbNewRaw = ''; mbNewRows = null; renderMember() }
+
+function mbNewBatchHtml(){
+  var h = '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">👥 批次建立會員</div>';
+  h += '<div class="muted" style="font-size:13.5px;line-height:1.8;margin-bottom:14px">' +
+       '下面的餘額匯入只認得已經建檔的人，名單外的會直接跳過。' +
+       '舊平台的人比系統裡多，先用這裡把缺的補起來。<br>' +
+       '<b>只建立不存在的</b>——已經有的完全不動，姓名和餘額都不會被覆蓋，' +
+       '所以整份名單重貼幾次結果都一樣。</div>';
+
+  h += '<div class="fg" style="margin-bottom:10px"><label>貼上名單（一行一位：電話　姓名，姓名可留空）</label>' +
+       '<textarea id="mb-new-raw" rows="6" style="width:100%;font-family:monospace;font-size:13px" ' +
+       'placeholder="0912345678&#9;王小明&#10;0922333444&#9;陳美美">' + mbEsc(mbNewRaw) + '</textarea></div>';
+
+  h += '<div class="row" style="gap:8px;margin-bottom:6px">' +
+       '<button class="btn btn-gold" onclick="mbNewGo()"' + (mbNewBusy ? ' disabled' : '') + '>檢查名單</button>' +
+       '<button class="btn btn-outline btn-sm" onclick="mbNewClear()">清空</button>' +
+       '<span id="mb-new-prog" class="muted" style="font-size:13px;align-self:center"></span></div>';
+
+  if (mbNewRows){
+    var g = { new:[], exists:[], dup:[], bad:[] };
+    mbNewRows.forEach(function(r){ (g[r.state] || g.bad).push(r) });
+    h += '<div style="background:var(--bg3);border-radius:9px;padding:11px 13px;font-size:14px;line-height:1.9;margin-top:12px">' +
+         '要建立 <b style="color:var(--gold2)">' + g.new.length + '</b> 位' +
+         '　已經存在 <b>' + g.exists.length + '</b> 位' +
+         (g.dup.length ? '　名單內重複 <b>' + g.dup.length + '</b> 筆' : '') +
+         (g.bad.length ? '　<span style="color:var(--red)">看不懂 ' + g.bad.length + ' 行</span>' : '') +
+         '</div>';
+
+    if (g.bad.length){
+      h += '<div class="muted" style="font-size:13px;margin-top:8px">看不懂的行：' +
+           g.bad.slice(0, 8).map(function(r){ return '第 ' + r.line + ' 行' }).join('、') +
+           (g.bad.length > 8 ? ' …等' : '') + '</div>';
+    }
+
+    if (g.new.length){
+      h += '<div style="max-height:34vh;overflow:auto;margin-top:12px"><table><thead><tr>' +
+           '<th style="width:130px">電話</th><th>姓名</th></tr></thead><tbody>';
+      g.new.slice(0, 300).forEach(function(r){
+        h += '<tr><td style="font-family:monospace;font-size:13px">' + r.phone + '</td>' +
+             '<td style="font-size:13.5px">' + (r.name ? mbEsc(r.name) : '<span class="muted">（未填）</span>') + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+      if (g.new.length > 300) h += '<div class="muted" style="font-size:13px;margin-top:6px">畫面只列前 300 筆，執行時會全部建立。</div>';
+      h += '<div class="row" style="margin-top:14px">' +
+           '<button class="btn btn-gold" onclick="mbNewRun()"' + (mbNewBusy ? ' disabled' : '') +
+           '>確認建立 ' + g.new.length + ' 位</button></div>';
+    } else {
+      h += '<div class="muted" style="font-size:14.5px;margin-top:12px">沒有要建立的人，這份名單裡的會員都已經在系統裡了。</div>';
+    }
+  }
+  h += '</div>';
+  return h;
 }
