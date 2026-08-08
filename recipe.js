@@ -81,12 +81,12 @@ async function renderRecipe(){
   var h = '';
   h += '<div class="card" style="margin-bottom:14px">';
   h += '<div class="row" style="gap:16px;flex-wrap:wrap">';
-  h += '<div><div class="muted" style="font-size:12px">已建材料清單</div><div style="font-size:20px;color:var(--gold2)">' + done + ' / ' + rcCourses.length + '</div></div>';
-  h += '<div><div class="muted" style="font-size:12px">可用材料</div><div style="font-size:20px;color:var(--gold2)">' + mats.length + '</div></div>';
-  if (noCost) h += '<div><div class="muted" style="font-size:12px">尚未填成本</div><div style="font-size:20px;color:var(--red)">' + noCost + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">已建材料清單</div><div style="font-size:20px;color:var(--gold2)">' + done + ' / ' + rcCourses.length + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">可用材料</div><div style="font-size:20px;color:var(--gold2)">' + mats.length + '</div></div>';
+  if (noCost) h += '<div><div class="muted" style="font-size:13.5px">尚未填成本</div><div style="font-size:20px;color:var(--red)">' + noCost + '</div></div>';
   h += '</div>';
-  if (!mats.length) h += '<div class="muted" style="margin-top:10px;font-size:12.5px">請先到「庫存盤點」建立材料品項，並填寫單位成本。</div>';
-  else if (noCost) h += '<div class="muted" style="margin-top:10px;font-size:12.5px">有 ' + noCost + ' 項材料還沒填單位成本，算出來的成本會偏低。</div>';
+  if (!mats.length) h += '<div class="muted" style="margin-top:10px;font-size:13.5px">請先到「庫存盤點」建立材料品項，並填寫單位成本。</div>';
+  else if (noCost) h += '<div class="muted" style="margin-top:10px;font-size:13.5px">有 ' + noCost + ' 項材料還沒填單位成本，算出來的成本會偏低。</div>';
   h += '</div>';
 
   h += '<div class="row" style="margin-bottom:10px"><input id="rc-search" placeholder="搜尋課程名稱" value="' +
@@ -99,7 +99,7 @@ async function renderRecipe(){
     var n = r && r.items ? r.items.length : 0;
     var gross = c.price - cost, rate = c.price ? Math.round(gross / c.price * 100) : 0;
     h += '<tr>';
-    h += '<td>' + c.name + (c.spec ? '<span class="muted" style="font-size:12px">（' + c.spec + '）</span>' : '') + '</td>';
+    h += '<td>' + c.name + (c.spec ? '<span class="muted" style="font-size:13.5px">（' + c.spec + '）</span>' : '') + '</td>';
     h += '<td style="text-align:right">' + (c.price ? c.price.toLocaleString() : '—') + '</td>';
     h += '<td style="text-align:right">' + (n ? Math.round(cost).toLocaleString() : '—') + '</td>';
     h += '<td style="text-align:right">' + (n && c.price ? gross.toLocaleString() : '—') + '</td>';
@@ -137,14 +137,14 @@ function rcDrawModal(c, r){
   var gross = c.price - cost, rate = c.price ? Math.round(gross / c.price * 100) : 0;
   var h = '';
   h += '<h3 style="margin:0 0 2px">' + c.name + (c.spec ? '（' + c.spec + '）' : '') + '</h3>';
-  h += '<div class="muted" style="font-size:12.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
+  h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
 
-  h += '<table><thead><tr><th>材料</th><th style="width:110px">二選一群組<br><span style="font-size:10px;color:var(--text3)">同名＝擇一</span></th><th style="width:70px">用量</th><th style="width:64px">單位成本</th><th style="width:64px">小計</th><th style="width:44px"></th></tr></thead><tbody>';
+  h += '<table><thead><tr><th>材料</th><th style="width:110px">二選一群組<br><span style="font-size:12px;color:var(--text3)">同名＝擇一</span></th><th style="width:70px">用量</th><th style="width:64px">單位成本</th><th style="width:64px">小計</th><th style="width:44px"></th></tr></thead><tbody>';
   (r.items || []).forEach(function(x, i){
     var m = rcMat(x.id);
     var sub = m ? (+m.cost || 0) * (+x.qty || 0) : 0;
-    h += '<tr><td>' + (m ? m.name + '<span class="muted" style="font-size:11.5px">（' + (m.unit || '') + '）</span>' : '<span style="color:var(--red)">材料已刪除</span>') + '</td>';
-    h += '<td><input style="width:100px;font-size:12.5px" placeholder="—" value="' + String(x.grp || '').replace(/"/g,'&quot;') +
+    h += '<tr><td>' + (m ? m.name + '<span class="muted" style="font-size:12.5px">（' + (m.unit || '') + '）</span>' : '<span style="color:var(--red)">材料已刪除</span>') + '</td>';
+    h += '<td><input style="width:100px;font-size:13.5px" placeholder="—" value="' + String(x.grp || '').replace(/"/g,'&quot;') +
          '" onchange="rcSetGrp(' + i + ',this.value)"></td>';
     h += '<td><input class="in-num" type="number" min="0" step="any" style="width:62px" value="' + (x.qty || 0) +
          '" onwheel="this.blur()" onchange="rcSetQty(' + i + ',this.value)"></td>';
@@ -153,7 +153,7 @@ function rcDrawModal(c, r){
     h += '<td><button class="btn-del btn-sm" onclick="rcDel(' + i + ')">✕</button></td></tr>';
   });
   h += '</tbody></table>';
-  h += '<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">'
+  h += '<div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.7">'
     + '同一個群組名稱的材料，核銷時只會扣其中一個，由老師當場選。'
     + '例如畫布填「畫布」，20cm方和4F各一列，核銷時二選一。留空的照舊每次都扣。</div>';
   if (!(r.items || []).length) h += '<div class="empty" style="padding:14px">還沒有材料，從下方加入</div>';
@@ -179,11 +179,11 @@ function rcDrawModal(c, r){
 
   h += '<div class="card" style="margin-top:16px">';
   h += '<div class="row" style="gap:18px;flex-wrap:wrap">';
-  h += '<div><div class="muted" style="font-size:12px">材料成本</div><div style="font-size:19px">$' + Math.round(cost).toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:12px">毛利</div><div style="font-size:19px;color:var(--gold2)">$' + gross.toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:12px">毛利率</div><div style="font-size:19px;color:' + (rate < 50 ? 'var(--red)' : 'var(--gold2)') + '">' + (c.price ? rate + '%' : '—') + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">材料成本</div><div style="font-size:19px">$' + Math.round(cost).toLocaleString() + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">毛利</div><div style="font-size:19px;color:var(--gold2)">$' + gross.toLocaleString() + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">毛利率</div><div style="font-size:19px;color:' + (rate < 50 ? 'var(--red)' : 'var(--gold2)') + '">' + (c.price ? rate + '%' : '—') + '</div></div>';
   h += '</div>';
-  h += '<div class="muted" style="font-size:11.5px;margin-top:8px">只算材料，不含人事與場地。</div>';
+  h += '<div class="muted" style="font-size:12.5px;margin-top:8px">只算材料，不含人事與場地。</div>';
   h += '</div>';
 
   h += '<div class="fg" style="margin-top:14px"><label>備註</label>' +

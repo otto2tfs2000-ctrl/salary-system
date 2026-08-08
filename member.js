@@ -201,9 +201,9 @@ function mbMembersHtml(){
   var s = mbStats();
   var money = function(n){ return '$' + Math.round(n).toLocaleString() };
   var delta = function(now, prev, isMoney){
-    if (!prev) return '<span class="muted" style="font-size:11px">上月 ' + (isMoney ? money(prev) : prev) + '</span>';
+    if (!prev) return '<span class="muted" style="font-size:12.5px">上月 ' + (isMoney ? money(prev) : prev) + '</span>';
     var up = now >= prev;
-    return '<span style="font-size:11px;color:' + (up ? 'var(--green)' : '#C25E4A') + '">' +
+    return '<span style="font-size:12.5px;color:' + (up ? 'var(--green)' : '#C25E4A') + '">' +
            (up ? '↑' : '↓') + ' 上月 ' + (isMoney ? money(prev) : prev) + '</span>';
   };
   var h = '';
@@ -212,7 +212,7 @@ function mbMembersHtml(){
   h += '<div class="stat-grid" style="margin-bottom:16px">';
   h += '<div class="stat-card"><div class="lbl">未交付課程（負債）</div>' +
        '<div class="val">' + money(s.liability) + '</div>' +
-       '<div class="muted" style="font-size:11px;margin-top:5px">' + s.withBal + ' 位有餘額' +
+       '<div class="muted" style="font-size:12.5px;margin-top:5px">' + s.withBal + ' 位有餘額' +
        (s.sessionsLeft ? '　另有 ' + s.sessionsLeft + ' 堂' : '') + '</div></div>';
   h += '<div class="stat-card"><div class="lbl">本月新增會員</div>' +
        '<div class="val">' + s.newThis + '</div>' +
@@ -227,12 +227,12 @@ function mbMembersHtml(){
        '<div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:11px">' +
        '<div class="card-title" style="margin:0">🔍 找會員</div>' +
        '<span style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
-       '<span class="muted" style="font-size:12px">共 ' + s.total + ' 位</span>' +
+       '<span class="muted" style="font-size:13.5px">共 ' + s.total + ' 位</span>' +
        '<button class="btn btn-outline btn-sm" onclick="mbLoad(1).then(renderMember)">重新讀取</button>' +
        '<button class="btn btn-gold btn-sm" onclick="mbNewMember()">＋ 新增會員</button>' +
        '</span></div>' +
        '<input id="mb-search" placeholder="輸入電話或姓名（兩個字以上）" value="' + mbEsc(mbQuery) + '" ' +
-       'style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:15px;outline:none;font-family:inherit">' +
+       'style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:16px;outline:none;font-family:inherit">' +
        '<div id="mb-hits" style="margin-top:10px"></div>' +
        '</div>';
 
@@ -256,12 +256,12 @@ function mbMembersHtml(){
 function mbTodoRow(title, sub, n, kind, color){
   return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;' +
     'padding:13px 0;border-bottom:1px solid var(--border)">' +
-    '<div><div style="font-size:13px">' + title + '</div>' +
-    '<div class="muted" style="font-size:11.5px;margin-top:2px">' + sub + '</div></div>' +
+    '<div><div style="font-size:14.5px">' + title + '</div>' +
+    '<div class="muted" style="font-size:12.5px;margin-top:2px">' + sub + '</div></div>' +
     '<div style="display:flex;align-items:center;gap:13px;flex-shrink:0">' +
     '<span style="font-size:21px;color:' + color + ';font-variant-numeric:tabular-nums">' + n + '</span>' +
     (n ? '<button class="btn btn-outline btn-sm" onclick="mbShowList(\'' + kind + '\')">看名單</button>'
-       : '<span class="muted" style="font-size:12px">—</span>') +
+       : '<span class="muted" style="font-size:13.5px">—</span>') +
     '</div></div>';
 }
 
@@ -279,7 +279,7 @@ function mbShowList(kind){
     note = '依最近來過排序。這些人下次進門就是開口續購的時機。';
   }
   var h = '<h3 style="margin:0 0 3px">' + title + '　<span style="color:var(--text3);font-weight:400">' + rows.length + ' 位</span></h3>';
-  h += '<div class="muted" style="font-size:12px;margin-bottom:14px">' + note + '</div>';
+  h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + note + '</div>';
   h += '<table><thead><tr><th>姓名</th><th style="width:112px">電話</th>' +
        '<th style="width:78px">點數</th><th style="width:56px">堂數</th>' +
        '<th style="width:96px">' + (kind === 'expiring' ? '到期日' : '最後活動') + '</th>' +
@@ -287,19 +287,19 @@ function mbShowList(kind){
   rows.slice(0, 200).forEach(function(r){
     var m = r.m;
     var right = (kind === 'expiring')
-      ? '<span style="color:' + (r.left <= 7 ? '#C25E4A' : 'var(--text2)') + '">' + r.expiry + '<br><span class="muted" style="font-size:11px">剩 ' + r.left + ' 天</span></span>'
+      ? '<span style="color:' + (r.left <= 7 ? '#C25E4A' : 'var(--text2)') + '">' + r.expiry + '<br><span class="muted" style="font-size:12.5px">剩 ' + r.left + ' 天</span></span>'
       : '<span class="muted">' + (r.days >= 9999 ? '無紀錄' : r.days + ' 天前') + '</span>';
     h += '<tr>' +
       '<td>' + mbEsc(m.name || '（未填姓名）') + '</td>' +
       '<td class="muted">' + m.phone + '</td>' +
       '<td style="text-align:right;color:var(--gold2)">' + (+m.points || 0).toLocaleString() + '</td>' +
       '<td style="text-align:right">' + (+m.sessions || 0) + '</td>' +
-      '<td style="font-size:12px">' + right + '</td>' +
+      '<td style="font-size:13.5px">' + right + '</td>' +
       '<td><button class="btn btn-outline btn-sm" onclick="mbDetail(\'' + m.phone + '\')">明細</button></td>' +
       '</tr>';
   });
   h += '</tbody></table>';
-  if (rows.length > 200) h += '<div class="muted" style="font-size:12px;margin-top:8px">只顯示前 200 筆</div>';
+  if (rows.length > 200) h += '<div class="muted" style="font-size:13.5px;margin-top:8px">只顯示前 200 筆</div>';
   if (!rows.length) h += '<div class="empty">目前沒有人在這份名單裡</div>';
   h += '<div class="row" style="margin-top:16px;display:flex;gap:8px">' +
        '<button class="btn btn-outline" onclick="mbCopyList(\'' + kind + '\')">複製電話清單</button>' +
@@ -322,12 +322,12 @@ function mbDrawHits(){
   var box = document.getElementById('mb-hits');
   if (!box) return;
   if (!mbQuery || mbQuery.trim().length < 2) {
-    box.innerHTML = '<div class="muted" style="font-size:12.5px;padding:8px 2px">打電話或姓名開始搜尋。電話至少 3 碼，姓名至少 2 個字。</div>';
+    box.innerHTML = '<div class="muted" style="font-size:13.5px;padding:8px 2px">打電話或姓名開始搜尋。電話至少 3 碼，姓名至少 2 個字。</div>';
     return;
   }
   var r = mbFind(mbQuery);
   if (!r.length) {
-    box.innerHTML = '<div class="muted" style="font-size:12.5px;padding:8px 2px">查無此人。' +
+    box.innerHTML = '<div class="muted" style="font-size:13.5px;padding:8px 2px">查無此人。' +
       '<button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="mbNewMember()">＋ 新增會員</button></div>';
     return;
   }
@@ -347,7 +347,7 @@ function mbDrawHits(){
       '</td></tr>';
   });
   h += '</tbody></table>';
-  if (r.length >= 20) h += '<div class="muted" style="font-size:12px;margin-top:6px">只顯示前 20 筆，請再輸入詳細一點</div>';
+  if (r.length >= 20) h += '<div class="muted" style="font-size:13.5px;margin-top:6px">只顯示前 20 筆，請再輸入詳細一點</div>';
   box.innerHTML = h;
 }
 
@@ -362,13 +362,13 @@ function mbDetail(phone){
 
   var TYPE = { points: '點數', sessions: '堂數', bonus: '紅利', voucher: '折價金' };
   var h = '<h3 style="margin:0 0 2px">' + mbEsc(m.name || '（未填姓名）') + '</h3>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:14px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') + '</div>';
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') + '</div>';
 
   h += '<div class="card" style="margin-bottom:14px"><div class="row" style="gap:20px;flex-wrap:wrap">' +
-    '<div><div class="muted" style="font-size:12px">可用點數</div><div style="font-size:20px;color:var(--gold2)">' + sum.points.toLocaleString() + '</div></div>' +
-    '<div><div class="muted" style="font-size:12px">堂數</div><div style="font-size:20px">' + sum.sessions + '</div></div>' +
-    '<div><div class="muted" style="font-size:12px">紅利</div><div style="font-size:20px">' + sum.bonus + '</div></div>' +
-    (sum.voucher ? '<div><div class="muted" style="font-size:12px">表框折價金</div><div style="font-size:20px">$' + sum.voucher.toLocaleString() + '</div></div>' : '') +
+    '<div><div class="muted" style="font-size:13.5px">可用點數</div><div style="font-size:20px;color:var(--gold2)">' + sum.points.toLocaleString() + '</div></div>' +
+    '<div><div class="muted" style="font-size:13.5px">堂數</div><div style="font-size:20px">' + sum.sessions + '</div></div>' +
+    '<div><div class="muted" style="font-size:13.5px">紅利</div><div style="font-size:20px">' + sum.bonus + '</div></div>' +
+    (sum.voucher ? '<div><div class="muted" style="font-size:13.5px">表框折價金</div><div style="font-size:20px">$' + sum.voucher.toLocaleString() + '</div></div>' : '') +
     '</div>';
   if (sum.points !== m.points || sum.sessions !== m.sessions || sum.bonus !== m.bonus) {
     h += '<div class="info-box" style="margin-top:10px;border-color:var(--red)">' +
@@ -384,12 +384,12 @@ function mbDetail(phone){
   rows.forEach(function(r){
     var d = +r.delta || 0;
     h += '<tr>' +
-      '<td class="muted" style="font-size:11.5px">' + String(r.at || '').slice(0, 16).replace('T', ' ') + '</td>' +
-      '<td style="font-size:12px">' + (TYPE[r.type] || r.type || '—') + '</td>' +
+      '<td class="muted" style="font-size:12.5px">' + String(r.at || '').slice(0, 16).replace('T', ' ') + '</td>' +
+      '<td style="font-size:13.5px">' + (TYPE[r.type] || r.type || '—') + '</td>' +
       '<td style="text-align:right;font-weight:600;color:' + (d >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (d > 0 ? '+' : '') + d.toLocaleString() + '</td>' +
-      '<td style="font-size:12.5px">' + mbEsc(r.reason || '') +
-        (r.expiry ? '<br><span class="muted" style="font-size:11px">效期至 ' + r.expiry + '</span>' : '') + '</td>' +
-      '<td class="muted" style="font-size:11.5px">' + mbEsc(r.by || '') + '</td>' +
+      '<td style="font-size:13.5px">' + mbEsc(r.reason || '') +
+        (r.expiry ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiry + '</span>' : '') + '</td>' +
+      '<td class="muted" style="font-size:12.5px">' + mbEsc(r.by || '') + '</td>' +
       '</tr>';
   });
   h += '</tbody></table></div>';
@@ -419,7 +419,7 @@ function mbAskDelete(phone){
   var clean  = (!nLog && !hasBal);
 
   var h = '<h3 style="margin:0 0 2px;color:var(--red)">刪除會員</h3>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:16px">' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:16px">' +
     mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
 
   if (hasBal){
@@ -448,7 +448,7 @@ function mbAskDelete(phone){
 
   h += '<div class="fg" style="margin-bottom:14px"><label>請輸入這位會員的完整電話以確認</label>' +
        '<input id="mb-del-c" inputmode="numeric" placeholder="' + m.phone + '" autocomplete="off"></div>' +
-       '<div id="mb-del-err" style="color:var(--red);font-size:12.5px;margin-bottom:12px"></div>';
+       '<div id="mb-del-err" style="color:var(--red);font-size:13.5px;margin-bottom:12px"></div>';
 
   h += '<div class="row" style="gap:8px">' +
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
@@ -456,7 +456,7 @@ function mbAskDelete(phone){
        (clean ? '<button class="btn" style="flex:1;color:var(--red);border-color:#EBD3D0" onclick="mbDoDelete(\'' + phone + '\',1)">永久刪除</button>' : '') +
        '</div>';
   if (!clean){
-    h += '<div class="muted" style="font-size:11.5px;margin-top:12px;line-height:1.7">' +
+    h += '<div class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.7">' +
          '有餘額或有紀錄的會員不提供永久刪除。真的要清掉，請先把餘額歸零、' +
          '確認紀錄結算過，再回來操作。</div>';
   }
@@ -517,7 +517,7 @@ async function mbFixCache(phone){
 /* ── 新增會員 ──────────────────────────────────────────── */
 function mbNewMember(){
   var h = '<h3 style="margin:0 0 2px">新增會員</h3>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:14px">電話是唯一識別，存進去客人打開 LINE 就查得到自己的餘額。</div>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">電話是唯一識別，存進去客人打開 LINE 就查得到自己的餘額。</div>' +
     '<div class="fg"><label>手機 *</label><input id="mb-n-phone" inputmode="tel" placeholder="09xxxxxxxx"></div>' +
     '<div class="fg"><label>姓名 *</label><input id="mb-n-name" placeholder="客人的稱呼"></div>' +
     '<div class="fg"><label>備註</label><input id="mb-n-note" placeholder="選填，例：從 IG 來的"></div>' +
@@ -560,7 +560,7 @@ function mbSell(phone){
   if (!m) return;
   var plans = mbActivePlans();
   var h = '<h3 style="margin:0 0 2px">賣方案</h3>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:14px">' + mbEsc(m.name || '（未填姓名）') + '　' + m.phone +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + mbEsc(m.name || '（未填姓名）') + '　' + m.phone +
     '　目前 <strong style="color:var(--gold2)">' + m.points.toLocaleString() + '</strong> 點・' + m.sessions + ' 堂</div>';
 
   if (!plans.length) {
@@ -583,7 +583,7 @@ function mbSell(phone){
        ['現金','LINE Pay','刷卡','匯款'].map(function(w){ return '<option>' + w + '</option>' }).join('') +
        '</select></div>';
   h += '<div class="fg"><label>備註</label><input id="mb-s-note" placeholder="選填，例：生日優惠"></div>';
-  h += '<div class="card" id="mb-s-prev" style="margin-top:6px"><div class="muted" style="font-size:12.5px">選了方案會顯示明細</div></div>';
+  h += '<div class="card" id="mb-s-prev" style="margin-top:6px"><div class="muted" style="font-size:13.5px">選了方案會顯示明細</div></div>';
   h += '<div class="row" style="margin-top:14px;gap:8px">' +
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
@@ -594,7 +594,7 @@ function mbSellPreview(phone){
   var m = mbList.find(function(x){ return x.phone === phone });
   var i = document.getElementById('mb-s-plan').value;
   var box = document.getElementById('mb-s-prev');
-  if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:12.5px">選了方案會顯示明細</div>'; return; }
+  if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:13.5px">選了方案會顯示明細</div>'; return; }
   var p = mbActivePlans()[+i];
   var renew = mbIsRenewal(m);
   var giftPts = renew ? (+p.renewBonus || 0) : (+p.newBonus || 0);
@@ -602,9 +602,9 @@ function mbSellPreview(phone){
   var addSes = +p.sessions || 0, addVou = +p.voucher || 0;
   var exp = mbExpiry(p.months);
 
-  var h = '<div style="font-size:13px;line-height:2">';
+  var h = '<div style="font-size:14.5px;line-height:2">';
   h += '<span style="background:' + (renew ? 'var(--bg3)' : 'var(--gold)') + ';color:' + (renew ? 'var(--text2)' : '#000') +
-       ';padding:2px 10px;border-radius:99px;font-size:11.5px;font-weight:700">' + (renew ? '續約會員' : '新客首購') + '</span>';
+       ';padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:700">' + (renew ? '續約會員' : '新客首購') + '</span>';
   h += '<br>售價 <strong>$' + (+p.price || 0).toLocaleString() + '</strong>';
   if (+p.points) h += '<br>基本點數 +' + (+p.points).toLocaleString();
   if (+p.bonusPoints) h += '<br>創作回饋 +' + (+p.bonusPoints).toLocaleString();
@@ -734,7 +734,7 @@ function mbPlansHtml(){
   var h = '';
   h += '<div class="card" style="margin-bottom:14px">' +
        '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
-       '<div class="muted" style="font-size:12.5px">建好方案，賣的時候用選的，行政不用手打金額。舊方案改成「停用」就好，不要刪除——已經賣掉的紀錄要對得回來。</div>' +
+       '<div class="muted" style="font-size:13.5px">建好方案，賣的時候用選的，行政不用手打金額。舊方案改成「停用」就好，不要刪除——已經賣掉的紀錄要對得回來。</div>' +
        '<div style="display:flex;gap:8px">' +
        (plans.length ? '' : '<button class="btn" onclick="mbImportPreset()">📋 匯入現有方案</button>') +
        '<button class="btn btn-gold" onclick="mbPlanEdit(-1)">＋ 新增方案</button></div></div>' +
@@ -751,10 +751,10 @@ function mbPlansHtml(){
       '<td style="text-align:right">$' + (+p.price || 0).toLocaleString() + '</td>' +
       '<td style="text-align:right">' + (p.points ? (+p.points).toLocaleString() : '—') + '</td>' +
       '<td style="text-align:right;color:var(--gold2)">' + (p.bonusPoints ? '+' + (+p.bonusPoints).toLocaleString() : '—') + '</td>' +
-      '<td style="text-align:right">' + (p.sessions || '—') + (p.voucher ? '<br><span class="muted" style="font-size:10.5px">折價$' + (+p.voucher).toLocaleString() + '</span>' : '') + '</td>' +
+      '<td style="text-align:right">' + (p.sessions || '—') + (p.voucher ? '<br><span class="muted" style="font-size:12px">折價$' + (+p.voucher).toLocaleString() + '</span>' : '') + '</td>' +
       '<td style="text-align:right">' + (p.months ? p.months + '月' : '—') + '</td>' +
-      '<td style="text-align:right;font-size:12px">' + ((p.newBonus || p.renewBonus) ? (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
-      '<td style="font-size:12px;color:' + (off ? 'var(--text3)' : 'var(--green)') + '">' + (off ? '已停用' : '啟用中') + '</td>' +
+      '<td style="text-align:right;font-size:13.5px">' + ((p.newBonus || p.renewBonus) ? (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
+      '<td style="font-size:13.5px;color:' + (off ? 'var(--text3)' : 'var(--green)') + '">' + (off ? '已停用' : '啟用中') + '</td>' +
       '<td style="display:flex;gap:6px">' +
         '<button class="btn btn-outline btn-sm" onclick="mbPlanEdit(' + i + ')">編輯</button>' +
         '<button class="btn btn-sm" onclick="mbPlanToggle(' + i + ')">' + (off ? '啟用' : '停用') + '</button>' +
@@ -775,29 +775,29 @@ function mbPlanEdit(idx){
   var p = idx >= 0 ? plans[idx] : { name:'', price:'', points:'', bonusPoints:'', sessions:'',
     months:'', newBonus:'', renewBonus:'', voucher:'', gift:'', active:true };
   var h = '<h3 style="margin:0 0 4px">' + (idx >= 0 ? '編輯方案' : '新增方案') + '</h3>' +
-    '<div class="muted" style="font-size:12px;margin-bottom:14px">用不到的欄位留空就好，系統會自動略過。</div>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">用不到的欄位留空就好，系統會自動略過。</div>' +
     '<div class="fg"><label>方案名稱 *</label><input id="mb-p-name" value="' + mbEsc(p.name) + '" placeholder="例：創意實踐家"></div>' +
     '<div class="row" style="gap:10px">' +
       '<div class="fg" style="flex:1"><label>售價 *</label><input id="mb-p-price" type="number" min="0" value="' + (p.price || '') + '"></div>' +
       '<div class="fg" style="flex:1"><label>會員效期（月）</label><input id="mb-p-months" type="number" min="0" value="' + (p.months || '') + '" placeholder="12"></div>' +
     '</div>' +
-    '<div style="font-size:12.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">點數方案</div>' +
+    '<div style="font-size:13.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">點數方案</div>' +
     '<div class="row" style="gap:10px">' +
       '<div class="fg" style="flex:1"><label>基本點數</label><input id="mb-p-points" type="number" min="0" value="' + (p.points || '') + '" placeholder="同售價"></div>' +
       '<div class="fg" style="flex:1"><label>創作回饋點數</label><input id="mb-p-bonus" type="number" min="0" value="' + (p.bonusPoints || '') + '"></div>' +
     '</div>' +
-    '<div style="font-size:12.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">堂數方案</div>' +
+    '<div style="font-size:13.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">堂數方案</div>' +
     '<div class="row" style="gap:10px">' +
       '<div class="fg" style="flex:1"><label>堂數</label><input id="mb-p-ses" type="number" min="0" value="' + (p.sessions || '') + '"></div>' +
       '<div class="fg" style="flex:1"><label>表框折價金</label><input id="mb-p-voucher" type="number" min="0" value="' + (p.voucher || '') + '"></div>' +
     '</div>' +
-    '<div style="font-size:12.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">本月好禮（擇一自動套用）</div>' +
+    '<div style="font-size:13.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">本月好禮（擇一自動套用）</div>' +
     '<div class="row" style="gap:10px">' +
       '<div class="fg" style="flex:1"><label>新客首次入會回饋</label><input id="mb-p-newb" type="number" min="0" value="' + (p.newBonus || '') + '"></div>' +
       '<div class="fg" style="flex:1"><label>會員續約回饋</label><input id="mb-p-renb" type="number" min="0" value="' + (p.renewBonus || '') + '"></div>' +
     '</div>' +
     '<div class="fg"><label>入會好禮（文字，只記錄不加點）</label><input id="mb-p-gift" value="' + mbEsc(p.gift || '') + '" placeholder="例：專屬咖啡／茶包禮品兩組"></div>' +
-    '<div class="muted" style="font-size:12px;line-height:1.7;margin-top:6px">' +
+    '<div class="muted" style="font-size:13.5px;line-height:1.7;margin-top:6px">' +
       '賣的時候系統會自己判斷這位是新客還是續約（看有沒有買過方案），套用對應的回饋，行政不用選。</div>' +
     '<div class="row" style="margin-top:14px;gap:8px">' +
     '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
@@ -1044,7 +1044,7 @@ function mbImportHtml(){
 
   h += '<div class="card" style="margin-bottom:16px">';
   h += '<div class="card-title">📥 批次匯入餘額</div>';
-  h += '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:14px">' +
+  h += '<div class="muted" style="font-size:13.5px;line-height:1.8;margin-bottom:14px">' +
        '把舊平台的堂數、點數補進來。只加餘額，不會動到會員的其他資料。<br>' +
        '同一個批次名稱貼第二次不會重複加——數字一樣的直接跳過，數字改了才覆蓋。' +
        '所以核對時可以放心重貼。</div>';
@@ -1062,7 +1062,7 @@ function mbImportHtml(){
        '</select></div>';
   h += '</div>';
   h += '<div style="background:' + (mbImpMode === 'set' ? 'rgba(201,168,76,.08)' : 'var(--bg3)') +
-       ';border-radius:9px;padding:11px 13px;font-size:12.5px;line-height:1.8;margin-bottom:12px">' +
+       ';border-radius:9px;padding:11px 13px;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
        (mbImpMode === 'set'
          ? '<b>校正模式</b>：匯完之後，每位會員的' + tn.n + '會<b>剛好等於</b>你貼上的數字。' +
            '系統會自己算出差額補一筆，多的扣回去、少的補上來。' +
@@ -1073,13 +1073,13 @@ function mbImportHtml(){
          : '<b>累加模式</b>：在會員現有的' + tn.n + '上面加。' +
            '同一個批次名稱重貼不會加兩次，但底下原本就有的紀錄會留著。') +
        '</div>';
-  h += '<div class="muted" style="font-size:11.5px;margin-bottom:10px;line-height:1.7">' +
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.7">' +
        '批次名稱要能認得出是哪一批，之後要撤銷或重跑都靠它。取過的名字不要重複用在不同資料上。</div>';
 
   h += '<div class="fg"><label>貼上資料（一行一位：電話、' + tn.n + '）</label>' +
        '<textarea id="mb-imp-raw" rows="8" placeholder="0912345678,30&#10;0987654321,10&#10;&#10;直接從 Excel 複製兩欄貼上也可以">' +
        mbEsc(mbImpRaw) + '</textarea></div>';
-  h += '<div class="muted" style="font-size:11.5px;margin:6px 0 12px;line-height:1.7">' +
+  h += '<div class="muted" style="font-size:12.5px;margin:6px 0 12px;line-height:1.7">' +
        '中間用逗號、Tab 或空白隔開都可以。有姓名那一欄也沒關係，系統只認電話和數字。' +
        '電話會自動去掉 +886 和符號。</div>';
 
@@ -1090,7 +1090,7 @@ function mbImportHtml(){
   h += '</div>';
 
   if (mbImpBusy) {
-    h += '<div class="card"><div id="mb-imp-prog" style="font-size:14px">寫入中，請不要關掉這一頁…</div></div>';
+    h += '<div class="card"><div id="mb-imp-prog" style="font-size:15.5px">寫入中，請不要關掉這一頁…</div></div>';
     return h;
   }
   if (!mbImpRows) return h;
@@ -1114,14 +1114,14 @@ function mbImportHtml(){
   if (bad.length) {
     h += '<div style="background:rgba(192,57,43,.06);border:1px solid rgba(192,57,43,.25);' +
          'border-radius:10px;padding:12px 14px;margin-bottom:14px">' +
-         '<div style="font-size:13px;font-weight:600;color:var(--red,#c0392b);margin-bottom:8px">' +
+         '<div style="font-size:14.5px;font-weight:600;color:var(--red,#c0392b);margin-bottom:8px">' +
          '這 ' + bad.length + ' 筆不會寫入</div>';
     bad.slice(0, 40).forEach(function(r){
-      h += '<div style="font-size:12.5px;line-height:1.9">第 ' + r.line + ' 行　' +
+      h += '<div style="font-size:13.5px;line-height:1.9">第 ' + r.line + ' 行　' +
            mbEsc(r.raw.slice(0, 40)) + '　<span class="muted">' + mbEsc(r.err) + '</span></div>';
     });
-    if (bad.length > 40) h += '<div class="muted" style="font-size:12px">…另外還有 ' + (bad.length - 40) + ' 筆</div>';
-    h += '<div class="muted" style="font-size:11.5px;margin-top:8px;line-height:1.7">' +
+    if (bad.length > 40) h += '<div class="muted" style="font-size:13.5px">…另外還有 ' + (bad.length - 40) + ' 筆</div>';
+    h += '<div class="muted" style="font-size:12.5px;margin-top:8px;line-height:1.7">' +
          '找不到電話的，多半是這位客人還沒建檔，或是電話格式不同。' +
          '可以先到會員查詢建檔，再回來重貼一次。</div>';
     h += '</div>';
@@ -1141,14 +1141,14 @@ function mbImportHtml(){
     });
     h += '</tbody></table>';
     var minus = g['new'].concat(g.change).filter(function(r){ return r.delta < 0 });
-    if (minus.length) h += '<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">' +
+    if (minus.length) h += '<div class="muted" style="font-size:13.5px;margin-top:8px;line-height:1.7">' +
       '其中 ' + minus.length + ' 位是往下扣的——他們目前的' + tn.n + '比這份資料多。' +
       '如果那是新系統剛賣出的方案，扣掉就不見了，執行前先確認。</div>';
-    if (willWrite > 300) h += '<div class="muted" style="font-size:12px;margin-top:6px">畫面只列前 300 筆，執行時會全部寫入。</div>';
+    if (willWrite > 300) h += '<div class="muted" style="font-size:13.5px;margin-top:6px">畫面只列前 300 筆，執行時會全部寫入。</div>';
     h += '<div class="row" style="margin-top:14px">' +
          '<button class="btn btn-gold" onclick="mbImpRun()">確認寫入 ' + willWrite + ' 筆</button></div>';
   } else {
-    h += '<div class="muted" style="font-size:13px">沒有需要寫入的資料。' +
+    h += '<div class="muted" style="font-size:14.5px">沒有需要寫入的資料。' +
          (g.same.length ? '這批已經匯過了，數字都一樣。' : '') + '</div>';
   }
   h += '</div>';

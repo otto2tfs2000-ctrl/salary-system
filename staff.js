@@ -102,11 +102,11 @@ async function renderStaff(){
                             .map(function(t){ return t.n });
       h += '<tr>' +
         '<td>' + stEsc(s.name || "（未命名）") +
-          (ME && s.uid === ME.userId ? '<span class="muted" style="font-size:11px">（你）</span>' : '') + '</td>' +
+          (ME && s.uid === ME.userId ? '<span class="muted" style="font-size:12.5px">（你）</span>' : '') + '</td>' +
         '<td><span class="badge ' + (s.role === "owner" ? "b-gold" : s.role === "admin" ? "b-blue" : "b-gray") + '">' +
           ((STAFF_ROLES[s.role] || {}).n || s.role || "—") + '</span></td>' +
-        '<td style="font-size:12px;color:var(--text2)">' + (names.join("、") || "—") + '</td>' +
-        '<td style="font-size:12px;color:var(--text2)">' +
+        '<td style="font-size:13.5px;color:var(--text2)">' + (names.join("、") || "—") + '</td>' +
+        '<td style="font-size:13.5px;color:var(--text2)">' +
           (STAFF_ACTS.filter(function(a){ return (s.acts||[]).indexOf(a.k) >= 0 })
                      .map(function(a){ return a.n }).join("、") || "—") + '</td>' +
         '<td>' + (s.active === false ? '<span class="badge b-red">停用</span>'
@@ -122,7 +122,7 @@ async function renderStaff(){
 
     /* 邀請 */
     h += '<div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">';
-    h += '<div style="font-size:13px;font-weight:600;color:var(--gold2);margin-bottom:12px">邀請新帳號</div>';
+    h += '<div style="font-size:14.5px;font-weight:600;color:var(--gold2);margin-bottom:12px">邀請新帳號</div>';
     h += '<div class="row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
     h += '<div class="fg" style="flex:1;min-width:150px"><label>姓名</label>' +
          '<input id="st-inv-name" placeholder="例：蓁蓁"></div>';
@@ -131,16 +131,16 @@ async function renderStaff(){
          '<option value="owner">管理員</option></select></div>';
     h += '<button class="btn btn-gold" onclick="stMakeInvite()">產生邀請連結</button>';
     h += '</div>';
-    h += '<div class="muted" style="font-size:12px;margin-top:8px">' +
+    h += '<div class="muted" style="font-size:13.5px;margin-top:8px">' +
          '連結傳給對方，對方用 LINE 打開、授權完成就綁定好了。一組連結只能用一次。</div>';
     h += '<div id="st-inv-out" style="margin-top:12px"></div>';
 
     if (stInvites && stInvites.length){
-      h += '<div style="margin-top:14px"><div class="muted" style="font-size:12px;margin-bottom:6px">' +
+      h += '<div style="margin-top:14px"><div class="muted" style="font-size:13.5px;margin-bottom:6px">' +
            '還沒被使用的邀請 ' + stInvites.length + ' 組</div>';
       stInvites.forEach(function(iv, k){
         h += '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' +
-             'border-bottom:1px solid var(--border);font-size:12.5px">' +
+             'border-bottom:1px solid var(--border);font-size:13.5px">' +
              '<span>' + stEsc(iv.name || "—") + '</span>' +
              '<span class="badge b-gray">' + ((STAFF_ROLES[iv.role] || {}).n || iv.role) + '</span>' +
              '<button class="btn btn-outline btn-sm" style="margin-left:auto" ' +
@@ -182,7 +182,7 @@ function stEdit(i){
   var s = stList[i]; if (!s) return;
   var tabs = s.tabs || [];
   var h = '<h3 style="margin:0 0 4px">' + stEsc(s.name || "（未命名）") + '</h3>';
-  h += '<div class="muted" style="font-size:11.5px;margin-bottom:16px;word-break:break-all">' + s.uid + '</div>';
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:16px;word-break:break-all">' + s.uid + '</div>';
   h += '<div class="fg" style="margin-bottom:14px"><label>姓名</label>' +
        '<input id="st-e-name" value="' + stEsc(s.name || "") + '"></div>';
   h += '<div class="fg" style="margin-bottom:14px"><label>身分（換身分會套用預設分頁）</label>' +
@@ -194,7 +194,7 @@ function stEdit(i){
   h += '<div class="fg"><label>看得到的分頁</label><div id="st-e-tabs" style="display:grid;' +
        'grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:6px">';
   STAFF_TABS.forEach(function(t){
-    h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">' +
+    h += '<label style="display:flex;align-items:center;gap:8px;font-size:14.5px;cursor:pointer">' +
          '<input type="checkbox" value="' + t.k + '"' + (tabs.indexOf(t.k) >= 0 ? " checked" : "") +
          ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
          '<span style="white-space:nowrap">' + t.n + '</span></label>';
@@ -203,18 +203,18 @@ function stEdit(i){
   h += '<div class="fg" style="margin-top:16px"><label>可執行的動作</label>' +
        '<div id="st-e-acts" style="margin-top:6px">';
   STAFF_ACTS.forEach(function(a){
-    h += '<label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;' +
+    h += '<label style="display:flex;align-items:flex-start;gap:9px;font-size:14.5px;' +
          'cursor:pointer;padding:7px 0">' +
          '<input type="checkbox" value="' + a.k + '"' +
          ((s.acts || []).indexOf(a.k) >= 0 ? " checked" : "") +
          ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:3px 0 0">' +
          '<span style="flex:1;min-width:0">' + a.n +
-         '<span class="muted" style="display:block;font-size:11.5px;line-height:1.5;margin-top:2px">' +
+         '<span class="muted" style="display:block;font-size:12.5px;line-height:1.5;margin-top:2px">' +
          a.d + '</span></span>' +
          '</label>';
   });
   h += '</div></div>';
-  h += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:16px;cursor:pointer">' +
+  h += '<label style="display:flex;align-items:center;gap:8px;font-size:14.5px;margin-top:16px;cursor:pointer">' +
        '<input type="checkbox" id="st-e-active"' + (s.active !== false ? " checked" : "") +
        ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
        '<span style="white-space:nowrap">啟用這個帳號</span></label>';
@@ -254,11 +254,11 @@ async function stAppLink(i, regen){
   }
   var link = STAFF_URL + "?k=" + s.uid + "." + key;
   var h = '<h3 style="margin:0 0 4px">' + stEsc(s.name || "（未命名）") + ' 的 APP 連結</h3>';
-  h += '<div class="muted" style="font-size:12px;margin-bottom:14px">' +
+  h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' +
        '這條連結等於這個人的帳號，開了就是已登入狀態。</div>';
   h += '<div style="background:#fff;border:1px solid var(--border);border-radius:7px;' +
-       'padding:10px 12px;font-size:12px;word-break:break-all;margin-bottom:12px">' + link + '</div>';
-  h += '<div class="info-box" style="margin:0 0 16px;font-size:12.5px;line-height:1.75">' +
+       'padding:10px 12px;font-size:13.5px;word-break:break-all;margin-bottom:12px">' + link + '</div>';
+  h += '<div class="info-box" style="margin:0 0 16px;font-size:13.5px;line-height:1.75">' +
        '<b>傳給對方時要交代：</b><br>' +
        '① 在 LINE 裡<b>長按連結、選複製</b>，貼到 Safari 開。<br>' +
        '　 直接點會用 LINE 內建瀏覽器，加不了主畫面。<br>' +
@@ -270,7 +270,7 @@ async function stAppLink(i, regen){
        '<button class="btn btn-outline" onclick="stAppLink(' + i + ',1)">重新產生</button>' +
        '<button class="btn btn-gold" style="margin-left:auto" ' +
        'onclick="stCopy(\'' + link + '\')">複製連結</button></div>';
-  h += '<div class="muted" style="font-size:11.5px;margin-top:12px;line-height:1.7">' +
+  h += '<div class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.7">' +
        '重新產生會讓舊連結失效，但對方手機上<b>已經存好的登入狀態不受影響</b>。<br>' +
        '要真的擋住一個人，請在「編輯」裡取消勾選「啟用這個帳號」。</div>';
   mbModal(h);
@@ -341,10 +341,10 @@ async function stMakeInvite(){
   });
   var link = stInviteLink(token);
   document.getElementById("st-inv-out").innerHTML =
-    '<div class="info-box" style="margin:0"><div style="font-size:12px;margin-bottom:8px">' +
+    '<div class="info-box" style="margin:0"><div style="font-size:13.5px;margin-bottom:8px">' +
     '給 ' + stEsc(name) + ' 的連結（只能用一次）</div>' +
     '<div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:9px 11px;' +
-    'font-size:12px;word-break:break-all;margin-bottom:9px">' + link + '</div>' +
+    'font-size:13.5px;word-break:break-all;margin-bottom:9px">' + link + '</div>' +
     '<button class="btn btn-gold btn-sm" onclick="stCopy(\'' + link + '\')">複製連結</button></div>';
   document.getElementById("st-inv-name").value = "";
   /* 重畫一次，讓新產生的這組出現在「還沒被使用」清單，

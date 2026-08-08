@@ -503,7 +503,7 @@ function openEditEntry(store, mKey, day, idx) {
       '<td><input type="number" class="in-num" id="ee_m_' + t.id + '" value="' + (td.master||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_a_' + t.id + '" value="' + (td.assist||0) + '" min="0" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num" id="ee_j_' + t.id + '" value="' + (td.junior||0) + '" min="0" onwheel="this.blur()"></td>' +
-      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:12px;outline:none;font-family:inherit" id="ee_n_' + t.id + '" value="' + (td.note||'') + '"></td>' +
+      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:90px;font-size:13.5px;outline:none;font-family:inherit" id="ee_n_' + t.id + '" value="' + (td.note||'') + '"></td>' +
       (store==='guotu' ? '<td style="text-align:center"><input type="checkbox" id="ee_hq_' + t.id + '"' + (td.hq?' checked':'') + ' style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"></td>' : '') +
       '</tr>';
   });
@@ -512,14 +512,14 @@ function openEditEntry(store, mKey, day, idx) {
   modal.id = 'edit-entry-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:400;display:flex;align-items:center;justify-content:center;padding:20px';
   modal.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:900px;width:100%;max-height:85vh;overflow-y:auto">' +
-    '<div style="font-size:15px;font-weight:600;color:var(--gold2);margin-bottom:16px">✏️ 編輯紀錄 — ' + day + ' 日 ' + (entry.time||'') + '</div>' +
+    '<div style="font-size:16px;font-weight:600;color:var(--gold2);margin-bottom:16px">✏️ 編輯紀錄 — ' + day + ' 日 ' + (entry.time||'') + '</div>' +
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label>新客</label><input type="number" class="in-num md" id="ee_nc" value="' + (entry.newCust||0) + '" min="0" onwheel="this.blur()"></div>' +
     '<div class="day-meta-item"><label>舊客</label><input type="number" class="in-num md" id="ee_oc" value="' + (entry.oldCust||0) + '" min="0" onwheel="this.blur()"></div>' +
-    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
+    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14.5px;outline:none;font-family:inherit;width:150px" id="ee_note" value="' + (entry.note||'') + '"></div>' +
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
-    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>營隊人次<br><span style="font-size:10px;color:var(--text3)">舊資料修正用</span></th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
+    '<thead><tr><th>老師</th><th>一般人次</th><th>外派人次</th><th>營隊人次<br><span style="font-size:12px;color:var(--text3)">舊資料修正用</span></th><th>主教場</th><th>助教場</th><th>小老師場</th><th>備註</th>' + (store==='guotu'?'<th>總部代課</th>':'') + '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="display:flex;gap:10px;margin-top:16px">' +
     '<button class="btn btn-gold" onclick="saveEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">✓ 儲存修改</button>' +
@@ -616,10 +616,10 @@ function renderDaily() {
     '<span>📅 選擇日期</span>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px">' +
-    '<button onclick="shiftDay(-1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:16px;cursor:pointer;line-height:1" title="前一天">‹</button>' +
-    '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:14px;outline:none;font-family:inherit">' + opts + '</select>' +
-    '<button onclick="shiftDay(+1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:16px;cursor:pointer;line-height:1" title="後一天">›</button>' +
-    '<span style="font-size:12px;color:var(--text3)">✓ 表示已有紀錄</span>' +
+    '<button onclick="shiftDay(-1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:17px;cursor:pointer;line-height:1" title="前一天">‹</button>' +
+    '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:15.5px;outline:none;font-family:inherit">' + opts + '</select>' +
+    '<button onclick="shiftDay(+1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:17px;cursor:pointer;line-height:1" title="後一天">›</button>' +
+    '<span style="font-size:13.5px;color:var(--text3)">✓ 表示已有紀錄</span>' +
     '</div></div>' +
     '<div id="day-form-area"></div>';
 
@@ -678,8 +678,8 @@ function dedRefresh(dateStr) {
 
 function buildDedHtml(dateStr) {
   var list = dedCache[dateStr];
-  if (!list) return '<div class="muted" style="font-size:12.5px">讀取核銷紀錄中…</div>';
-  if (!list.length) return '<div class="muted" style="font-size:12.5px">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
+  if (!list) return '<div class="muted" style="font-size:13.5px">讀取核銷紀錄中…</div>';
+  if (!list.length) return '<div class="muted" style="font-size:13.5px">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
 
   var teachers = getTeachers(curStore.daily);
   var known = {}, unknown = [];
@@ -697,11 +697,11 @@ function buildDedHtml(dateStr) {
     if (r.adults) ak.push('大人' + r.adults);
     if (r.kids) ak.push('小孩' + r.kids);
     rows += '<tr>' +
-      '<td style="font-size:12.5px">' + (r.customer || '—') + '</td>' +
-      '<td style="font-size:12px;color:var(--text3)">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
-      '<td style="font-size:12px;color:var(--text3)">' + (r.items || '—') + (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
-      '<td style="font-size:12.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
-      '<td style="text-align:right;font-size:12.5px">$' + amt.toLocaleString() + '</td>' +
+      '<td style="font-size:13.5px">' + (r.customer || '—') + '</td>' +
+      '<td style="font-size:13.5px;color:var(--text3)">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
+      '<td style="font-size:13.5px;color:var(--text3)">' + (r.items || '—') + (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
+      '<td style="font-size:13.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
+      '<td style="text-align:right;font-size:13.5px">$' + amt.toLocaleString() + '</td>' +
       '<td><button class="btn btn-del btn-sm" onclick="delDeduction(\'' + r._id + '\',\'' + dateStr + '\')">刪除</button></td>' +
       '</tr>';
   });
@@ -710,7 +710,7 @@ function buildDedHtml(dateStr) {
   h += '<div style="overflow-x:auto"><table><thead><tr>' +
        '<th>客人</th><th style="width:110px">人數</th><th>課程</th><th style="width:90px">老師</th><th style="width:80px">金額</th><th style="width:60px"></th>' +
        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
-  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:13px">' +
+  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:14.5px">' +
        '<span>合計 <strong style="color:var(--gold2)">' + totalPpl + '</strong> 人次</span>' +
        '<span>核銷金額 <strong style="color:var(--gold2)">$' + totalAmt.toLocaleString() + '</strong></span>' +
        '</div>';
@@ -720,7 +720,7 @@ function buildDedHtml(dateStr) {
          '這幾筆人次帶不進去，請先到老師設定新增，或用「修正核銷」改成正確的名字。</div>';
   }
   h += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-       '<span class="muted" style="font-size:12px">人次與營收已自動填入下方欄位，' +
+       '<span class="muted" style="font-size:13.5px">人次與營收已自動填入下方欄位，' +
        '確認後按「新增本次紀錄」與「儲存當日營收」存檔。</span>' +
        '<button class="btn btn-outline btn-sm" onclick="dedRefresh(\'' + dateStr + '\')">重新讀取</button>' +
        '</div>';
@@ -766,13 +766,13 @@ function renderDayForm() {
     var salesCell;
     if (fbAmt > 0) {
       salesCell = '<td>' +
-        '<span class="auto-val" style="font-size:14px;font-weight:600">$' + fbAmt.toLocaleString() + '</span>' +
-        '<br><span style="font-size:10px;color:var(--green)">● 業績系統</span>' +
+        '<span class="auto-val" style="font-size:15.5px;font-weight:600">$' + fbAmt.toLocaleString() + '</span>' +
+        '<br><span style="font-size:12px;color:var(--green)">● 業績系統</span>' +
         '</td>';
     } else if (fbLoaded) {
-      salesCell = '<td><span class="zero-val" style="font-size:12px">— <span style="font-size:10px;color:var(--text3)">無紀錄</span></span></td>';
+      salesCell = '<td><span class="zero-val" style="font-size:13.5px">— <span style="font-size:12px;color:var(--text3)">無紀錄</span></span></td>';
     } else {
-      salesCell = '<td><span style="font-size:11px;color:var(--text3)">載入中...</span></td>';
+      salesCell = '<td><span style="font-size:12.5px;color:var(--text3)">載入中...</span></td>';
     }
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
@@ -783,7 +783,7 @@ function renderDayForm() {
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0" onwheel="this.blur()"></td>' +
       salesCell +
-      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:12px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
+      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:13.5px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
       (store==='guotu' ? '<td style="text-align:center"><input type="checkbox" id="inp_hq_' + t.id + '" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"></td>' : '') +
       '</tr>';
   });
@@ -811,10 +811,10 @@ function renderDayForm() {
         if (parts.length && t) summary.push(t.name + ': ' + parts.join('、'));
       });
       logHtml += '<tr>' +
-        '<td style="color:var(--text3);font-size:12px;white-space:nowrap">' + (entry.time||'—') + '</td>' +
-        '<td style="font-size:12px">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
-        '<td style="font-size:12px">' + (summary.join(' ｜ ')||'—') + '</td>' +
-        '<td style="font-size:12px;color:var(--text3)">' + (entry.note||'') + '</td>' +
+        '<td style="color:var(--text3);font-size:13.5px;white-space:nowrap">' + (entry.time||'—') + '</td>' +
+        '<td style="font-size:13.5px">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
+        '<td style="font-size:13.5px">' + (summary.join(' ｜ ')||'—') + '</td>' +
+        '<td style="font-size:13.5px;color:var(--text3)">' + (entry.note||'') + '</td>' +
         '<td style="display:flex;gap:6px">' +
         '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">編輯</button>' +
         '<button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button>' +
@@ -834,8 +834,8 @@ function renderDayForm() {
       if (td && td.count) aggParts.push(t.name + ' <strong style="color:var(--gold2)">' + td.count + '</strong>人次');
     });
     if (aggParts.length) {
-      aggHtml = '<div class="entry-log"><div style="color:var(--text3);font-size:11px;margin-bottom:6px">今日合計</div>' +
-        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">' + aggParts.join(' ') + '</div></div>';
+      aggHtml = '<div class="entry-log"><div style="color:var(--text3);font-size:12.5px;margin-bottom:6px">今日合計</div>' +
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14.5px">' + aggParts.join(' ') + '</div></div>';
     }
   }
 
@@ -849,26 +849,26 @@ function renderDayForm() {
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0" onwheel="this.blur()"></div>' +
     '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0" onwheel="this.blur()"></div>' +
-    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
+    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14.5px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
 
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr>' +
     '<th>老師</th>' +
-    '<th>一般人次<br><span style="font-size:10px;color:var(--green)">計獎金</span></th>' +
-    '<th>外派人次<br><span style="font-size:10px;color:var(--text3)">不計獎金</span></th>' +
-    '<th>主教場<br><span style="font-size:10px;color:var(--text3)">$2,000</span></th>' +
-    '<th>助教場<br><span style="font-size:10px;color:var(--text3)">$1,500</span></th>' +
-    '<th>小老師場<br><span style="font-size:10px;color:var(--text3)">$1,000</span></th>' +
-    '<th>外派培訓費<br><span style="font-size:10px;color:var(--text3)">記錄用</span></th>' +
-    '<th>當日業績<br><span style="font-size:10px;color:var(--green)">自動帶入</span></th>' +
+    '<th>一般人次<br><span style="font-size:12px;color:var(--green)">計獎金</span></th>' +
+    '<th>外派人次<br><span style="font-size:12px;color:var(--text3)">不計獎金</span></th>' +
+    '<th>主教場<br><span style="font-size:12px;color:var(--text3)">$2,000</span></th>' +
+    '<th>助教場<br><span style="font-size:12px;color:var(--text3)">$1,500</span></th>' +
+    '<th>小老師場<br><span style="font-size:12px;color:var(--text3)">$1,000</span></th>' +
+    '<th>外派培訓費<br><span style="font-size:12px;color:var(--text3)">記錄用</span></th>' +
+    '<th>當日業績<br><span style="font-size:12px;color:var(--green)">自動帶入</span></th>' +
     '<th>備註</th>' +
-    (store==='guotu' ? '<th>總部代課<br><span style="font-size:10px;color:var(--text3)">勾＝總部計薪</span></th>' : '') +
+    (store==='guotu' ? '<th>總部代課<br><span style="font-size:12px;color:var(--text3)">勾＝總部計薪</span></th>' : '') +
     '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
     '<div style="margin-top:16px;display:flex;gap:10px;align-items:center">' +
     '<button class="btn btn-gold" onclick="submitEntry(\'' + store + '\',\'' + mKey + '\',' + day + ')">✚ 新增本次紀錄</button>' +
-    '<span style="font-size:12px;color:var(--text3)">按下後儲存，欄位自動歸零</span>' +
+    '<span style="font-size:13.5px;color:var(--text3)">按下後儲存，欄位自動歸零</span>' +
     '</div></div>';
 
   // 獨立當日營收區塊
@@ -881,19 +881,19 @@ function renderDayForm() {
     '<div class="card-title" style="color:var(--gold2)">💰 當日營收（可單獨儲存）</div>' +
     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label>核銷營收（自動）</label>' +
-    '<div style="width:130px;padding:8px 12px;font-size:15px;color:var(--gold2);font-weight:700">$' + (DT.revenue||0).toLocaleString() + '</div>' +
+    '<div style="width:130px;padding:8px 12px;font-size:16px;color:var(--gold2);font-weight:700">$' + (DT.revenue||0).toLocaleString() + '</div>' +
     '</div>' +
     '<div style="font-size:18px;color:var(--text3)">＋</div>' +
     '<div class="day-meta-item"><label style="color:var(--gold2)">其他收入（手動填）</label>' +
-    '<input type="number" id="inp_rev_extra" placeholder="0" min="0" value="' + (existExtra||'') + '" style="width:130px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:15px;outline:none;font-family:inherit" onwheel="this.blur()" oninput="updateRevTotal(' + (DT.revenue||0) + ')">' +
+    '<input type="number" id="inp_rev_extra" placeholder="0" min="0" value="' + (existExtra||'') + '" style="width:130px;background:var(--bg3);border:1px solid var(--gold);color:var(--text);padding:8px 12px;border-radius:6px;font-size:16px;outline:none;font-family:inherit" onwheel="this.blur()" oninput="updateRevTotal(' + (DT.revenue||0) + ')">' +
     '</div>' +
     '<div style="font-size:18px;color:var(--text3)">＝</div>' +
     '<div class="day-meta-item"><label>當日營收</label>' +
-    '<div id="rev-total" style="width:130px;padding:8px 12px;font-size:17px;font-weight:700">$' + revTotal.toLocaleString() + '</div>' +
+    '<div id="rev-total" style="width:130px;padding:8px 12px;font-size:18px;font-weight:700">$' + revTotal.toLocaleString() + '</div>' +
     '</div>' +
     '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ',' + (DT.revenue||0) + ')">💾 儲存當日營收</button>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:8px" id="rev-hint">' +
+    '<div style="font-size:12.5px;color:var(--text3);margin-top:8px" id="rev-hint">' +
       '「其他收入」填純賣材料、雜項這種沒有走核銷的收入。核銷那格會自己算，不用動。' +
       (existRev && existRev !== revTotal ? '<br><span style="color:var(--red)">已儲存的是 $' + existRev.toLocaleString() + '，與目前算出來的 $' + revTotal.toLocaleString() + ' 不同，記得重新儲存</span>' : '') +
     '</div>' +
@@ -905,17 +905,17 @@ function renderDayForm() {
   var campRows = teachers.map(function(t) {
     var cd = campDay[t.id] || {};
     var cntCell = (t.type === 'part')
-      ? '<td style="text-align:center;color:var(--text3);font-size:12px">—</td>'
+      ? '<td style="text-align:center;color:var(--text3);font-size:13.5px">—</td>'
       : '<td><input type="number" class="in-num md" id="cmp_p_' + t.id + '" value="' + (cd.count||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>';
     var sesCell = (t.type === 'part')
       ? '<td><input type="number" class="in-num md" id="cmp_s_' + t.id + '" value="' + (cd.sessions||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>'
-      : '<td style="text-align:center;color:var(--text3);font-size:12px">—</td>';
+      : '<td style="text-align:center;color:var(--text3);font-size:13.5px">—</td>';
     var rate = parseFloat(t.campRate) || 0;
     var fee = rate ? (t.type==='part' ? (parseFloat(cd.sessions)||0)*rate : (parseFloat(cd.count)||0)*rate) : 0;
     return '<tr><td><strong>' + t.name + '</strong></td>' +
       '<td class="muted">' + TYPE_NAME[t.type] + '</td>' +
       cntCell + sesCell +
-      '<td style="font-size:12px;color:var(--text3)">' + (rate ? ('$' + rate.toLocaleString() + (t.type==='part'?'/堂':'/人次')) : '<span style="color:var(--red,#e74c3c)">未設定費率</span>') + '</td>' +
+      '<td style="font-size:13.5px;color:var(--text3)">' + (rate ? ('$' + rate.toLocaleString() + (t.type==='part'?'/堂':'/人次')) : '<span style="color:var(--red,#e74c3c)">未設定費率</span>') + '</td>' +
       '<td class="' + (fee?'auto-val':'zero-val') + '">' + (fee ? '$' + fee.toLocaleString() : '—') + '</td></tr>';
   }).join('');
 
@@ -924,17 +924,17 @@ function renderDayForm() {
     '<div class="info-box">這區跟上面的課程紀錄完全分開存放，同一位老師教營隊、教一般課不會互相影響。正職填人次、兼職填堂數，填完按下方按鈕儲存（會覆蓋當日營隊資料）。' + (campHasData ? '<br><strong style="color:var(--green)">● 本日已有營隊紀錄</strong>' : '') + '</div>' +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>老師</th><th>職別</th>' +
-    '<th>營隊人次<br><span style="font-size:10px;color:var(--text3)">正職計費</span></th>' +
-    '<th>營隊堂數<br><span style="font-size:10px;color:var(--text3)">兼職計費</span></th>' +
+    '<th>營隊人次<br><span style="font-size:12px;color:var(--text3)">正職計費</span></th>' +
+    '<th>營隊堂數<br><span style="font-size:12px;color:var(--text3)">兼職計費</span></th>' +
     '<th>費率</th><th>本日營隊費</th></tr></thead>' +
     '<tbody>' + campRows + '</tbody></table></div>' +
     '<div style="margin-top:14px;display:flex;gap:10px;align-items:center">' +
     '<button class="btn" style="background:var(--green);color:#000;font-weight:700" onclick="saveCamp(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存營隊登記</button>' +
-    '<span style="font-size:12px;color:var(--text3)">沒有營隊的日子不用填，留空即可</span>' +
+    '<span style="font-size:13.5px;color:var(--text3)">沒有營隊的日子不用填，留空即可</span>' +
     '</div></div>';
 
   html += '<div class="card">' +
-    '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:12px;color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
+    '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:13.5px;color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
     aggHtml +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>時間</th><th>新舊客</th><th>老師紀錄</th><th>備註</th><th></th></tr></thead>' +
@@ -1148,7 +1148,7 @@ function renderMonthly() {
       var um = getUnmatchedSales(selM_monthly, deptForUnmatched);
       if (!um.amt) return '';
       var names = Array.from(um.staffList).join('、');
-      return '<div class="stat-card hi" style="background:rgba(192,57,43,.05);border-color:rgba(192,57,43,.32)"><div class="lbl" style="color:var(--red,#c0392b)">⚠️ 未列入合計</div><div class="val" style="color:var(--red,#c0392b);font-size:16px">$' + um.amt.toLocaleString() + '</div><div style="font-size:11px;color:var(--text3);margin-top:4px">業務姓名「' + names + '」對不到老師設定，這筆錢在會館業績系統裡有算，但這裡沒列入業績合計</div></div>';
+      return '<div class="stat-card hi" style="background:rgba(192,57,43,.05);border-color:rgba(192,57,43,.32)"><div class="lbl" style="color:var(--red,#c0392b)">⚠️ 未列入合計</div><div class="val" style="color:var(--red,#c0392b);font-size:17px">$' + um.amt.toLocaleString() + '</div><div style="font-size:12.5px;color:var(--text3);margin-top:4px">業務姓名「' + names + '」對不到老師設定，這筆錢在會館業績系統裡有算，但這裡沒列入業績合計</div></div>';
     })() +
     (function(){ var _y=parseInt(document.getElementById('selYear').value); var _m=parseInt(document.getElementById('selMonth').value); var totalRev=0; for(var dd=1;dd<=getDaysInMonth(_y,_m);dd++){totalRev+=(S.daily[dayKey(store,mKey,dd)]?.revenue||0);} return '<div class="stat-card hi"><div class="lbl" style="color:var(--gold2)">月營收合計</div><div class="val" style="color:var(--gold2)">$' + totalRev.toLocaleString() + '</div></div>'; })() +
     '</div>';
@@ -1172,7 +1172,7 @@ function renderMonthly() {
       (function(){
         var fbAmt2 = getFBSales(getSalesKey(t.name), selM_monthly, store);
         var dispAmt = fbAmt2 > 0 ? fbAmt2 : (tt.sales||0);
-        var fbTag = fbAmt2 > 0 ? ' <span style="font-size:10px;color:var(--green)">●FB</span>' : '';
+        var fbTag = fbAmt2 > 0 ? ' <span style="font-size:12px;color:var(--green)">●FB</span>' : '';
         return '<td class="' + (dispAmt?'auto-val':'zero-val') + '">' + (dispAmt?'$'+dispAmt.toLocaleString()+fbTag:'—') + '</td>';
       })() +
       (store==='flagship'?'<td class="' + (tt.supHours?'auto-val':'zero-val') + '">' + (tt.supHours||'—') + '</td>':'') +
@@ -1212,7 +1212,7 @@ function renderMonthly() {
           '<td><input type="number" class="in-num md" id="pts_gt_' + t.id + '" value="' + gtHrs + '" min="0" step="0.5" onchange="setPTSplit(\'' + ptKey + '\',\'' + ptKeyHQ + '\',\'' + t.id + '\',\'' + iconId + '\')" placeholder="0" onwheel="this.blur()"></td>' +
           '<td><span id="pts_total_' + t.id + '" style="font-weight:600;color:var(--gold2)">' + hrs + ' 小時</span> <span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span></td>' +
           '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
-          '<td style="color:var(--text3);font-size:12px">獎金依總時數計算；總部時數的時薪費由總部支付；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
+          '<td style="color:var(--text3);font-size:13.5px">獎金依總時數計算；總部時數的時薪費由總部支付；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
       }
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
         '<td style="display:flex;align-items:center;gap:8px">' +
@@ -1220,11 +1220,11 @@ function renderMonthly() {
         '<span id="' + iconId + '" style="color:var(--green,#2ecc71);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span>' +
         '</td>' +
         '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
-        '<td style="color:var(--text3);font-size:12px">填入後薪資頁自動計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在本月時數內</td></tr>';
+        '<td style="color:var(--text3);font-size:13.5px">填入後薪資頁自動計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在本月時數內</td></tr>';
     }).join('');
     ptHtml = '<div class="card"><div class="card-title">⏱️ 兼職時數登記 — ' + mKey + '</div>' +
       '<div class="info-box">每月填入一次即可，薪資頁自動帶入計算。</div>' +
-      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:10px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>營隊堂數<br><span style="font-size:10px;color:var(--green)">營隊登記自動加總</span></th><th>說明</th></tr></thead>' +
+      '<table><thead><tr><th>姓名</th><th>職別</th>' + (store==='guotu' ? '<th>總部支出時數</th><th>國圖支出時數</th><th>本月總時數<br><span style="font-size:12px;color:var(--text3)">自動加總</span></th>' : '<th>本月時數（小時）</th>') + '<th>營隊堂數<br><span style="font-size:12px;color:var(--green)">營隊登記自動加總</span></th><th>說明</th></tr></thead>' +
       '<tbody>' + ptRows + '</tbody></table></div>';
   }
 
@@ -1262,13 +1262,13 @@ function renderMonthly() {
       var dayDispSales = fbDayAmt2 > 0 ? fbDayAmt2 : (td.sales||0);
       if (td.count||td.outsideCount||td.campCount||tl||dayDispSales) {
         detHtml += '<tr style="background:rgba(0,0,0,0.015)">' +
-          '<td style="padding-left:28px;color:var(--text2);font-size:12px">└ ' + t.name + '</td>' +
+          '<td style="padding-left:28px;color:var(--text2);font-size:13.5px">└ ' + t.name + '</td>' +
           '<td></td><td></td>' +
-          '<td style="font-size:12px;color:var(--text2)">' + (td.count||'—') + '</td>' +
-          '<td style="font-size:12px;color:var(--text2)">' + (td.outsideCount||'—') + '</td>' +
-          '<td style="font-size:12px;color:var(--text2)">' + (td.campCount||'—') + '</td>' +
-          '<td style="font-size:12px;color:var(--text2)">' + (tl?'$'+tl.toLocaleString():'—') + '</td>' +
-          '<td style="font-size:12px;color:var(--text2)">' + (dayDispSales?'$'+dayDispSales.toLocaleString():'—') + '</td>' +
+          '<td style="font-size:13.5px;color:var(--text2)">' + (td.count||'—') + '</td>' +
+          '<td style="font-size:13.5px;color:var(--text2)">' + (td.outsideCount||'—') + '</td>' +
+          '<td style="font-size:13.5px;color:var(--text2)">' + (td.campCount||'—') + '</td>' +
+          '<td style="font-size:13.5px;color:var(--text2)">' + (tl?'$'+tl.toLocaleString():'—') + '</td>' +
+          '<td style="font-size:13.5px;color:var(--text2)">' + (dayDispSales?'$'+dayDispSales.toLocaleString():'—') + '</td>' +
           '</tr>';
       }
     });
@@ -1276,9 +1276,9 @@ function renderMonthly() {
     var rowId = 'dr_' + store + '_' + d;
     dailyRows += '<tr style="background:' + (isWkend?'rgba(201,168,76,0.03)':'') + ';' + (detHtml?'cursor:pointer':'') + '"' +
       (detHtml?' onclick="toggleRow(\'' + rowId + '\',\'arr_' + store + '_' + d + '\')"':'') + '>' +
-      '<td><strong style="font-size:13px">' + d + '</strong><span style="color:var(--text3);font-size:11px;margin-left:5px">週' + wd + '</span>' +
-      (detHtml?'<span id="arr_' + store + '_' + d + '" style="color:var(--text3);font-size:10px;margin-left:6px">▶</span>':'') +
-      (entries2.length?'<span style="color:var(--green);font-size:10px;margin-left:4px">✓</span>':'') + '</td>' +
+      '<td><strong style="font-size:14.5px">' + d + '</strong><span style="color:var(--text3);font-size:12.5px;margin-left:5px">週' + wd + '</span>' +
+      (detHtml?'<span id="arr_' + store + '_' + d + '" style="color:var(--text3);font-size:12px;margin-left:6px">▶</span>':'') +
+      (entries2.length?'<span style="color:var(--green);font-size:12px;margin-left:4px">✓</span>':'') + '</td>' +
       '<td>' + (agg2.newCust||0) + '</td>' +
       '<td>' + (agg2.oldCust||0) + '</td>' +
       '<td class="' + (dc?'auto-val':'zero-val') + '">' + (dc||'—') + '</td>' +
@@ -1318,7 +1318,7 @@ function renderMonthly() {
     '</tr></thead><tbody>' + tRows + '</tbody></table></div></div>';
 
   var dailyTable = '<div class="card">' +
-    '<div class="card-title">📆 每日明細 <span style="font-size:11px;color:var(--text3);font-weight:400">有 ▶ 可點開看老師明細</span></div>' +
+    '<div class="card-title">📆 每日明細 <span style="font-size:12.5px;color:var(--text3);font-weight:400">有 ▶ 可點開看老師明細</span></div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
     '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>營隊人次</th><th>講師費</th><th>業績</th><th style="color:var(--gold2)">營收</th>' +
     '</tr></thead><tbody>' + dailyRows + '</tbody></table></div></div>';
@@ -1468,17 +1468,17 @@ function renderSalary() {
     var t=row.t, c=row.c, base=row.base, baseVal=row.baseVal, grand=row.grand;
     return '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
-      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入全薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:11px">時薪制</span>') + '</td>' +
+      '<td>' + (t.type==='full'?'<input type="number" class="in-num salary lg" value="' + base + '" placeholder="填入全薪" onchange="setSalaryBase(\'' + bk + '\',\'' + t.id + '\',+this.value)" onwheel="this.blur()">':'<span class="muted" style="font-size:12.5px">時薪制</span>') + '</td>' +
       '<td class="' + (row.count?'auto-val':'zero-val') + '">' + row.count.toLocaleString() + '</td>' +
       '<td class="' + (c.countBonus?'auto-val':'zero-val') + '">$' + c.countBonus.toLocaleString() + '</td>' +
       '<td class="' + (c.lectureFee?'auto-val':'zero-val') + '">$' + c.lectureFee.toLocaleString() + '</td>' +
-      '<td class="' + (c.campFee?'auto-val':'zero-val') + '">' + (c.campFee?'$'+c.campFee.toLocaleString()+(t.type==='part'?'<br><span style="font-size:10px;color:var(--text3)">'+c.campSess+'堂×$'+(parseFloat(t.campRate)||0)+'</span>':''):'—') + '</td>' +
+      '<td class="' + (c.campFee?'auto-val':'zero-val') + '">' + (c.campFee?'$'+c.campFee.toLocaleString()+(t.type==='part'?'<br><span style="font-size:12px;color:var(--text3)">'+c.campSess+'堂×$'+(parseFloat(t.campRate)||0)+'</span>':''):'—') + '</td>' +
       '<td style="color:var(--text3)" class="' + (c.personalTotal?'auto-val':'zero-val') + '">$' + c.personalTotal.toLocaleString() + '</td>' +
       '<td class="' + (c.salesPerf?'auto-val':'zero-val') + '">$' + c.salesPerf.toLocaleString() + '</td>' +
       '<td class="' + (c.adminAmt?'auto-val':'zero-val') + '">' + (c.adminAmt?'$'+c.adminAmt.toLocaleString():'—') + '</td>' +
       (isFlagship?'<td class="' + (c.supFee?'auto-val':'zero-val') + '">' + (c.supFee?'$'+c.supFee.toLocaleString():'—') + '</td>':'') +
-      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+' ('+(c.ptHours-c.hqHours)+'h)':'—') + (c.hqPay?'<br><span style="font-size:10px;color:var(--text3)">總部另付 $'+c.hqPay.toLocaleString()+' ('+c.hqHours+'h)</span>':'') + '</td>' +
-      '<td style="color:var(--gold2);font-weight:600;font-size:15px">$' + grand.toLocaleString() + '</td>' +
+      '<td class="' + (c.ptBasePay?'auto-val':'zero-val') + '">' + (c.ptBasePay?'$'+c.ptBasePay.toLocaleString()+' ('+(c.ptHours-c.hqHours)+'h)':'—') + (c.hqPay?'<br><span style="font-size:12px;color:var(--text3)">總部另付 $'+c.hqPay.toLocaleString()+' ('+c.hqHours+'h)</span>':'') + '</td>' +
+      '<td style="color:var(--gold2);font-weight:600;font-size:16px">$' + grand.toLocaleString() + '</td>' +
       '</tr>';
   }).join('');
 
@@ -1504,9 +1504,9 @@ function renderSalary() {
     '<div class="info-box">全薪已自動帶入「老師設定」的全薪，僅正職人員顯示；若本月要調整，直接改這欄即可（只會覆蓋當月，不影響老師設定的預設值）。兼職依時薪×時數自動計算。營隊費另計：正職＝營隊人次×老師設定的「每人次費用」；兼職＝營隊登記的營隊堂數×「每堂費用」，兼職不計營隊人次。營隊資料在每日登記頁的獨立區塊填寫，與一般課程紀錄分開。「個人業績總和」為參考欄，不算進總薪；「個人績效」（業績×2%）會算進總薪，業務角色不計。</div>' +
     '<div style="overflow-x:auto"><table><thead><tr>' +
     '<th>人員</th><th style="color:var(--gold)">全薪（正職填）</th><th>當月人次</th><th>人次獎金</th><th>講師費</th>' +
-    '<th>營隊費<br><span style="font-weight:400;font-size:10px">正職:人次×費率<br>兼職:堂數×費率</span></th>' +
-    '<th style="color:var(--text3)">個人業績總和<br><span style="font-weight:400;font-size:10px">（參考）</span></th>' +
-    '<th>個人績效<br><span style="font-weight:400;font-size:10px">（=業績×2%）</span></th>' +
+    '<th>營隊費<br><span style="font-weight:400;font-size:12px">正職:人次×費率<br>兼職:堂數×費率</span></th>' +
+    '<th style="color:var(--text3)">個人業績總和<br><span style="font-weight:400;font-size:12px">（參考）</span></th>' +
+    '<th>個人績效<br><span style="font-weight:400;font-size:12px">（=業績×2%）</span></th>' +
     '<th>行政績效</th>' +
     (isFlagship?'<th>米雪支援費</th>':'') +
     '<th>兼職時薪費</th><th style="color:var(--gold2)">總薪</th>' +
@@ -1539,7 +1539,7 @@ function renderSalary() {
         if (r.junior) lots.push('小老師×' + r.junior);
         return '<tr><td>' + r.day + ' 日</td><td><strong>' + r.name + '</strong></td>' +
           '<td>' + (r.count||0) + '</td><td>' + (lots.join('、')||'—') + '</td>' +
-          '<td style="color:var(--text3);font-size:12px">' + (r.note||'') + '</td></tr>';
+          '<td style="color:var(--text3);font-size:13.5px">' + (r.note||'') + '</td></tr>';
       }).join('');
       el.innerHTML += '<div class="card" style="border:1px dashed var(--gold)">' +
         '<div class="card-title" style="color:var(--gold2)">📋 總部代課日期紀錄 — ' + mKey + '</div>' +
@@ -1705,7 +1705,7 @@ function renderTeacherList() {
       '<div class="fg"><label>行政績效(旗)</label><input type="number" id="eaf_' + t.id + '" value="' + (t.adminF||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>行政績效(圖)</label><input type="number" id="eag_' + t.id + '" value="' + (t.adminG||'') + '" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>講師費倍率</label><input type="number" step="0.1" min="0" max="1" id="elr_' + t.id + '" value="' + (t.lecRate!==undefined?t.lecRate:1) + '" onwheel="this.blur()"></div>' +
-      '<div class="fg"><label>營隊費率<br><span style="font-size:9px;text-transform:none">正職:元/人次｜兼職:元/堂</span></label><input type="number" id="ecr_' + t.id + '" value="' + (t.campRate||'') + '" placeholder="0" onwheel="this.blur()"></div>' +
+      '<div class="fg"><label>營隊費率<br><span style="font-size:11.5px;text-transform:none">正職:元/人次｜兼職:元/堂</span></label><input type="number" id="ecr_' + t.id + '" value="' + (t.campRate||'') + '" placeholder="0" onwheel="this.blur()"></div>' +
       '<div class="fg"><label>備註</label><input id="eno_' + t.id + '" value="' + (t.note||'') + '"></div>' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
@@ -1715,7 +1715,7 @@ function renderTeacherList() {
 
     var mainRow = '<tr draggable="true" data-id="' + t.id + '"' +
       ' ondragstart="dragStart(event)" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dragDrop(event)">' +
-      '<td style="color:var(--text3);cursor:grab;font-size:16px;text-align:center">⠿</td>' +
+      '<td style="color:var(--text3);cursor:grab;font-size:17px;text-align:center">⠿</td>' +
       '<td><strong>' + t.name + '</strong></td>' +
       '<td><span class="badge ' + storeBadge + '">' + STORE_NAME[t.store] + '</span></td>' +
       '<td><span class="badge ' + (t.type==='full'?'b-green':'b-gray') + '">' + TYPE_NAME[t.type] + '</span></td>' +
@@ -1912,7 +1912,7 @@ function dlPDF(store, mKey) {
     return '<tr><td>'+t.name+'</td><td>'+ROLE_NAME[t.role||'teacher']+'</td><td>'+(tt.count||0)+'</td><td>'+(tt.outsideCount||0)+'</td><td>'+(tt.campCount||0)+'</td><td>$'+lec.toLocaleString()+'</td><td>$'+(tt.sales||0).toLocaleString()+'</td></tr>';
   }).join('');
   var w = window.open('','_blank');
-  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:8px}th{background:#f5f5f5}</style></head><body>'+
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:14.5px}th,td{border:1px solid #ccc;padding:8px}th{background:#f5f5f5}</style></head><body>'+
     '<h2>Otto2 ' + STORE_NAME[store] + ' 月報 — ' + mKey + '</h2>'+
     '<p>新客：'+totals.newCust+' ｜ 舊客：'+totals.oldCust+'</p>'+
     '<table><thead><tr><th>姓名</th><th>職位</th><th>人次</th><th>外派</th><th>營隊</th><th>講師費</th><th>業績</th></tr></thead><tbody>'+rows+'</tbody></table>'+
@@ -1930,7 +1930,7 @@ function dlSalaryPDF(store, mKey) {
     return '<tr><td>'+t.name+'</td><td>$'+c.countBonus.toLocaleString()+'</td><td>$'+c.lectureFee.toLocaleString()+'</td><td>$'+(c.campFee||0).toLocaleString()+'</td><td>$'+c.salesPerf.toLocaleString()+'</td><td>$'+c.adminAmt.toLocaleString()+'</td>'+(isFlagship?'<td>$'+c.supFee.toLocaleString()+'</td>':'')+'<td>$'+c.ptBasePay.toLocaleString()+'</td><td>$'+c.sub.toLocaleString()+'</td><td>$'+base.toLocaleString()+'</td><td><strong>$'+(c.sub+base).toLocaleString()+'</strong></td></tr>';
   }).join('');
   var w = window.open('','_blank');
-  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:7px}th{background:#f5f5f5}</style></head><body>'+
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:13.5px}th,td{border:1px solid #ccc;padding:7px}th{background:#f5f5f5}</style></head><body>'+
     '<h2>Otto2 '+STORE_NAME[store]+' 薪資 — '+mKey+'</h2>'+
     '<table><thead><tr><th>姓名</th><th>人次獎金</th><th>講師費</th><th>營隊費</th><th>業績績效</th><th>行政績效</th>'+(isFlagship?'<th>支援費</th>':'')+'<th>時薪費</th><th>小計</th><th>全薪</th><th>總薪</th></tr></thead><tbody>'+rows+'</tbody></table>'+
     '<script>window.onload=function(){window.print();window.close()}<\/script></body></html>');

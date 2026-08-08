@@ -84,7 +84,7 @@ function addCMDetailRow(name, amt, currency, rate, containerId) {
   nameInp.placeholder = '品項名稱（例：生褐170ml）';
   nameInp.value = name || '';
   nameInp.className = 'cmdr-name';
-  nameInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit';
+  nameInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:14.5px;outline:none;font-family:inherit';
 
   // 金額
   var amtInp = document.createElement('input');
@@ -94,14 +94,14 @@ function addCMDetailRow(name, amt, currency, rate, containerId) {
   amtInp.min = '0';
   amtInp.step = '0.01';
   amtInp.className = 'cmdr-amt';
-  amtInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;text-align:right';
+  amtInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:14.5px;outline:none;font-family:inherit;text-align:right';
   amtInp.addEventListener('wheel', function(){ this.blur(); });
   amtInp.addEventListener('input', function(){ calcDetailTWD(this); });
 
   // 幣別
   var curSel = document.createElement('select');
   curSel.className = 'cmdr-cur';
-  curSel.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 6px;border-radius:6px;font-size:12px;outline:none;font-family:inherit';
+  curSel.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 6px;border-radius:6px;font-size:13.5px;outline:none;font-family:inherit';
   [['TWD','NT$'],['CNY','¥人民幣'],['USD','$美元'],['JPY','¥日圓']].forEach(function(opt){
     var o = document.createElement('option');
     o.value = opt[0]; o.textContent = opt[1];
@@ -117,20 +117,20 @@ function addCMDetailRow(name, amt, currency, rate, containerId) {
   rateInp.value = rate || CM_RATES['CNY'];
   rateInp.step = '0.01';
   rateInp.className = 'cmdr-rate';
-  rateInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:12px;outline:none;font-family:inherit;text-align:right';
+  rateInp.style.cssText = 'background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:6px;font-size:13.5px;outline:none;font-family:inherit;text-align:right';
   rateInp.addEventListener('wheel', function(){ this.blur(); });
   rateInp.addEventListener('input', function(){ calcDetailTWD(div.querySelector('.cmdr-amt')); });
 
   // 台幣預覽
   var twdDiv = document.createElement('div');
   twdDiv.className = 'cmdr-twd';
-  twdDiv.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);color:var(--gold2);padding:7px 8px;border-radius:6px;font-size:12px;font-weight:600;text-align:right;white-space:nowrap';
+  twdDiv.style.cssText = 'background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);color:var(--gold2);padding:7px 8px;border-radius:6px;font-size:13.5px;font-weight:600;text-align:right;white-space:nowrap';
   twdDiv.textContent = '—';
 
   // 刪除按鈕
   var delBtn = document.createElement('button');
   delBtn.textContent = '✕';
-  delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:12px';
+  delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:13.5px';
   delBtn.addEventListener('click', function(){ div.remove(); });
 
   div.appendChild(nameInp);
@@ -271,7 +271,7 @@ function editConsumable(id) {
       '<div class="fg"><label>幣別</label><select id="cme-currency-'+id+'" onchange="updateInlinePreview('+id+')">'+curOpts+'</select></div>'+
       '<div class="fg"><label>金額（原幣）</label><input id="cme-amount-'+id+'" type="number" value="'+x.origAmt+'" min="0" onwheel="this.blur()" oninput="updateInlinePreview('+id+')"></div>'+
       '<div class="fg" id="cme-rate-wrap-'+id+'" style="display:'+(isForeign?'':'none')+'"><label>匯率（×台幣）</label><input id="cme-rate-'+id+'" type="number" value="'+(x.rate||'')+'" step="0.01" min="0" onwheel="this.blur()" oninput="updateInlinePreview('+id+')"></div>'+
-      '<div class="fg" id="cme-twd-wrap-'+id+'" style="display:'+(isForeign?'':'none')+'"><label>換算台幣</label><div id="cme-twd-preview-'+id+'" style="background:var(--bg3);border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 11px;border-radius:7px;font-size:14px;font-weight:600">'+(isForeign?('NT$'+x.amount.toLocaleString()):'—')+'</div></div>'+
+      '<div class="fg" id="cme-twd-wrap-'+id+'" style="display:'+(isForeign?'':'none')+'"><label>換算台幣</label><div id="cme-twd-preview-'+id+'" style="background:var(--bg3);border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 11px;border-radius:7px;font-size:15.5px;font-weight:600">'+(isForeign?('NT$'+x.amount.toLocaleString()):'—')+'</div></div>'+
       '<div class="fg"><label>購買來源</label><select id="cme-source-'+id+'">'+srcOpts+'</select></div>'+
       '<div class="fg"><label>購買人</label><input id="cme-buyer-'+id+'" list="cm-buyer-list" value="'+escAttr(x.buyer)+'" placeholder="例：大熊老師"></div>'+
       '<div class="fg"><label>零用金是否撥款</label><select id="cme-paid-'+id+'"><option value="paid"'+(x.paid!==false?' selected':'')+'>已撥款</option><option value="unpaid"'+(x.paid===false?' selected':'')+'>未撥款（代墊中）</option></select></div>'+
@@ -279,7 +279,7 @@ function editConsumable(id) {
     '</div>'+
     '<div style="margin-bottom:12px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-        '<span style="font-size:13px;color:var(--text2)">📎 明細備註（一筆訂單含多品項時使用）</span>'+
+        '<span style="font-size:14.5px;color:var(--text2)">📎 明細備註（一筆訂單含多品項時使用）</span>'+
         '<button class="btn btn-outline btn-sm" onclick="addInlineDetailRow('+id+')">＋ 新增明細行</button>'+
       '</div>'+
       '<div id="cme-detail-rows-'+id+'"></div>'+
@@ -403,7 +403,7 @@ function renderConsumables() {
     var allKeys = S.consumables ? Object.keys(S.consumables).filter(function(k){ return k !== '__may_ver' && k !== '__cm_migrate_ver'; }) : [];
     var curKey = getCMKey();
     debugEl.style.display = 'block';
-    debugEl.innerHTML = '<span style="color:#686460;font-size:11px">查詢key: <b style="color:#c9a84c">' + curKey + '</b> &nbsp;|&nbsp; Firebase有: <b style="color:#c9a84c">' + (allKeys.length ? allKeys.join(', ') : '無') + '</b> &nbsp;|&nbsp; 筆數: <b style="color:#4caf7d">' + items.length + '</b></span>';
+    debugEl.innerHTML = '<span style="color:#686460;font-size:12.5px">查詢key: <b style="color:#c9a84c">' + curKey + '</b> &nbsp;|&nbsp; Firebase有: <b style="color:#c9a84c">' + (allKeys.length ? allKeys.join(', ') : '無') + '</b> &nbsp;|&nbsp; 筆數: <b style="color:#4caf7d">' + items.length + '</b></span>';
   }
 
   // 更新月份總計
@@ -473,7 +473,7 @@ function renderConsumables() {
     var diffPct = (diff/prevTotal*100).toFixed(1);
     var color = diff > 0 ? 'var(--red)' : 'var(--green)';
     var sign = diff > 0 ? '+' : '';
-    diffHtml = '<span style="color:'+color+';font-size:13px;margin-left:8px">'+sign+'$'+diff.toLocaleString()+'（'+sign+diffPct+'%）vs 上月</span>';
+    diffHtml = '<span style="color:'+color+';font-size:14.5px;margin-left:8px">'+sign+'$'+diff.toLocaleString()+'（'+sign+diffPct+'%）vs 上月</span>';
   }
 
   // 渲染統計卡片
@@ -481,13 +481,13 @@ function renderConsumables() {
   statsHtml += '<div class="stat-grid">';
   statsHtml += '<div class="stat-card"><div class="lbl">本月總支出</div><div class="val">$'+total.toLocaleString()+'</div>'+diffHtml+'</div>';
   statsHtml += '<div class="stat-card"><div class="lbl">筆數</div><div class="val">'+items.length+'</div></div>';
-  statsHtml += '<div class="stat-card"><div class="lbl">最高類別</div><div class="val" style="font-size:16px">'+CM_CAT_ICONS[topCat]+' '+topCat+'</div><div style="font-size:12px;color:var(--text3)">$'+topAmt.toLocaleString()+'</div></div>';
+  statsHtml += '<div class="stat-card"><div class="lbl">最高類別</div><div class="val" style="font-size:17px">'+CM_CAT_ICONS[topCat]+' '+topCat+'</div><div style="font-size:13.5px;color:var(--text3)">$'+topAmt.toLocaleString()+'</div></div>';
   statsHtml += '</div>';
 
   // 類別分解條
   if (total > 0) {
     statsHtml += '<div style="margin-bottom:16px">';
-    statsHtml += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">支出分布</div>';
+    statsHtml += '<div style="font-size:13.5px;color:var(--text3);margin-bottom:8px">支出分布</div>';
     statsHtml += '<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:10px">';
     var barColors = ['#c9a84c','#80c0f0','#aaa','#c0a0f0','#80c0f0','#888','#70e0a8','#70e0a8','#aaa','#666'];
     getCMCats().forEach(function(c,i){
@@ -499,7 +499,7 @@ function renderConsumables() {
     getCMCats().forEach(function(c,i){
       if (byCat[c] > 0) {
         var pct = (byCat[c]/total*100).toFixed(0);
-        statsHtml += '<span style="font-size:12px;display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+barColors[i]+';display:inline-block"></span>'+CM_CAT_ICONS[c]+' '+c+' '+pct+'%</span>';
+        statsHtml += '<span style="font-size:13.5px;display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+barColors[i]+';display:inline-block"></span>'+CM_CAT_ICONS[c]+' '+c+' '+pct+'%</span>';
       }
     });
     statsHtml += '</div></div>';
@@ -542,19 +542,19 @@ function renderConsumables() {
     var paidSelectCss = isPaid
       ? 'background:rgba(76,175,125,0.12);color:var(--green);border:1px solid rgba(76,175,125,0.3)'
       : 'background:rgba(224,85,85,0.1);color:var(--red);border:1px solid rgba(224,85,85,0.3)';
-    var paidSelect = '<select onchange="setPaidStatus('+x.id+',this.value)" style="'+paidSelectCss+';padding:4px 8px;border-radius:20px;font-size:11px;font-weight:500;font-family:inherit;outline:none;cursor:pointer">'+
+    var paidSelect = '<select onchange="setPaidStatus('+x.id+',this.value)" style="'+paidSelectCss+';padding:4px 8px;border-radius:20px;font-size:12.5px;font-weight:500;font-family:inherit;outline:none;cursor:pointer">'+
       '<option value="paid"'+(isPaid?' selected':'')+'>已撥款</option>'+
       '<option value="unpaid"'+(!isPaid?' selected':'')+'>未撥款</option>'+
       '</select>';
     return '<tr id="cm-row-'+x.id+'">'+
-      '<td style="font-size:12px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
+      '<td style="font-size:13.5px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
       '<td><span class="badge '+badgeClass+'">'+icon+' '+x.cat+'</span></td>'+
       '<td style="font-weight:500">'+x.name+'</td>'+
       '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
-      '<td style="font-size:12px;color:var(--text3)">'+x.source+'</td>'+
-      '<td style="font-size:12px;color:var(--text2)">'+(x.buyer||'—')+'</td>'+
+      '<td style="font-size:13.5px;color:var(--text3)">'+x.source+'</td>'+
+      '<td style="font-size:13.5px;color:var(--text2)">'+(x.buyer||'—')+'</td>'+
       '<td>'+paidSelect+'</td>'+
-      '<td style="font-size:12px;color:var(--text3)">'+(x.note||'')+'</td>'+
+      '<td style="font-size:13.5px;color:var(--text3)">'+(x.note||'')+'</td>'+
       '<td style="white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editConsumable('+x.id+')">編輯</button> <button class="btn btn-del btn-sm" onclick="delConsumable('+x.id+')">刪除</button></td>'+
       '</tr>';
   }).join('');
@@ -598,19 +598,19 @@ function renderCMBuyerSummary(items) {
     var g = groups[name];
     var isOpen = !!cmBuyerExpanded[name];
     var unpaidBadge = g.unpaid > 0
-      ? '<span style="font-size:11px;color:var(--red);background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);padding:2px 8px;border-radius:20px">未撥款 $'+g.unpaid.toLocaleString()+'</span>'
-      : '<span style="font-size:11px;color:var(--green);background:rgba(76,175,125,0.1);border:1px solid rgba(76,175,125,0.3);padding:2px 8px;border-radius:20px">已全數撥款</span>';
+      ? '<span style="font-size:12.5px;color:var(--red);background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);padding:2px 8px;border-radius:20px">未撥款 $'+g.unpaid.toLocaleString()+'</span>'
+      : '<span style="font-size:12.5px;color:var(--green);background:rgba(76,175,125,0.1);border:1px solid rgba(76,175,125,0.3);padding:2px 8px;border-radius:20px">已全數撥款</span>';
 
     html += '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;background:var(--bg3)" onclick="toggleCMBuyer(\''+escAttr(name).replace(/'/g,"\\'")+'\')">';
     html += '<div style="display:flex;align-items:center;gap:10px">';
-    html += '<span style="font-size:13px;color:var(--text3);width:14px;display:inline-block">'+(isOpen?'▾':'▸')+'</span>';
+    html += '<span style="font-size:14.5px;color:var(--text3);width:14px;display:inline-block">'+(isOpen?'▾':'▸')+'</span>';
     html += '<span style="font-weight:600">'+escAttr(name)+'</span>';
-    html += '<span style="font-size:12px;color:var(--text3)">共 '+g.items.length+' 筆</span>';
+    html += '<span style="font-size:13.5px;color:var(--text3)">共 '+g.items.length+' 筆</span>';
     html += '</div>';
     html += '<div style="display:flex;align-items:center;gap:10px">';
     html += unpaidBadge;
-    html += '<span style="color:var(--gold2);font-weight:700;font-size:15px">$'+g.total.toLocaleString()+'</span>';
+    html += '<span style="color:var(--gold2);font-weight:700;font-size:16px">$'+g.total.toLocaleString()+'</span>';
     html += '</div></div>';
 
     if (isOpen) {
@@ -621,12 +621,12 @@ function renderCMBuyerSummary(items) {
           ? '<span style="color:var(--red)">未撥款</span>'
           : '<span style="color:var(--green)">已撥款</span>';
         return '<tr>'+
-          '<td style="font-size:12px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
-          '<td style="font-size:12px">'+icon+' '+x.cat+'</td>'+
+          '<td style="font-size:13.5px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
+          '<td style="font-size:13.5px">'+icon+' '+x.cat+'</td>'+
           '<td style="font-weight:500">'+x.name+'</td>'+
           '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
-          '<td style="font-size:12px;color:var(--text3)">'+x.source+'</td>'+
-          '<td style="font-size:12px">'+paidTxt+'</td>'+
+          '<td style="font-size:13.5px;color:var(--text3)">'+x.source+'</td>'+
+          '<td style="font-size:13.5px">'+paidTxt+'</td>'+
           '</tr>';
       }).join('');
       html += '<div style="padding:0 14px 12px 14px;background:var(--bg2)">';
@@ -823,18 +823,18 @@ function renderAIResults(items) {
     var dateInp = document.createElement('input');
     dateInp.type = 'date'; dateInp.value = item.date || '';
     dateInp.className = 'ai-date';
-    dateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:12px;outline:none;font-family:inherit;width:100%';
+    dateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:13.5px;outline:none;font-family:inherit;width:100%';
 
     // 品項
     var nameInp = document.createElement('input');
     nameInp.type = 'text'; nameInp.value = item.name || '';
     nameInp.className = 'ai-name';
-    nameInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:13px;outline:none;font-family:inherit;width:100%';
+    nameInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-size:14.5px;outline:none;font-family:inherit;width:100%';
 
     // 類別
     var catSel = document.createElement('select');
     catSel.className = 'ai-cat';
-    catSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 6px;border-radius:5px;font-size:12px;outline:none;font-family:inherit';
+    catSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 6px;border-radius:5px;font-size:13.5px;outline:none;font-family:inherit';
     CAT_OPTS.forEach(function(c) {
       var o = document.createElement('option');
       o.value = c; o.textContent = c;
@@ -846,14 +846,14 @@ function renderAIResults(items) {
     var amtInp = document.createElement('input');
     amtInp.type = 'number'; amtInp.value = item.origAmt || 0;
     amtInp.className = 'ai-amt'; amtInp.step = '0.01'; amtInp.min = '0';
-    amtInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:13px;outline:none;font-family:inherit;text-align:right;width:100%';
+    amtInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:14.5px;outline:none;font-family:inherit;text-align:right;width:100%';
     amtInp.addEventListener('wheel', function(){ this.blur(); });
     amtInp.addEventListener('input', function(){ recalcAIRow(i); });
 
     // 幣別
     var curSel = document.createElement('select');
     curSel.className = 'ai-cur';
-    curSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 4px;border-radius:5px;font-size:11px;outline:none;font-family:inherit';
+    curSel.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 4px;border-radius:5px;font-size:12.5px;outline:none;font-family:inherit';
     CUR_OPTS.forEach(function(opt) {
       var o = document.createElement('option');
       o.value = opt[0]; o.textContent = opt[1];
@@ -866,20 +866,20 @@ function renderAIResults(items) {
     var rateInp = document.createElement('input');
     rateInp.type = 'number'; rateInp.value = item.rate || 1;
     rateInp.className = 'ai-rate'; rateInp.step = '0.01'; rateInp.min = '0';
-    rateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:12px;outline:none;font-family:inherit;text-align:right;width:100%';
+    rateInp.style.cssText = 'background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:5px;font-size:13.5px;outline:none;font-family:inherit;text-align:right;width:100%';
     rateInp.addEventListener('wheel', function(){ this.blur(); });
     rateInp.addEventListener('input', function(){ recalcAIRow(i); });
 
     // 台幣顯示
     var twdDiv = document.createElement('div');
     twdDiv.id = 'aitwd_' + i;
-    twdDiv.style.cssText = 'color:var(--gold2);font-weight:600;font-size:13px;text-align:right;white-space:nowrap';
+    twdDiv.style.cssText = 'color:var(--gold2);font-weight:600;font-size:14.5px;text-align:right;white-space:nowrap';
     twdDiv.textContent = 'NT$' + (item.twd||0).toLocaleString();
 
     // 刪除
     var delBtn = document.createElement('button');
     delBtn.textContent = '✕';
-    delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:5px 9px;border-radius:5px;cursor:pointer;font-size:12px';
+    delBtn.style.cssText = 'background:transparent;border:1px solid #553;color:#a88;padding:5px 9px;border-radius:5px;cursor:pointer;font-size:13.5px';
     delBtn.addEventListener('click', function(){ row.remove(); });
 
     row.appendChild(dateInp);
@@ -898,7 +898,7 @@ function renderAIResults(items) {
   header.style.cssText = 'display:grid;grid-template-columns:100px 1fr 70px 80px 70px 70px 70px auto;gap:8px;padding:0 14px;margin-bottom:4px';
   ['日期','品項','類別','金額','幣別','匯率','台幣',''].forEach(function(t) {
     var span = document.createElement('span');
-    span.style.cssText = 'font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px';
+    span.style.cssText = 'font-size:12.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px';
     span.textContent = t;
     header.appendChild(span);
   });

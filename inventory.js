@@ -767,13 +767,13 @@ function showInvImage(itemId) {
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;cursor:pointer';
   overlay.onclick = function(){ document.body.removeChild(overlay); };
   var title = document.createElement('div');
-  title.style.cssText = 'color:var(--gold);font-size:16px;font-weight:600';
+  title.style.cssText = 'color:var(--gold);font-size:17px;font-weight:600';
   title.textContent = it.name;
   var img = document.createElement('img');
   img.src = it.image;
   img.style.cssText = 'max-width:90vw;max-height:80vh;border-radius:8px;border:2px solid var(--gold)';
   var hint = document.createElement('div');
-  hint.style.cssText = 'color:var(--text3);font-size:12px';
+  hint.style.cssText = 'color:var(--text3);font-size:13.5px';
   hint.textContent = '點擊任意處關閉';
   overlay.appendChild(title);
   overlay.appendChild(img);
@@ -1010,7 +1010,7 @@ function renderInvItemList() {
   var items = getInvItems();
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
   var sorted = sortInvItems(items);
-  var html = '<div class="muted" style="margin-bottom:8px;font-size:12px">🖐 直接按住每一列左側的「⠿」拖曳，可任意調整順序（不限分類）</div>';
+  var html = '<div class="muted" style="margin-bottom:8px;font-size:13.5px">🖐 直接按住每一列左側的「⠿」拖曳，可任意調整順序（不限分類）</div>';
   html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody id="inv-item-tbody">';
   sorted.forEach(function(it) {
     html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
@@ -1019,8 +1019,8 @@ function renderInvItemList() {
       'ondragover="invHandleDragOver(event)" '+
       'ondrop="invHandleDrop(event,'+it.id+')" '+
       'style="cursor:grab">';
-    html += '<td style="text-align:center;color:var(--text2);font-size:16px;user-select:none">⠿</td>';
-    var catSel = '<select style="background:var(--bg3);border:1px solid var(--border);color:var(--gold2);padding:3px 6px;border-radius:5px;font-size:12px;cursor:pointer;outline:none;font-family:inherit" onchange="updateInvItemField('+it.id+',\'cat\',this.value)">';
+    html += '<td style="text-align:center;color:var(--text2);font-size:17px;user-select:none">⠿</td>';
+    var catSel = '<select style="background:var(--bg3);border:1px solid var(--border);color:var(--gold2);padding:3px 6px;border-radius:5px;font-size:13.5px;cursor:pointer;outline:none;font-family:inherit" onchange="updateInvItemField('+it.id+',\'cat\',this.value)">';
     INV_CATS.forEach(function(c){
       catSel += '<option value="'+c+'"'+(it.cat===c?' selected':'')+'>'+(INV_CAT_ICONS[c]||'📌')+' '+c+'</option>';
     });
@@ -1033,7 +1033,7 @@ function renderInvItemList() {
       imgHtml += '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onclick="event.preventDefault();showInvImage('+it.id+')">';
       imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
       imgHtml += '</label>';
-      imgHtml += ' <button class="btn-sm" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid rgba(224,85,85,0.3);color:var(--red)" onclick="removeInvImage('+it.id+')">✕</button>';
+      imgHtml += ' <button class="btn-sm" style="font-size:12px;padding:2px 6px;background:transparent;border:1px solid rgba(224,85,85,0.3);color:var(--red)" onclick="removeInvImage('+it.id+')">✕</button>';
     } else {
       imgHtml += '<span style="font-size:18px">📷</span>';
       imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
@@ -1193,9 +1193,9 @@ function renderInvWeekTable() {
 
     html += '<div style="margin-bottom:12px">';
     html += '<div onclick="toggleInvGroup(\''+grp.key+'\')" style="cursor:pointer;padding:10px 14px;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:8px;display:flex;align-items:center;gap:10px;user-select:none">';
-    html += '<span style="font-size:13px;color:var(--gold2)">'+arrow+'</span>';
-    html += '<span style="font-size:15px;font-weight:600;color:var(--gold)">'+grp.label+'</span>';
-    html += '<span style="font-size:12px;color:var(--text3);margin-left:4px">('+grpItems.length+' 項)</span>';
+    html += '<span style="font-size:14.5px;color:var(--gold2)">'+arrow+'</span>';
+    html += '<span style="font-size:16px;font-weight:600;color:var(--gold)">'+grp.label+'</span>';
+    html += '<span style="font-size:13.5px;color:var(--text3);margin-left:4px">('+grpItems.length+' 項)</span>';
     html += '</div>';
 
     if (isOpen) {
@@ -1217,13 +1217,13 @@ function renderInvWeekTable() {
           if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
           if (bd.autoUsed > 0) parts.push('<span style="color:var(--gold2)">－核銷 ' + Math.round(bd.autoUsed*10)/10 + '</span>');
           if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
-          curCell = '<div style="font-size:15px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
-                  + '<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
+          curCell = '<div style="font-size:16px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
+                  + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
           /* 帳面 vs 實際：盤點數字填了就比對，差額標出來讓你追 */
           if (typeof rec.stock === 'number' && bd.base !== null && bd.baseWeek !== weekKey) {
             var gap = rec.stock - bd.total;
             if (gap !== 0) {
-              curCell += '<div style="font-size:10.5px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
+              curCell += '<div style="font-size:12px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
                 + (gap < 0 ? '⚠ 實際少 ' + Math.abs(gap) : '實際多 ' + gap) + '</div>';
             }
           }
@@ -1332,8 +1332,8 @@ function autoSaveInvItem(itemId) {
         if (b.base !== null) ps.push(b.baseLabel + ' ' + b.base);
         if (b.usedTotal > 0) ps.push('－用 ' + b.usedTotal);
         if (b.restock > 0) ps.push('<span style="color:var(--green)">＋進 ' + b.restock + '</span>');
-        curEl.innerHTML = '<div style="font-size:15px;font-weight:600;color:' + (b.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + b.total + '</div>'
-                        + '<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:2px">' + ps.join('<br>') + '</div>';
+        curEl.innerHTML = '<div style="font-size:16px;font-weight:600;color:' + (b.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + b.total + '</div>'
+                        + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + ps.join('<br>') + '</div>';
       }
     }
   }
@@ -1416,18 +1416,18 @@ function printInvBlankSheet() {
     '.sheet{page-break-after:always}.sheet:last-child{page-break-after:auto}'+
     '.head{border-bottom:2.5px solid #111;padding-bottom:5px;margin-bottom:9px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}'+
     'h1{font-size:18px;margin:0;letter-spacing:1px}'+
-    '.meta{font-size:12px;color:#444}'+
+    '.meta{font-size:13.5px;color:#444}'+
     '.cols{display:flex;gap:7mm;align-items:flex-start}'+
     'table{width:100%;border-collapse:collapse;table-layout:fixed}'+
     'th,td{border:1px solid #444;text-align:center;overflow:hidden}'+
-    'th{background:#ebebeb;font-size:11px;font-weight:600;padding:5px 0}'+
-    'td{height:26px;font-size:12.5px}'+
+    'th{background:#ebebeb;font-size:12.5px;font-weight:600;padding:5px 0}'+
+    'td{height:26px;font-size:13.5px}'+
     'tbody tr:nth-child(even) td{background:#f6f6f6}'+
     '.c1{width:12%}.c2{width:19%}.c3{width:37%}.c4{width:12%}.c5{width:20%}'+
-    '.no{color:#555;font-size:11px}'+
-    '.cat{color:#555;font-size:10.5px}'+
-    '.nm{font-weight:600;font-size:12.5px;border-right:2px solid #111;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}'+
-    '.un{color:#555;font-size:10.5px}'+
+    '.no{color:#555;font-size:12.5px}'+
+    '.cat{color:#555;font-size:12px}'+
+    '.nm{font-weight:600;font-size:13.5px;border-right:2px solid #111;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}'+
+    '.un{color:#555;font-size:12px}'+
     '@media print{.noprint{display:none}body{padding:0}}';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><title>庫存盤點空白表</title>'+
@@ -1511,7 +1511,7 @@ function renderInvCountOCRPreview(rawText) {
   if (!area) return;
   if (!invCountOCRRows.length) {
     area.innerHTML = '<div class="info-box" style="color:var(--red)">沒有讀到可回填的盤點數字。建議列印空白表後，在每列寫清楚「編號」和「實際庫存」再拍照。</div>'+
-      '<details style="font-size:12px;color:var(--text3)"><summary>查看讀到的文字</summary><pre style="white-space:pre-wrap">'+escAttr(rawText || '')+'</pre></details>';
+      '<details style="font-size:13.5px;color:var(--text3)"><summary>查看讀到的文字</summary><pre style="white-space:pre-wrap">'+escAttr(rawText || '')+'</pre></details>';
     return;
   }
   var html = '<div class="info-box">已讀到 '+invCountOCRRows.length+' 筆。請檢查數字，取消勾選的列不會回填。</div>';
@@ -1935,7 +1935,7 @@ function renderInvSummaryBar() {
     var color = count > 0 ? colorVar : 'var(--text3)';
     return '<div style="flex:1;min-width:110px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;text-align:center">' +
       '<div style="font-size:28px;font-weight:700;color:'+color+'">'+count+'</div>' +
-      '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+label+'</div>' +
+      '<div style="font-size:13.5px;color:var(--text3);margin-top:2px">'+label+'</div>' +
       '</div>';
   }
 
@@ -1977,7 +1977,7 @@ function renderInvAlerts() {
       if (x.item.cat !== lastCat) {
         if (lastCat !== null) out += '</div>';
         lastCat = x.item.cat;
-        out += '<div style="margin:10px 0 6px;font-size:12px;color:var(--text3)">'+(INV_CAT_ICONS[lastCat]||'📌')+' '+lastCat+'</div>';
+        out += '<div style="margin:10px 0 6px;font-size:13.5px;color:var(--text3)">'+(INV_CAT_ICONS[lastCat]||'📌')+' '+lastCat+'</div>';
         out += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
       }
       out += '<span class="badge" style="'+badgeStyle+'">'+lineFn(x)+'</span>';
@@ -1990,21 +1990,21 @@ function renderInvAlerts() {
   html += '<div class="card-title" style="color:var(--red)">🚨 庫存要注意</div>';
 
   if (lowStock.length > 0) {
-    html += '<div style="margin-bottom:0;font-size:13px;color:var(--text2)">已低於安全庫存，本週要訂貨：</div>';
+    html += '<div style="margin-bottom:0;font-size:14.5px;color:var(--text2)">已低於安全庫存，本週要訂貨：</div>';
     html += renderGroupedList(lowStock, 'background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)', function(x) {
       return x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit;
     });
   }
 
   if (caution.length > 0) {
-    html += '<div style="margin:14px 0 0;font-size:13px;color:var(--text2)">還沒低於安全庫存，但已經逼近，可以提早留意：</div>';
+    html += '<div style="margin:14px 0 0;font-size:14.5px;color:var(--text2)">還沒低於安全庫存，但已經逼近，可以提早留意：</div>';
     html += renderGroupedList(caution, 'background:rgba(224,158,77,0.15);color:#e09e4d;border:1px solid rgba(224,158,77,0.35)', function(x) {
       return x.item.name+'：剩 '+x.stock+' '+x.item.unit+'（安全庫存 '+x.item.safeStock+'，注意線 '+x.cautionLine+'）';
     });
   }
 
   if (runningOut.length > 0) {
-    html += '<div style="margin:14px 0 0;font-size:13px;color:var(--text2)">目前還在安全庫存之上，但照消耗速度，建議這週順便訂一些：</div>';
+    html += '<div style="margin:14px 0 0;font-size:14.5px;color:var(--text2)">目前還在安全庫存之上，但照消耗速度，建議這週順便訂一些：</div>';
     html += renderGroupedList(runningOut, 'background:rgba(201,168,76,0.12);color:var(--gold2);border:1px solid rgba(201,168,76,0.25)', function(x) {
       return x.item.name+'：剩 '+x.stock+' '+x.item.unit+' → 建議訂 '+x.order.qty+' '+x.item.unit;
     });
