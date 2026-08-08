@@ -367,7 +367,9 @@ async function bkRender(){
     bkSetTeachers(dsNow,Math.max(0,bkTeachersOn(dsNow)-1)); bkRender() };
   document.getElementById("bkTPlus").onclick=function(){
     bkSetTeachers(dsNow,Math.min(6,bkTeachersOn(dsNow)+1)); bkRender() };
-  document.getElementById("bkAdd").onclick=bkManual;
+  /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
+     被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
+  document.getElementById("bkAdd").onclick=function(){ bkManual() };
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
   root.querySelectorAll("[data-ed]").forEach(function(el){ el.onclick=function(){ bkManual(el.dataset.ed) } });
