@@ -378,24 +378,32 @@ function mbDetail(phone){
   h += '</div>';
 
   h += '<div style="max-height:46vh;overflow:auto"><table><thead><tr>' +
-       '<th style="width:120px">時間</th><th style="width:60px">類型</th><th style="width:80px">增減</th><th>原因</th><th style="width:70px">經手</th>' +
+       '<th style="width:120px">時間</th><th style="width:60px">類型</th><th style="width:80px">增減</th><th>原因</th><th style="width:70px">經手</th><th style="width:40px"></th>' +
        '</tr></thead><tbody>';
-  if (!rows.length) h += '<tr><td colspan="5"><div class="empty" style="padding:16px">還沒有任何紀錄</div></td></tr>';
+  if (!rows.length) h += '<tr><td colspan="6"><div class="empty" style="padding:16px">還沒有任何紀錄</div></td></tr>';
   rows.forEach(function(r){
     var d = +r.delta || 0;
-    h += '<tr>' +
+    h += '<tr' + (r.manual ? ' style="background:var(--bg3)"' : '') + '>' +
       '<td class="muted" style="font-size:12.5px">' + String(r.at || '').slice(0, 16).replace('T', ' ') + '</td>' +
       '<td style="font-size:13.5px">' + (TYPE[r.type] || r.type || '—') + '</td>' +
       '<td style="text-align:right;font-weight:600;color:' + (d >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (d > 0 ? '+' : '') + d.toLocaleString() + '</td>' +
-      '<td style="font-size:13.5px">' + mbEsc(r.reason || '') +
-        (r.expiry ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiry + '</span>' : '') + '</td>' +
+      '<td style="font-size:13.5px">' +
+        (r.manual ? '<span style="font-size:11.5px;background:var(--gold);color:#000;padding:1px 6px;border-radius:99px;margin-right:6px">手動</span>' : '') +
+        mbEsc(r.reason || '') +
+        (r.expiryNew
+          ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiryNew + '（原 ' + (r.expiry || '—') + '，已延 ' + ((r.extends || []).length) + ' 次）</span>'
+          : (r.expiry ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiry + '</span>' : '')) + '</td>' +
       '<td class="muted" style="font-size:12.5px">' + mbEsc(r.by || '') + '</td>' +
+      '<td style="text-align:center"><button class="btn btn-sm" style="padding:2px 7px;color:var(--red);border-color:#EBD3D0" onclick="mbDelLedger(\'' + phone + '\',\'' + r._k + '\')">✕</button></td>' +
       '</tr>';
   });
   h += '</tbody></table></div>';
-  h += '<div class="row" style="margin-top:14px;gap:8px">' +
-       (mbCan('sellPlan') ? '<button class="btn btn-gold" style="flex:1" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' : '') +
-       '<button class="btn" style="flex:1" onclick="mbClose()">關閉</button></div>';
+  h += '<div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">' +
+       (mbCan('sellPlan') ? '<button class="btn btn-gold" style="flex:1;min-width:130px" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' : '') +
+       '<button class="btn" style="flex:1;min-width:100px" onclick="mbAdjust(\'' + phone + '\')">調整餘額</button>' +
+       '<button class="btn" style="flex:1;min-width:100px" onclick="mbEditInfo(\'' + phone + '\')">編輯資料</button>' +
+       '<button class="btn" style="flex:1;min-width:100px" onclick="mbExtend(\'' + phone + '\')">展延效期</button>' +
+       '<button class="btn" style="flex:1;min-width:80px" onclick="mbClose()">關閉</button></div>';
   h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);text-align:right">' +
        '<button class="btn btn-sm" style="color:var(--red);border-color:#EBD3D0" ' +
        'onclick="mbAskDelete(\'' + phone + '\')">刪除這位會員</button></div>';
@@ -1167,4 +1175,352 @@ function mbImpGo(){
   if (!mbImpBatch) { alert('請先填批次名稱，之後要撤銷或重跑都靠它'); return }
   if (!mbImpRaw.trim()) { alert('請貼上資料'); return }
   mbImpAnalyze();
+}
+/* ══════════════════════════════════════════════════════════
+   會員編輯：改資料、調餘額、展延效期、刪紀錄
+   直接接在 member.js 後面（同一個檔案的尾端），共用 mbList /
+   mbf / mbSum / mbModal / mbNorm / mbEsc / mbNow。
+
+   原則跟原本一樣：餘額不直接覆寫，一律寫 ledger 再重算 cache。
+   手動動的紀錄都帶 manual:true，明細頁上跟系統自動產生的分開顯示。
+   ══════════════════════════════════════════════════════════ */
+
+/* 誰能動：改資料 admin 以上，動錢 owner。沒有 can() 就全開（本機測試用） */
+function mbCanEdit(){ return (typeof can === 'function') ? can('sellPlan') : true }
+function mbCanMoney(){ return (typeof can === 'function') ? (can('owner') || can('sellPlan')) : true }
+function mbWho(){
+  if (typeof ME !== 'undefined' && ME && ME.displayName) return ME.displayName;
+  if (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) return CURRENT_USER;
+  return 'admin';
+}
+function mbStamp(){ return mbNow().replace(/[-:.TZ]/g, '').slice(0, 14) }
+
+/* ══ 1. 編輯基本資料（姓名／備註／電話）════════════════════
+   電話是主鍵，改電話＝把整包資料搬到新的 key，再刪掉舊的。
+   LINE 綁定也要一起搬，不然客人端 LIFF 會查不到自己。 */
+function mbEditInfo(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  if (!mbCanEdit()) { alert('沒有編輯權限'); return }
+
+  var h = '<h3 style="margin:0 0 2px">編輯會員資料</h3>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + m.phone + '</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>姓名</label>' +
+       '<input id="mb-e-name" value="' + mbEsc(m.name || '') + '"></div>';
+  h += '<div class="fg" style="margin-bottom:12px"><label>備註</label>' +
+       '<input id="mb-e-note" value="' + mbEsc(m.note || '') + '"></div>';
+
+  h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">' +
+       '<div class="fg"><label>換手機號碼（客人換號才填，平常留空）</label>' +
+       '<input id="mb-e-phone" inputmode="numeric" placeholder="留空＝不換號" autocomplete="off"></div>' +
+       '<div class="muted" style="font-size:12.5px;margin-top:8px;line-height:1.7">' +
+       '換號會把餘額、消費紀錄、LINE 綁定整包搬到新號碼，舊號碼從名單消失。' +
+       '新號碼不能是別人已經在用的。</div></div>';
+
+  h += '<div id="mb-e-err" style="color:var(--red);font-size:13.5px;margin:12px 0 0"></div>';
+  h += '<div class="row" style="margin-top:14px;gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
+       '<button class="btn btn-gold" style="flex:2" id="mb-e-ok" onclick="mbSaveInfo(\'' + phone + '\')">儲存</button></div>';
+  mbModal(h);
+}
+
+async function mbSaveInfo(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err  = document.getElementById('mb-e-err');
+  var name = (document.getElementById('mb-e-name') || {}).value || '';
+  var note = (document.getElementById('mb-e-note') || {}).value || '';
+  var np   = mbNorm((document.getElementById('mb-e-phone') || {}).value || '');
+  name = name.trim(); note = note.trim();
+
+  if (np){
+    if (np.length < 8) { err.textContent = '新手機號碼看起來不完整。'; return }
+    if (np === phone)  { err.textContent = '新號碼跟原本一樣，不用換。'; return }
+    if (mbList.some(function(x){ return x.phone === np })){
+      var o = mbList.find(function(x){ return x.phone === np });
+      err.textContent = '這支號碼已經是會員了：' + (o.name || '未填姓名') + '，請先確認是不是同一個人。';
+      return;
+    }
+    if (!confirm('確定把 ' + phone + ' 換成 ' + np + ' 嗎？\n\n' +
+                 '餘額、' + Object.keys(m.ledger || {}).length + ' 筆消費紀錄和 LINE 綁定會一起搬過去，' +
+                 '舊號碼會被刪除。')) return;
+  }
+
+  var btn = document.getElementById('mb-e-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; }
+
+  try {
+    if (!np){
+      await fetch(mbf('/members/' + phone + '/name.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(name) });
+      await fetch(mbf('/members/' + phone + '/note.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(note) });
+      m.name = name; m.note = note;
+    } else {
+      /* 整包搬家：先把原始資料抓下來，改掉 phone，寫到新 key */
+      var full = await (await fetch(mbf('/members/' + phone + '.json'))).json() || {};
+      full.phone = np; full.name = name; full.note = note;
+      full.phoneHistory = (full.phoneHistory || []).concat([
+        { from: phone, to: np, at: mbNow(), by: mbWho() }
+      ]);
+      await fetch(mbf('/members/' + np + '.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(full) });
+
+      /* LINE 綁定改指到新號碼 */
+      try {
+        var idx = await (await fetch(mbf('/lineIndex.json'))).json() || {};
+        for (var uid in idx){
+          if (idx[uid] === phone){
+            await fetch(mbf('/lineIndex/' + uid + '.json'), { method:'PUT',
+              headers:{'Content-Type':'application/json'}, body: JSON.stringify(np) });
+          }
+        }
+      } catch(e){}
+
+      await fetch(mbf('/members/' + phone + '.json'), { method:'DELETE' });
+      m.phone = np; m.name = name; m.note = note;
+      mbOpenPhone = np;
+    }
+  } catch(e){
+    if (err) err.textContent = '儲存失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '儲存' }
+    return;
+  }
+  mbClose();
+  await mbLoad(1);
+  renderMember();
+}
+
+/* ══ 2. 調整餘額 ════════════════════════════════════════
+   跟紙本對不起來、核銷扣錯、匯入有落差都走這裡。
+   寫成獨立一筆 ledger，原因必填，加總自動生效。 */
+var MB_ADJ_TYPES = [
+  { k:'points',   n:'點數',      u:'點' },
+  { k:'sessions', n:'堂數',      u:'堂' },
+  { k:'bonus',    n:'紅利',      u:'點' },
+  { k:'voucher',  n:'表框折價金', u:'元' }
+];
+
+function mbAdjust(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  if (!mbCanMoney()) { alert('沒有調整餘額的權限'); return }
+  var sum = mbSum(m.ledger);
+
+  var h = '<h3 style="margin:0 0 2px">調整餘額</h3>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
+
+  h += '<div class="card" style="margin-bottom:14px"><div class="row" style="gap:20px;flex-wrap:wrap">' +
+    '<div><div class="muted" style="font-size:13.5px">點數</div><div style="font-size:18px">' + sum.points.toLocaleString() + '</div></div>' +
+    '<div><div class="muted" style="font-size:13.5px">堂數</div><div style="font-size:18px">' + sum.sessions + '</div></div>' +
+    '<div><div class="muted" style="font-size:13.5px">紅利</div><div style="font-size:18px">' + sum.bonus + '</div></div>' +
+    '<div><div class="muted" style="font-size:13.5px">折價金</div><div style="font-size:18px">' + sum.voucher.toLocaleString() + '</div></div>' +
+    '</div></div>';
+
+  h += '<div class="form-grid" style="margin-bottom:12px">';
+  h += '<div class="fg"><label>調整哪一種</label><select id="mb-a-type" onchange="mbAdjPreview(\'' + phone + '\')">' +
+       MB_ADJ_TYPES.map(function(t){ return '<option value="' + t.k + '">' + t.n + '</option>' }).join('') +
+       '</select></div>';
+  h += '<div class="fg"><label>怎麼填</label><select id="mb-a-mode" onchange="mbAdjPreview(\'' + phone + '\')">' +
+       '<option value="delta">增減（填 -520 就是扣 520）</option>' +
+       '<option value="target">改成這個數字（系統自動算差額）</option>' +
+       '</select></div>';
+  h += '<div class="fg"><label>數字</label>' +
+       '<input id="mb-a-qty" type="number" step="0.5" placeholder="可填小數與負數" oninput="mbAdjPreview(\'' + phone + '\')"></div>';
+  h += '</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>原因（必填，會留在明細上）</label>' +
+       '<input id="mb-a-why" placeholder="例：與紙本核對，8/5 核銷多扣一堂"></div>';
+
+  h += '<div id="mb-a-prev" class="info-box" style="margin-bottom:12px">填了數字會顯示結果</div>';
+  h += '<div id="mb-a-err" style="color:var(--red);font-size:13.5px;margin-bottom:10px"></div>';
+  h += '<div class="row" style="gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
+       '<button class="btn btn-gold" style="flex:2" id="mb-a-ok" onclick="mbAdjSave(\'' + phone + '\')">確認調整</button></div>';
+  mbModal(h);
+}
+
+function mbAdjCalc(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  var t = (document.getElementById('mb-a-type') || {}).value || 'points';
+  var mode = (document.getElementById('mb-a-mode') || {}).value || 'delta';
+  var raw = (document.getElementById('mb-a-qty') || {}).value;
+  var now = mbSum(m.ledger)[t] || 0;
+  if (raw === '' || raw == null || isNaN(+raw)) return null;
+  var q = +raw;
+  var delta = (mode === 'target') ? (q - now) : q;
+  var info = MB_ADJ_TYPES.filter(function(x){ return x.k === t })[0];
+  return { type:t, unit:info.u, label:info.n, now:now, delta:delta, after:now + delta };
+}
+
+function mbAdjPreview(phone){
+  var box = document.getElementById('mb-a-prev');
+  if (!box) return;
+  var c = mbAdjCalc(phone);
+  if (!c) { box.innerHTML = '填了數字會顯示結果'; return }
+  if (c.delta === 0) { box.innerHTML = '數字沒有變化，不會寫入任何紀錄。'; return }
+  box.innerHTML = c.label + '：<b>' + c.now.toLocaleString() + '</b> → <b style="color:var(--gold2)">' +
+    c.after.toLocaleString() + '</b> ' + c.unit +
+    '<br><span class="muted" style="font-size:13px">這次寫入 ' +
+    (c.delta > 0 ? '+' : '') + c.delta.toLocaleString() + ' ' + c.unit + '</span>' +
+    (c.after < 0 ? '<br><span style="color:var(--gold2);font-size:13px">調整後是負的——如果客人真的用超過了，這樣是對的。</span>' : '');
+}
+
+async function mbAdjSave(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err = document.getElementById('mb-a-err');
+  var c = mbAdjCalc(phone);
+  if (!c) { err.textContent = '請填數字。'; return }
+  if (c.delta === 0) { err.textContent = '數字沒有變化，不用調整。'; return }
+  var why = ((document.getElementById('mb-a-why') || {}).value || '').trim();
+  if (!why) { err.textContent = '請填原因，這筆會留在明細上給之後的人看。'; return }
+
+  /* 金額大的多問一次，避免手滑多打一個零 */
+  var big = (c.type === 'points' || c.type === 'voucher') ? 3000 : 10;
+  if (Math.abs(c.delta) >= big){
+    if (!confirm('這是一筆比較大的調整：\n\n' + c.label + ' ' +
+                 (c.delta > 0 ? '+' : '') + c.delta.toLocaleString() + ' ' + c.unit + '\n' +
+                 c.now.toLocaleString() + ' → ' + c.after.toLocaleString() + '\n\n原因：' + why +
+                 '\n\n確定嗎？')) return;
+  }
+
+  var btn = document.getElementById('mb-a-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '寫入中…'; }
+
+  var key = 'adj_' + mbStamp() + '_' + c.type;
+  var body = { at: mbNow(), by: mbWho(), delta: c.delta, type: c.type,
+               reason: why, manual: true };
+  try {
+    await fetch(mbf('/members/' + phone + '/ledger/' + key + '.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    m.ledger[key] = body;
+    var sum = mbSum(m.ledger);
+    await fetch(mbf('/members/' + phone + '/cache.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(sum) });
+    m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+  } catch(e){
+    if (err) err.textContent = '寫入失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '確認調整' }
+    return;
+  }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
+}
+
+/* ══ 3. 展延效期 ════════════════════════════════════════
+   效期寫在賣方案那筆 ledger 的 expiry 上。展延不覆蓋原本的，
+   另外寫 expiryNew，並把每次展延累加在 extends 裡，看得出延過幾次。 */
+function mbExtend(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  if (!mbCanEdit()) { alert('沒有展延權限'); return }
+
+  var rows = Object.keys(m.ledger || {}).map(function(k){
+    return Object.assign({ _k: k }, m.ledger[k]);
+  }).filter(function(r){ return r.expiry || r.expiryNew });
+  if (!rows.length){ alert('這位會員沒有帶效期的紀錄，不用展延。'); return }
+  rows.sort(function(a, b){ return String(b.at || '') < String(a.at || '') ? -1 : 1 });
+
+  var h = '<h3 style="margin:0 0 2px">展延效期</h3>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>要延哪一筆</label><select id="mb-x-key">';
+  rows.forEach(function(r){
+    var cur = r.expiryNew || r.expiry;
+    var n = (r.extends || []).length;
+    h += '<option value="' + r._k + '">' + mbEsc(r.planName || r.reason || '方案') +
+         '　到期 ' + cur + (n ? '（已延 ' + n + ' 次）' : '') + '</option>';
+  });
+  h += '</select></div>';
+
+  h += '<div class="form-grid" style="margin-bottom:12px">' +
+       '<div class="fg"><label>延長幾個月</label><input id="mb-x-mon" type="number" min="1" step="1" value="3"></div>' +
+       '<div class="fg"><label>或直接指定到期日</label><input id="mb-x-date" type="date" placeholder="填了就以這個為準"></div>' +
+       '</div>';
+  h += '<div class="fg" style="margin-bottom:12px"><label>原因（必填）</label>' +
+       '<input id="mb-x-why" placeholder="例：客人懷孕停課三個月"></div>';
+  h += '<div id="mb-x-err" style="color:var(--red);font-size:13.5px;margin-bottom:10px"></div>';
+  h += '<div class="row" style="gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
+       '<button class="btn btn-gold" style="flex:2" id="mb-x-ok" onclick="mbExtendSave(\'' + phone + '\')">確認展延</button></div>';
+  mbModal(h);
+}
+
+async function mbExtendSave(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err = document.getElementById('mb-x-err');
+  var k   = (document.getElementById('mb-x-key') || {}).value;
+  var mon = +((document.getElementById('mb-x-mon') || {}).value || 0);
+  var fix = (document.getElementById('mb-x-date') || {}).value || '';
+  var why = ((document.getElementById('mb-x-why') || {}).value || '').trim();
+  var r = m.ledger[k];
+  if (!r) { err.textContent = '找不到這筆紀錄。'; return }
+  if (!why) { err.textContent = '請填展延原因。'; return }
+
+  var cur = r.expiryNew || r.expiry;
+  var next;
+  if (fix) next = fix;
+  else {
+    if (!mon || mon < 1) { err.textContent = '請填要延幾個月，或直接指定到期日。'; return }
+    var d = new Date(cur + 'T00:00:00');
+    if (isNaN(d.getTime())) { err.textContent = '原本的到期日格式怪怪的（' + cur + '），請直接指定新日期。'; return }
+    d.setMonth(d.getMonth() + mon);
+    next = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  if (next <= cur){ err.textContent = '新的到期日要比原本的 ' + cur + ' 晚。'; return }
+
+  var log = (r.extends || []).concat([{ from: cur, to: next, at: mbNow(), by: mbWho(), reason: why }]);
+  if (!confirm('確認展延？\n\n' + (r.planName || r.reason || '方案') + '\n' +
+               cur + ' → ' + next + '\n這是第 ' + log.length + ' 次展延\n\n原因：' + why)) return;
+
+  var btn = document.getElementById('mb-x-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '處理中…'; }
+  try {
+    await fetch(mbf('/members/' + phone + '/ledger/' + k + '/expiryNew.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(next) });
+    await fetch(mbf('/members/' + phone + '/ledger/' + k + '/extends.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(log) });
+    r.expiryNew = next; r.extends = log;
+  } catch(e){
+    if (err) err.textContent = '展延失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '確認展延' }
+    return;
+  }
+  mbDetail(phone);
+}
+
+/* ══ 4. 刪掉單筆紀錄 ════════════════════════════════════
+   誤登、重複登記用這個。刪掉之後餘額跟著變，所以要再確認一次。
+   刪除本身也留一筆 log 在 members/{phone}/deletedLog。 */
+async function mbDelLedger(phone, key){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m || !m.ledger[key]) return;
+  if (!mbCanMoney()) { alert('沒有刪除紀錄的權限'); return }
+  var r = m.ledger[key];
+  var TYPE = { points:'點數', sessions:'堂數', bonus:'紅利', voucher:'折價金' };
+  var d = +r.delta || 0;
+  if (!confirm('要刪掉這一筆嗎？\n\n' + (TYPE[r.type] || r.type) + ' ' + (d > 0 ? '+' : '') + d.toLocaleString() +
+               '\n' + (r.reason || '') + '\n' + String(r.at || '').slice(0,16).replace('T',' ') +
+               '\n\n刪掉後餘額會跟著變，這個動作不能復原。')) return;
+  try {
+    var log = await (await fetch(mbf('/members/' + phone + '/deletedLog.json'))).json() || [];
+    log = (Array.isArray(log) ? log : []).concat([
+      { key: key, body: r, deletedAt: mbNow(), deletedBy: mbWho() }
+    ]);
+    await fetch(mbf('/members/' + phone + '/deletedLog.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(log) });
+    await fetch(mbf('/members/' + phone + '/ledger/' + key + '.json'), { method:'DELETE' });
+    delete m.ledger[key];
+    var sum = mbSum(m.ledger);
+    await fetch(mbf('/members/' + phone + '/cache.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(sum) });
+    m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+  } catch(e){ alert('刪除失敗：' + e.message); return }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
 }
