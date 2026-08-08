@@ -16,6 +16,18 @@ var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
 var SLOTS_MANUAL = ["09:30-11:30","10:00-12:00","10:30-12:30",
                     "13:30-15:30","14:00-16:00","14:30-16:30",
                     "15:00-17:00","15:30-17:30","16:00-18:00","16:30-18:30"];
+/* 加開時段歸到哪個表定時段底下。老師是照表定三個時段排的，
+   9:30 進來的人一樣佔用 10:00 那一場的老師，所以人數要算在一起，
+   不然表定剩幾位會算錯，一路加到爆。 */
+var SLOT_BASE = {
+  "09:30-11:30":"10:00-12:00","09:30-12:00":"10:00-12:00",
+  "10:00-12:00":"10:00-12:00","10:30-12:30":"10:00-12:00",
+  "13:30-15:30":"14:00-16:00","14:00-16:00":"14:00-16:00","14:30-16:30":"14:00-16:00",
+  "15:00-17:00":"16:00-18:00","15:30-17:30":"16:00-18:00",
+  "16:00-18:00":"16:00-18:00","16:30-18:30":"16:00-18:00"
+};
+/* 這個時段算在哪一場。對不到就回空字串，歸「其他」 */
+function bkBase(sl){ return SLOT_BASE[String(sl||"").trim()] || "" }
 /* 舊的寫死名單，只在「老師設定」還沒載入時當備援用 */
 var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 /* 老師名單一律讀「老師設定」（旗艦店＝四樓），
@@ -230,7 +242,8 @@ async function bkSetTeachers(dateStr,val){
 function bkSlotInfo(dateStr,slot){
   var cap=bkCapOf(dateStr);
   var rows=bkList.filter(function(b){
-    return b.date===dateStr&&(b.slot===slot||b.slot2===slot)&&
+    return b.date===dateStr&&
+      (bkBase(b.slot)===slot||bkBase(b.slot2)===slot||b.slot===slot||b.slot2===slot)&&
       b.status!=="cancelled"&&b.status!=="expired";
   });
   var used=rows.reduce(function(s,b){ return s+(+b.people||0) },0);
@@ -333,7 +346,9 @@ async function bkRender(){
    (function(){ var ci=0;
     return SLOTS.concat(["其他"]).map(function(sl){
       var g=bkList.filter(function(b){
-        return sl==="其他" ? SLOTS.indexOf(b.slot)<0 : (b.slot===sl||b.slot2===sl) });
+        return sl==="其他"
+          ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0)
+          : (bkBase(b.slot)===sl||bkBase(b.slot2)===sl||b.slot===sl||b.slot2===sl) });
       if(!g.length)return "";
       var cls="bk-slot c"+(ci++%2);
       var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
@@ -415,6 +430,8 @@ function bkCard(b){
     '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
       (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
       depTag+
+      (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
+        ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+'</div>'+
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
@@ -1104,14 +1121,13 @@ async function bkManual(editId){
   function showLeft(){
     var d=document.getElementById("mDate").value.replace(/-/g,"/");
     var sl=slotSel.value, el=document.getElementById("mLeft");
-    if(sl==="其他"||SLOTS.indexOf(sl)<0){
-      el.innerHTML=sl==="其他"?"":'<span class="bk-cap">加開時段，沒有表定上限</span>';
-      return;
-    }
-    var s=bkSlotInfo(d,sl), ppl=+document.getElementById("mPeople").value||1;
+    var base=bkBase(sl);
+    if(!base){ el.innerHTML=""; return }
+    var s=bkSlotInfo(d,base), ppl=+document.getElementById("mPeople").value||1;
     /* 實際人數永遠擺第一位。老師現場可能已自行超收，
        行政若只記得表定數字會再加上去，容易一路加到爆。 */
-    var line='<span class="bk-cnt">目前已預約 <b>'+s.used+'</b> 位</span>';
+    var line=(base!==sl?'<span class="bk-cap">加開時段，算在 '+base+' 這一場</span>':"")+
+      '<span class="bk-cnt">目前已預約 <b>'+s.used+'</b> 位</span>';
     if(s.cap>0){
       line+='<span class="bk-cap">表定上限 '+s.cap+' 位</span>';
       if(s.left<0)        line+='<span class="bk-full">已超過表定 '+Math.abs(s.left)+' 位</span>';
@@ -1216,8 +1232,9 @@ async function bkManual(editId){
     var c=ci===""?null:bkCourses[+ci];
     var amt=+g("mAmt")||0;
     var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
-    if(sl!=="其他"&&SLOTS.indexOf(sl)>=0){
-      var si=bkSlotInfo(d,sl);
+    var sBase=bkBase(sl);
+    if(sBase){
+      var si=bkSlotInfo(d,sBase);
       if(si.cap>0&&si.left<ppl&&
          !confirm("這個時段目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))return;
@@ -1355,6 +1372,8 @@ css.textContent=
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
 ".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+/* 加開時段的實際時間。同一區裡混著 9:30 和 10:00 的人，要看得出來 */
+".bk-tag.t{background:#EEF3FB;color:#3A5A96;font-variant-numeric:tabular-nums}"+
 ".bk-mgrp{margin-bottom:11px}"+
 ".bk-mgh{font-size:12.5px;font-weight:600;color:var(--bkInk);margin-bottom:6px;"+
   "display:flex;align-items:baseline;gap:7px}"+
