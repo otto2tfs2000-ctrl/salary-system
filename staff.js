@@ -19,7 +19,7 @@ var STAFF_TABS = [
   { k:"daily",       n:"每日填寫" },
   { k:"member",      n:"會員" },
   { k:"monthly",     n:"月報總覽" },
-  { k:"finance",     n:"業績與現金流" },
+  { k:"finance",     n:"報表" },
   { k:"consumables", n:"耗材記帳" },
   { k:"inventory",   n:"庫存盤點" },
   { k:"recipe",      n:"課程用料" },
