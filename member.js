@@ -898,37 +898,67 @@ var mbImpBatch = '', mbImpRaw = '', mbImpType = 'sessions', mbImpRows = null, mb
    轉換期資料還不準，預設用校正。 */
 var mbImpMode = 'set';
 
+/* max 是合理上限，超過就當這一行有問題不匯。
+   2026-08-09 加的：夯客那批 52 筆把手機號碼吃成堂數，
+   有這道上限就算解析錯了也寫不進去。 */
 var MB_IMP_TYPES = [
-  { k:'sessions', n:'堂數',      unit:'堂' },
-  { k:'points',   n:'點數',      unit:'點' },
-  { k:'bonus',    n:'紅利',      unit:'點' },
-  { k:'voucher',  n:'表框折價金', unit:'元' }
+  { k:'sessions', n:'堂數',      unit:'堂', max:2000 },
+  { k:'points',   n:'點數',      unit:'點', max:100000 },
+  { k:'bonus',    n:'紅利',      unit:'點', max:100000 },
+  { k:'voucher',  n:'表框折價金', unit:'元', max:500000 }
 ];
+function mbImpMax(){
+  var t = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
+  return (t && t.max) || 100000;
+}
 function mbImpUnit(){
   var t = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
   return t ? t.unit : '';
 }
 
-/* 一行一筆：電話 逗號或 Tab 或空白 數量。姓名那一欄有也沒關係，會忽略。 */
+/* 一行一筆：電話 逗號或 Tab 或空白 數量。姓名那一欄有也沒關係，會忽略。
+   欄位順序不拘，電話在第一欄或最後一欄都讀得出來。
+
+   ── 2026-08-09 修掉的坑 ──
+   舊版找數量的做法是「從最後一欄往回找第一個純數字」，
+   但沒有把已經認定成電話的那一欄排除掉。
+   手機號碼本身就是一串純數字，只要電話落在最右邊的數字欄，
+   迴圈就會撞上它，parseFloat('0987687039') 變成 987687039，
+   整批堂數就全部變成手機號碼（夯客堂數20260808 那 52 筆）。
+
+   現在兩道防線：
+   ① 找數量時跳過電話那一欄，也跳過任何數字滿 8 位的欄位
+   ② 數量超過該類型的合理上限就整行不收，列進紅色區塊
+   解析錯了寧可不匯，也不要默默寫進去。 */
 function mbImpParse(raw){
   var out = [];
+  var lim = mbImpMax();
   String(raw || '').split(/\r?\n/).forEach(function(line, i){
     var t = line.trim();
     if (!t) return;
     var cells = t.split(/[\t,，]|\s{2,}/).map(function(c){ return c.trim() }).filter(function(c){ return c !== '' });
     if (cells.length < 2) cells = t.split(/\s+/);
     if (cells.length < 2) { out.push({ line:i+1, raw:t, err:'這行只有一個欄位' }); return }
-    /* 電話取第一個看起來像號碼的欄位，數量取最後一個純數字 */
-    var phone = '', qty = null;
-    cells.forEach(function(c){
-      var d = c.replace(/\D/g, '');
-      if (!phone && d.length >= 8) phone = mbNorm(c);
-    });
+
+    /* 電話：第一個數字滿 8 位的欄位。記住它的位置，等一下要跳過 */
+    var phone = '', phoneIdx = -1;
+    for (var p = 0; p < cells.length; p++){
+      if (cells[p].replace(/\D/g, '').length >= 8){ phone = mbNorm(cells[p]); phoneIdx = p; break }
+    }
+    /* 數量：從最後一欄往回找純數字，但電話那一欄不算，
+       其他滿 8 位數的欄位也不算（那多半是另一支電話或身分證號） */
+    var qty = null;
     for (var j = cells.length - 1; j >= 0; j--){
+      if (j === phoneIdx) continue;
+      if (cells[j].replace(/\D/g, '').length >= 8) continue;
       if (/^-?\d+(\.\d+)?$/.test(cells[j])) { qty = parseFloat(cells[j]); break }
     }
     if (!phone) { out.push({ line:i+1, raw:t, err:'看不出電話' }); return }
-    if (qty == null) { out.push({ line:i+1, raw:t, err:'看不出數量' }); return }
+    if (qty == null) { out.push({ line:i+1, raw:t, err:'這行除了電話以外沒有數字，看不出數量' }); return }
+    if (Math.abs(qty) > lim) {
+      out.push({ line:i+1, raw:t, err:'數量 ' + qty + ' 超出合理範圍（上限 ' + lim + '），這行不匯。欄位可能對錯了' });
+      return;
+    }
     out.push({ line:i+1, raw:t, phone:phone, qty:qty });
   });
   return out;
@@ -1019,14 +1049,36 @@ async function mbImpRun(){
         '\n\n同一批再貼一次不會重複加，可以放心核對。');
 }
 
-/* 撤銷整批：把這批寫的 ledger 全刪掉再重算餘額 */
+/* 撤銷整批：把這批寫的 ledger 全刪掉再重算餘額
+
+   ── 2026-08-09 修掉的坑 ──
+   舊版直接讀全域變數 mbImpBatch，而那個變數只有在按「檢查資料」
+   時才會從輸入框同步過去。所以填完批次名稱直接按撤銷，
+   等於拿空字串去算 key，永遠說找不到。
+   現在改成跟檢查資料共用 mbImpSync()，先同步再算。 */
 async function mbImpUndo(){
-  if (!mbImpBatch) { alert('請先填批次名稱'); return }
+  mbImpSync();
+  var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0].n;
+  if (!mbImpBatch) { alert('請先填批次名稱，要跟當初匯入時一模一樣'); return }
   var key = mbImpKey(mbImpBatch, mbImpType);
   var hit = mbList.filter(function(m){ return m.ledger && m.ledger[key] });
-  if (!hit.length) { alert('找不到這批的紀錄（批次名稱和類型要跟當初一樣）'); return }
-  if (!confirm('要撤銷「' + mbImpBatch + '」這批的' +
-               MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0].n +
+  if (!hit.length) {
+    /* 找不到通常是類型選錯，不是名稱打錯。順手掃另外三種告訴他 */
+    var other = '';
+    MB_IMP_TYPES.forEach(function(tp){
+      if (tp.k === mbImpType) return;
+      var k2 = mbImpKey(mbImpBatch, tp.k);
+      var n2 = mbList.filter(function(m){ return m.ledger && m.ledger[k2] }).length;
+      if (n2) other += '\n・' + tp.n + '：' + n2 + ' 筆';
+    });
+    alert('在「' + tn + '」底下找不到「' + mbImpBatch + '」這一批。' +
+          (other
+            ? '\n\n但這個批次名稱在別的類型下有紀錄：' + other +
+              '\n\n把上面「要匯入哪一種」切過去，再按一次撤銷。'
+            : '\n\n批次名稱要跟當初匯入時完全一樣，大小寫和數字都算。'));
+    return;
+  }
+  if (!confirm('要撤銷「' + mbImpBatch + '」這批的' + tn +
                '嗎？\n會影響 ' + hit.length + ' 位會員，餘額跟著扣回去。')) return;
   mbImpBusy = true; renderMember();
   var n = 0;
@@ -1093,7 +1145,10 @@ function mbImportHtml(){
        mbEsc(mbImpRaw) + '</textarea></div>';
   h += '<div class="muted" style="font-size:12.5px;margin:6px 0 12px;line-height:1.7">' +
        '中間用逗號、Tab 或空白隔開都可以。有姓名那一欄也沒關係，系統只認電話和數字。' +
-       '電話會自動去掉 +886 和符號。</div>';
+       '電話會自動去掉 +886 和符號，欄位順序不拘。<br>' +
+       '<b>數量不會拿電話來充數</b>：滿 8 位數的欄位一律不當數量用，' +
+       '超出合理範圍（' + tn.n + ' 上限 ' + (tn.max || '—') + '）的整行也不匯，' +
+       '會列在下面的紅色區塊裡讓你看。</div>';
 
   h += '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap">' +
        '<button class="btn btn-gold" onclick="mbImpGo()"' + (mbImpBusy ? ' disabled' : '') + '>檢查資料</button>' +
@@ -1167,15 +1222,22 @@ function mbImportHtml(){
   return h;
 }
 
-function mbImpGo(){
-  var b = document.getElementById('mb-imp-batch');
-  var r = document.getElementById('mb-imp-raw');
-  var t = document.getElementById('mb-imp-type');
-  if (t) mbImpType = t.value;
+/* 把畫面上四個欄位同步到全域變數。
+   檢查資料和撤銷都要先呼叫，不然拿到的是上一次的值（或空的）。
+   欄位不存在時保留原值，不要覆蓋成空字串。 */
+function mbImpSync(){
+  var b  = document.getElementById('mb-imp-batch');
+  var r  = document.getElementById('mb-imp-raw');
+  var t  = document.getElementById('mb-imp-type');
   var md = document.getElementById('mb-imp-mode');
+  if (t)  mbImpType = t.value;
   if (md) mbImpMode = md.value;
-  mbImpBatch = b ? b.value.trim() : '';
-  mbImpRaw   = r ? r.value : '';
+  if (b)  mbImpBatch = b.value.trim();
+  if (r)  mbImpRaw   = r.value;
+}
+
+function mbImpGo(){
+  mbImpSync();
   if (!mbImpBatch) { alert('請先填批次名稱，之後要撤銷或重跑都靠它'); return }
   if (!mbImpRaw.trim()) { alert('請貼上資料'); return }
   mbImpAnalyze();

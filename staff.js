@@ -9,6 +9,17 @@
    授權完成就自動綁定，你不需要知道任何人的 LINE ID。
    ══════════════════════════════════════════════════════════ */
 
+/* ── 2026-08-09 這一版改了什麼 ──
+   讀取全部搬到 Railway：
+   ・員工名單＋未使用的邀請 → POST /staff/list（管理員限定）
+   ・專屬連結的金鑰        → POST /staff/applink（管理員限定）
+
+   為什麼一定要搬：名單裡存著 appKey，那是專屬連結的登入密碼。
+   只要 otto2-2026 開放讀取，任何人撈走名單就能冒充任何一位員工。
+   現在伺服器回名單前會把 appKey 拔掉，前端只看得到 hasKey。
+
+   寫入（新增、編輯、移除、發邀請、作廢邀請）這一輪還是直連資料庫，
+   等 .write 那輪一起搬。所以 STAFF_DB 現在只有寫入在用。 */
 var STAFF_DB  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var STAFF_URL = "https://otto2tfs2000-ctrl.github.io/salary-system/";
 
@@ -44,26 +55,42 @@ var STAFF_ROLES = {
              acts:STAFF_ACTS.map(function(a){ return a.k }) }
 };
 
-var stList = null, stInvites = null, stLoading = false;
+var stList = null, stInvites = null, stLoading = false, stErr = "";
 
 function stEsc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) }
 
+/* ★重要★ 舊版失敗時是 stList = stList || []，也就是讀不到就當成空名單。
+   而空名單會觸發「把我設為管理員」那顆按鈕——資料庫一鎖起來，
+   任何登入的人打開這一頁都會看到那顆按鈕。
+   現在分成三種狀態：讀到了、真的空（bootstrap）、讀失敗（stErr）。
+   讀失敗就明講讀失敗，絕不假裝是空名單。 */
 async function stLoad(force){
   if (stLoading) return;
   if (stList && !force) return;
   stLoading = true;
+  stErr = "";
   try {
-    var a = await (await fetch(STAFF_DB + "/staff.json")).json() || {};
-    stList = Object.keys(a).map(function(uid){
-      return Object.assign({ uid: uid }, a[uid] || {});
-    });
-    var b = await (await fetch(STAFF_DB + "/staffInvites.json")).json() || {};
-    stInvites = Object.keys(b).map(function(t){
-      return Object.assign({ token: t }, b[t] || {});
-    }).filter(function(i){ return !i.used });
-  } catch(e){ stList = stList || []; stInvites = stInvites || []; }
+    var j = await staffApi("/staff/list");
+    stList    = j.staff   || [];
+    stInvites = j.invites || [];
+  } catch(e){
+    /* 名單整個是空的時候沒有人拿得到憑證，這裡本來就會失敗。
+       先問伺服器是不是真的空，是的話才讓第一個人把自己設成管理員。 */
+    var empty = false;
+    try { empty = await authCheckBootstrap() } catch(e2){}
+    if (empty){ stList = []; stInvites = [] }
+    else { stList = null; stInvites = null; stErr = (e && e.message) || "讀不到員工名單" }
+  }
   stLoading = false;
+}
+
+async function stRetry(){
+  stErr = ""; stList = null; stInvites = null;
+  var box = document.getElementById("staff-body");
+  if (box) box.innerHTML = '<div class="empty">載入帳號中…</div>';
+  await stLoad(1);
+  renderStaff();
 }
 
 /* 目前登入者是不是管理員。沒有任何帳號時，先讓第一個人有辦法把自己設進去 */
@@ -77,10 +104,25 @@ function stNobodyYet(){ return !stList || !stList.length }
 async function renderStaff(){
   var el = document.getElementById("staff-body");
   if (!el) return;
-  if (!stList){ el.innerHTML = '<div class="empty">載入帳號中…</div>'; await stLoad(); }
+  if (!stList && !stErr){ el.innerHTML = '<div class="empty">載入帳號中…</div>'; await stLoad(); }
 
   var h = '<div class="card">';
   h += '<div class="card-title">🔑 帳號與權限</div>';
+
+  if (stErr){
+    h += '<div class="info-box" style="border-color:rgba(192,57,43,.3)">' +
+         '<b>讀不到員工名單</b><div style="font-size:13.5px;margin-top:6px">' + stEsc(stErr) + '</div>' +
+         '<div class="muted" style="font-size:12.5px;margin-top:8px;line-height:1.7">' +
+         '常見原因：登入憑證過期、Railway 沒醒、或這個帳號不是管理員。<br>' +
+         '這裡刻意不會退回「名單是空的」那個畫面——讀失敗跟真的沒人是兩回事，' +
+         '混在一起會讓任何人都看到「把我設為管理員」。</div>' +
+         '<div style="margin-top:10px;display:flex;gap:8px">' +
+         '<button class="btn btn-outline btn-sm" onclick="stRetry()">重試</button>' +
+         '<button class="btn btn-outline btn-sm" onclick="authClear()">重新登入</button>' +
+         '</div></div></div>';
+    el.innerHTML = h;
+    return;
+  }
 
   if (stNobodyYet()){
     h += '<div class="info-box">還沒有任何帳號。先把自己設成管理員，之後才能發邀請給其他人。' +
@@ -170,9 +212,13 @@ async function stMakeMeOwner(){
   alert("已設定完成。重新整理後權限就會生效。");
 }
 
+/* ★改動★ 以前是 PUT——整包覆蓋。
+   現在名單是從伺服器拿的，裡面沒有 appKey 這個欄位，
+   PUT 下去會連帶把對方的專屬連結金鑰洗掉，害他下次開 APP 進不來。
+   改成 PATCH，只更新有帶的欄位，沒帶的原封不動。 */
 async function stSave(uid, obj){
   await fetch(STAFF_DB + "/staff/" + uid + ".json", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
+    method: "PATCH", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(obj)
   });
 }
@@ -233,25 +279,22 @@ function stEdit(i){
    這條連結全程不離開本站，在哪個容器開就存在哪個容器，
    所以加到主畫面之後就不用再登入了。
    ══════════════════════════════════════════════════════ */
-function stNewKey(){
-  return Array.prototype.map.call(
-    crypto.getRandomValues(new Uint8Array(12)),
-    function(b){ return ("0" + b.toString(16)).slice(-2) }).join("");
-}
-
+/* ★改動★ 金鑰以前是在瀏覽器產生、直接寫進資料庫，
+   而且整份名單連同金鑰都在前端手上。
+   現在改成跟伺服器要：產生、儲存、回傳都在 Railway，
+   一次只拿得到這一個人的，其他人的金鑰前端看不到。 */
 async function stAppLink(i, regen){
   var s = stList[i]; if (!s) return;
-  var key = regen ? null : s.appKey;
-  if (!key){
-    key = stNewKey();
-    try {
-      await fetch(STAFF_DB + "/staff/" + s.uid + "/appKey.json", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(key)
-      });
-      s.appKey = key;
-    } catch(e){ alert("產生失敗，請檢查網路連線"); return }
+  var key;
+  try {
+    var j = await staffApi("/staff/applink", { uid: s.uid, regen: !!regen });
+    key = j.key;
+  } catch(e){
+    alert("產生失敗：" + ((e && e.message) || "請檢查網路連線"));
+    return;
   }
+  if (!key){ alert("伺服器沒有回傳金鑰，請再試一次"); return }
+  s.hasKey = true;
   var link = STAFF_URL + "?k=" + s.uid + "." + key;
   var h = '<h3 style="margin:0 0 4px">' + stEsc(s.name || "（未命名）") + ' 的 APP 連結</h3>';
   h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' +
@@ -302,7 +345,10 @@ async function stSaveEdit(i){
     active: document.getElementById("st-e-active").checked
   });
   delete obj.uid;
-  /* 不讓自己把自己鎖在外面 */
+  delete obj.hasKey;   /* 這是伺服器加的顯示欄位，不要寫回資料庫 */
+  /* 不讓自己把自己鎖在外面。
+     注意：obj 是從 s 複製的，而 s 已經沒有 appKey 了（伺服器拔掉的），
+     所以這裡用 PATCH 而不是 PUT，才不會把對方的 appKey 洗掉。 */
   if (ME && s.uid === ME.userId && (obj.role !== "owner" || !obj.active)){
     if (!confirm("你正在調降自己的權限。\n儲存後可能就進不了這一頁了，確定嗎？")) return;
   }
