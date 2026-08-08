@@ -38,11 +38,11 @@ var FN_CULTURE = "culture";   /* 文化幣 */
 var FN_NONCASH = ["points","sessions","voucher"];
 
 /* 手動補登可以選的類別。前兩個算販售，後兩個算預收 */
+/* 補登的類別。預收（賣方案）不在這裡——那不是當日營業收入，只進現金流 */
 var FN_CATS = [
-  {k:"course", n:"課程營收",  g:"sell"},
-  {k:"goods",  n:"商品營收",  g:"sell"},
-  {k:"voucher",n:"票券販售",  g:"pre"},
-  {k:"stored", n:"方案販售",  g:"pre"}
+  {k:"course", n:"課程營收"},
+  {k:"goods",  n:"商品營收"},
+  {k:"plan",   n:"賣方案（只進現金流）"}
 ];
 /* 補登的收款方式。多了「不進現金流」給點數扣抵、贈送那種用 */
 var FN_MWAYS = FN_WAYS.concat([
@@ -55,6 +55,7 @@ var fnDate = new Date();
 var fnDed  = null;            /* 全部核銷紀錄 */
 var fnDep  = null;            /* 全部訂金紀錄 */
 var fnMan  = null;            /* 手動補登 */
+var fnOpen = "";              /* 課程排行展開中的那一門 */
 var fnErr  = "";
 
 function fnPad(n){ return String(n).padStart(2,"0") }
@@ -63,6 +64,9 @@ function fnNorm(s){ return String(s||"").replace(/-/g,"/") }
 function fnEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c] }) }
 function fnMoney(n){ return "$"+Math.round(+n||0).toLocaleString() }
+var FN_PAYNAME={points:"點數",sessions:"堂數",cash:"現金",card:"刷卡",
+  linepay:"LINE Pay",transfer:"匯款",culture:"文化幣"};
+function fnWayName(k){ return FN_PAYNAME[k]||k||"—" }
 
 /* 這個日期在不在目前選的範圍內 */
 function fnInRange(dateStr){
@@ -108,42 +112,60 @@ async function fnLoad(force){
   }catch(e){ fnMan=[]; fnErr+="補登紀錄讀取失敗："+e.message }
 }
 
-/* ── 業績 ── */
+/* ── 業績（當日營業扣課收入）──
+   這裡算的是「今天實際上了多少課、值多少錢」，不是收到多少現金。
+
+   ・現金／刷卡／LINE Pay 付的 → 收多少算多少
+   ・點數扣抵 → 扣多少點算多少（1 點 1 元。優惠在賣方案時就給掉了）
+   ・堂數扣抵 → 用那個人買的方案攤下來的單價
+       30 堂 30,000 → 一堂 1,000　　70 堂 60,000 → 一堂約 857
+   ・訂金已收的部分也算在核銷這天。課程 1,600 收訂金 900、當天再收 700，
+     這天的營業收入就是 1,600。
+
+   賣方案的錢不在這裡，那是預收，只出現在現金流。
+   ── */
 function fnSales(){
-  var o={course:0,goods:0,voucher:0,stored:0,
-         planRows:[],courseRows:0};
+  var o={course:0,goods:0,rows:[],est:0};
+  var byCourse={};
   (fnDed||[]).forEach(function(r){
     if(!fnInRange(r.date))return;
-    o.courseRows++;
-    o.course+=(+r.courseAmt||0);
-    /* 加購要拆商品還是課程，看那筆有沒有標成商品。
-       還沒標的一律算課程升級——換大一號畫布是課程的一部分，不是零售。 */
-    (r.addons||[]).forEach(function(a){
-      var amt=+a.amt||0;
-      if(a.goods)o.goods+=amt; else o.course+=amt;
+    /* courseRev 是核銷當下算好的認列金額，舊資料沒有就退回課程費用 */
+    var rev=(r.courseRev!=null)?(+r.courseRev||0):(+r.courseAmt||0);
+    var estimated=(r.coursePay==="sessions"&&!(+r.sessionUnit));
+    if(estimated)o.est++;
+    o.course+=rev;
+    /* 加購都是商品。畫布、公仔這些課程費用之外另計的東西 */
+    (r.addons||[]).forEach(function(a){ o.goods+=(+a.amt||0) });
+
+    var cs=r.courses&&r.courses.length
+      ? r.courses
+      : String(r.items||"").split("、").filter(Boolean).map(function(n){ return {name:n,qty:1} });
+    if(!cs.length)cs=[{name:"（未指定課程）",qty:1}];
+    /* 一張單有兩堂課的話金額平分，不然排行會重複計算 */
+    var share=rev/cs.length;
+    cs.forEach(function(c){
+      var k=c.name||"（未指定課程）";
+      if(!byCourse[k])byCourse[k]={name:k,amt:0,times:0,people:0,specs:{},logs:[]};
+      var g=byCourse[k];
+      g.amt+=share; g.times++; g.people+=(+c.qty||1);
+      var sp=c.spec||"—";
+      g.specs[sp]=(g.specs[sp]||0)+1;
+      g.logs.push({date:r.date,name:r.customer||"",amt:Math.round(share),
+        pay:r.coursePay||"",spec:c.spec||"",teacher:r.teacher||""});
     });
   });
-  /* 方案：堂數包算票券，純點數算儲值金。
-     金額一律記實付價，贈點不加進來（那是行銷成本，不是收入）。 */
-  var ps=(typeof S!=="undefined"&&S&&S.planSales)?S.planSales:{};
-  Object.keys(ps||{}).forEach(function(d){
-    if(!fnInRange(d))return;
-    (ps[d]||[]).forEach(function(x){
-      var price=+x.price||0;
-      if(+x.sessions>0)o.voucher+=price; else o.stored+=price;
-      o.planRows.push({date:d,name:x.name||x.phone||"",plan:x.plan||"",
-        price:price,pay:x.pay||"",kind:(+x.sessions>0)?"票券":"儲值金"});
-    });
-  });
-  /* 手動補登：夯客時期的舊帳、純賣材料那種沒有預約單的收入 */
+  o.rows=Object.keys(byCourse).map(function(k){ return byCourse[k] })
+    .sort(function(a,b){ return b.amt-a.amt });
+  /* 手動補登也算進來 */
   (fnMan||[]).forEach(function(r){
     if(!fnInRange(r.date))return;
     var amt=+r.amount||0; if(!amt)return;
-    if(o[r.cat]!=null)o[r.cat]+=amt;
+    if(r.cat==="course")o.course+=amt;
+    else if(r.cat==="goods")o.goods+=amt;
+    /* cat==="plan" 是賣方案，屬於預收，不算當日營業收入 */
   });
-  o.sellSub=o.course+o.goods;
-  o.preSub =o.voucher+o.stored;
-  o.manual =(fnMan||[]).filter(function(r){ return fnInRange(r.date) });
+  o.total=o.course+o.goods;
+  o.manual=(fnMan||[]).filter(function(r){ return fnInRange(r.date) });
   return o;
 }
 
@@ -283,13 +305,6 @@ async function fnManDel(id){
 function fnBar(pct,cls){
   return '<div class="fn-bar"><i class="'+cls+'" style="width:'+Math.max(0,Math.min(100,pct))+'%"></i></div>';
 }
-function fnRow(label,amt,base,cls){
-  var pct=base?(amt/base*100):0;
-  return '<div class="fn-row"><div class="fn-rl">'+fnEsc(label)+'</div>'+
-    '<div class="fn-rb">'+fnBar(pct,cls)+'</div>'+
-    '<div class="fn-rp">'+(base?pct.toFixed(1)+"%":"—")+'</div>'+
-    '<div class="fn-ra">'+fnMoney(amt)+'</div></div>';
-}
 
 function fnRender(){
   var root=document.getElementById("fnRoot"); if(!root)return;
@@ -298,7 +313,6 @@ function fnRender(){
     fnLoad().then(fnRender); return;
   }
   var s=fnSales(), c=fnCash();
-  var sellBase=s.sellSub||1, preBase=s.preSub||1;
   var h="";
 
   h+='<div class="fn-head">'+
@@ -315,29 +329,56 @@ function fnRender(){
   if(fnErr)h+='<div class="fn-warn">'+fnEsc(fnErr)+'</div>';
 
   /* ── 業績 ── */
-  h+='<div class="fn-sec"><div class="fn-st">業績'+
-     '<span>含預收，不等於實際入帳</span></div>';
+  h+='<div class="fn-sec"><div class="fn-st">營業收入'+
+     '<span>'+(fnMode==="day"?"這天":"這個月")+'實際上課與販售的金額，不是收到的現金</span></div>';
+  h+='<div class="fn-total"><span>營業收入</span><b>'+fnMoney(s.total)+'</b></div>';
   h+='<div class="fn-grid">'+
-     '<div class="fn-kpi"><span>販售小計</span><b>'+fnMoney(s.sellSub)+'</b>'+
-       '<i>當下就認列的營收</i></div>'+
-     '<div class="fn-kpi"><span>預收小計</span><b>'+fnMoney(s.preSub)+'</b>'+
-       '<i>收了錢，課還沒上</i></div></div>';
+     '<div class="fn-kpi"><span>課程營收</span><b>'+fnMoney(s.course)+'</b>'+
+       '<i>核銷扣課，含點數與堂數折算</i></div>'+
+     '<div class="fn-kpi"><span>商品營收</span><b>'+fnMoney(s.goods)+'</b>'+
+       '<i>畫布、公仔等加購</i></div></div>';
+  if(s.est)
+    h+='<div class="fn-warn">有 '+s.est+' 筆堂數扣課查不到方案單價，先用課程費用認列。'+
+       '那幾位多半是舊資料匯進來的，沒有購買紀錄可以回推。</div>';
 
-  h+='<div class="fn-block"><div class="fn-bt">販售</div>'+
-     fnRow("課程營收",s.course,sellBase,"c1")+
-     fnRow("商品營收",s.goods,sellBase,"c2")+
-     '<div class="fn-sub"><span>販售小計</span><b>'+fnMoney(s.sellSub)+'</b></div></div>';
-
-  h+='<div class="fn-block"><div class="fn-bt">預收</div>'+
-     fnRow("票券販售（堂數方案）",s.voucher,preBase,"c3")+
-     fnRow("方案販售（點數方案）",s.stored,preBase,"c4")+
-     '<div class="fn-sub"><span>預收小計</span><b>'+fnMoney(s.preSub)+'</b></div></div>';
-
-  h+='<div class="fn-foot">夯客口徑合計 '+fnMoney(s.sellSub+s.preSub)+
-     '　·　這個數字會重複計算（賣方案算一次，之後扣點上課再算一次），只供比對舊資料</div>';
-  if(!s.goods)h+='<div class="fn-hint">商品營收目前是 0：加購項目還沒有「算商品」的標記，'+
-     '全部歸在課程營收。標記功能做好之後這裡才會分開。</div>';
-  h+='</div>';
+  /* ── 課程排行 ── */
+  h+='<div class="fn-block"><div class="fn-bt">課程排行'+
+     '<span style="color:var(--fnMute)">點課名看明細</span></div>';
+  if(!s.rows.length)h+='<div class="fn-none">這個範圍還沒有核銷紀錄</div>';
+  else{
+    var base=s.rows[0].amt||1;
+    s.rows.forEach(function(g,i){
+      var open=fnOpen===g.name;
+      h+='<div class="fn-crow'+(open?" on":"")+'" data-c="'+fnEsc(g.name)+'">'+
+         '<span class="i">'+(i+1)+'</span>'+
+         '<span class="n">'+fnEsc(g.name)+'</span>'+
+         '<span class="b">'+fnBar(g.amt/base*100,"c1")+'</span>'+
+         '<span class="t">'+g.times+' 堂・'+g.people+' 人</span>'+
+         '<span class="a">'+fnMoney(g.amt)+'</span></div>';
+      if(open){
+        h+='<div class="fn-cdet">';
+        var sp=Object.keys(g.specs);
+        if(sp.length>1||(sp.length===1&&sp[0]!=="—"))
+          h+='<div class="fn-cspec">規格：'+sp.map(function(k){
+            return fnEsc(k)+' ×'+g.specs[k] }).join('　')+'</div>';
+        h+='<table class="fn-ct"><thead><tr><th>日期</th><th>客人</th><th>付款</th>'+
+           '<th>老師</th><th style="text-align:right">金額</th></tr></thead><tbody>';
+        g.logs.slice().sort(function(x,y){ return x.date<y.date?-1:1 }).forEach(function(l){
+          h+='<tr><td>'+fnEsc(String(l.date).slice(5))+'</td>'+
+             '<td>'+fnEsc(l.name||"—")+'</td>'+
+             '<td>'+fnEsc(fnWayName(l.pay))+'</td>'+
+             '<td>'+fnEsc(l.teacher||"—")+'</td>'+
+             '<td style="text-align:right">'+fnMoney(l.amt)+'</td></tr>';
+        });
+        h+='</tbody></table></div>';
+      }
+    });
+    var tt=s.rows.reduce(function(a2,g){ return a2+g.times },0);
+    var pp=s.rows.reduce(function(a2,g){ return a2+g.people },0);
+    h+='<div class="fn-sub"><span>合計 '+tt+' 堂・'+pp+' 人</span><b>'+
+       fnMoney(s.rows.reduce(function(a2,g){ return a2+g.amt },0))+'</b></div>';
+  }
+  h+='</div></div>';
 
   /* ── 現金流 ── */
   h+='<div class="fn-sec"><div class="fn-st">現金流'+
@@ -371,6 +412,8 @@ function fnRender(){
   h+=fnManBox(s.manual||[]);
 
   root.innerHTML=h;
+  root.querySelectorAll("[data-c]").forEach(function(el){
+    el.onclick=function(){ fnOpen=(fnOpen===el.dataset.c)?"":el.dataset.c; fnRender() } });
   var md=document.getElementById("fnMDate");
   if(md)md.value=(fnMode==="day"?fnDs(fnDate):fnDs(new Date())).replace(/\//g,"-");
   var ma=document.getElementById("fnMAdd");
@@ -451,6 +494,22 @@ window.renderFinance=fnRender;
   ".fn-note{font-size:11.5px;color:var(--fnMute);margin-top:8px;line-height:1.6}"+
   ".fn-warn{background:#FDF4E3;color:#8A6400;font-size:12.5px;padding:11px 13px;"+
     "border-radius:10px;margin-bottom:12px;line-height:1.7}"+
+  ".fn-crow{display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;"+
+    "border-bottom:1px solid #F4F5F8}"+
+  ".fn-crow:hover{background:#FAFBFC}"+
+  ".fn-crow.on{background:#F7F9FC}"+
+  ".fn-crow .i{flex:0 0 20px;font-size:12px;color:var(--fnMute);text-align:center}"+
+  ".fn-crow .n{flex:0 0 190px;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+  ".fn-crow .b{flex:1;min-width:50px}"+
+  ".fn-crow .t{flex:0 0 92px;text-align:right;font-size:12px;color:var(--fnMute)}"+
+  ".fn-crow .a{flex:0 0 92px;text-align:right;font-size:14px;font-weight:600;"+
+    "font-variant-numeric:tabular-nums}"+
+  ".fn-cdet{background:#F7F9FC;border-radius:10px;padding:12px 14px;margin:2px 0 10px}"+
+  ".fn-cspec{font-size:12.5px;color:var(--fnMute);margin-bottom:9px}"+
+  ".fn-ct{width:100%;border-collapse:collapse;font-size:12.5px}"+
+  ".fn-ct th{text-align:left;color:var(--fnMute);font-weight:400;padding:4px 6px;"+
+    "border-bottom:1px solid #E6E9EF}"+
+  ".fn-ct td{padding:5px 6px;border-bottom:1px solid #EDF0F4}"+
   ".fn-mf{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;"+
     "align-items:end;margin-bottom:4px}"+
   ".fn-mi.wide{grid-column:span 2}"+
@@ -475,6 +534,8 @@ window.renderFinance=fnRender;
   "@media(max-width:640px){.fn-rl{min-width:104px;font-size:12.5px}"+
     ".fn-ra{flex-basis:80px;font-size:13px}.fn-rp{flex-basis:44px}"+
     ".fn-nav b{min-width:110px;font-size:14px}"+
+    ".fn-crow .n{flex-basis:110px;font-size:12.5px}.fn-crow .b{display:none}"+
+    ".fn-crow .t{flex-basis:72px;font-size:11.5px}.fn-crow .a{flex-basis:78px;font-size:13px}"+
     ".fn-mf{grid-template-columns:1fr 1fr}.fn-mi.wide{grid-column:span 2}"+
     ".fn-mrow{flex-wrap:wrap;gap:6px 10px}.fn-mrow .n{flex:1 0 100%;order:9}}";
   var st=document.createElement("style");

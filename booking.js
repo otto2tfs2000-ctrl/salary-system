@@ -298,6 +298,24 @@ function bkSearch(q){
   return bkMembers.filter(function(m){
     return (d.length>=3&&m.phone.indexOf(d)>=0)||(m.name&&m.name.indexOf(s)>=0) }).slice(0,8);
 }
+/* 一堂課值多少錢。堂數方案的單價各不相同——
+   30 堂 30,000 是一堂 1,000、70 堂 60,000 是一堂約 857，
+   所以要看這位客人當初買的是哪一個方案，用買的金額除以堂數。
+   回傳 null 代表算不出來（舊資料匯入的沒有購買紀錄）。 */
+function bkSessionUnit(m){
+  var l=(m&&m.ledger)||{}, best=null;
+  Object.keys(l).forEach(function(k){
+    var r=l[k];
+    if(!r||r.type!=="sessions")return;
+    var d=+r.delta||0, p=+r.price||0;
+    if(d<=0||p<=0)return;                    /* 消耗掉的那些是負的，跳過 */
+    if(!best||String(r.at||"")>String(best.at||""))best=r;
+  });
+  if(!best)return null;
+  return {unit:Math.round((+best.price)/(+best.delta)),
+          plan:best.planName||"",qty:+best.delta,price:+best.price};
+}
+
 async function bkMember(phone){
   if(!phone)return null;
   var m=await jget(bkf("/members/"+phone+".json"));
@@ -835,7 +853,15 @@ async function bkCheckout(id){
         if(left<0)h+='<div class="bk-err">點數不足，還差 '+Math.abs(left).toLocaleString()+' 點</div>'; }
       if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)-1;
         h+="扣堂數 <b>1</b>，剩 <b>"+l2+"</b><br>";
-        if(l2<0)h+='<div class="bk-err">堂數不足</div>'; }
+        if(l2<0)h+='<div class="bk-err">堂數不足</div>';
+        /* 堂數方案的一堂值多少，跟課程標價不一樣。
+           業績要認列的是方案攤下來的單價，不是牌價。 */
+        var su=bkSessionUnit(payer);
+        h+=su
+          ?("這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（"+
+             esc(su.plan||"堂數方案")+"　"+su.qty+" 堂 $"+su.price.toLocaleString()+"）<br>")
+          :('<div class="bk-warn">查不到這位客人的堂數方案，'+
+            '業績先用課程費用 $'+course.amt.toLocaleString()+' 認列。</div>'); }
       h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+course.amt.toLocaleString()+" ÷ 500，加價不計）";
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
@@ -929,6 +955,10 @@ async function bkCheckout(id){
       var proxy=payer&&b.memberPhone&&payer.phone!==b.memberPhone;
       var tail=proxy?"（代 "+(b.customer&&b.customer.name||"")+" 扣課）":"";
       var useSe=(course.way==="sessions"?1:0), bonus=bonusOf(course.amt);
+      /* 課程實際認列的營收。堂數扣抵要用方案單價，其餘就是收的金額。
+         算好存起來，之後報表不用重算，客人再買新方案也不會回頭改到舊帳。 */
+      var sUnit=useSe?bkSessionUnit(payer):null;
+      var courseRev=(useSe&&sUnit)?(sUnit.unit*useSe):course.amt;
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
@@ -956,6 +986,10 @@ async function bkCheckout(id){
         addons:addons,addonTotal:addTotal,addonText:addonTxt,
         total:total,byWay:byWay,bonus:bonus,
         depositAmt:depAmt,depositWay:depWay,due:due,
+        courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
+        /* 課程排行要按課名分組，所以拆成陣列存，不要只存一串文字 */
+        courses:(b.items||[]).map(function(i){
+          return {name:i.name||"",spec:i.spec||"",qty:+i.qty||1} }),
         items:(b.items||[]).map(function(i){return i.name}).join("、"),
         bookingId:id,at:now,voided:false};
       var logId="";
@@ -971,6 +1005,7 @@ async function bkCheckout(id){
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
           depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
+          courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
           adults:nAdult,kids:nKid,
           teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
