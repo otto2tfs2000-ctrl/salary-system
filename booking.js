@@ -13,8 +13,9 @@ var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
 /* 手動登記可以選的時段比表定多。SLOTS 拿來算表定容量，不能亂加，
    所以額外開一份給下拉選單用。半點開始的那幾個是現場常見的加開。 */
-var SLOTS_MANUAL = ["09:30-12:00","10:00-12:00","13:30-16:00",
-                    "14:00-16:00","15:30-18:00","16:00-18:00"];
+var SLOTS_MANUAL = ["09:30-11:30","10:00-12:00","10:30-12:30",
+                    "13:30-15:30","14:00-16:00","14:30-16:30",
+                    "15:00-17:00","15:30-17:30","16:00-18:00","16:30-18:30"];
 /* 舊的寫死名單，只在「老師設定」還沒載入時當備援用 */
 var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 /* 老師名單一律讀「老師設定」（旗艦店＝四樓），
@@ -40,6 +41,12 @@ var PAYWAYS  = [
   {k:"culture", n:"文化幣",   member:false}
 ];
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
+/* 會員以電話為主鍵，+886 開頭要轉回 0 才找得到 */
+function mbPhone(p){
+  var d=String(p==null?"":p).replace(/\D/g,"");
+  if(d.indexOf("886")===0)d="0"+d.slice(3);
+  return d;
+}
 /* ── 訂金 ──────────────────────────────────────────────
    客人在 LIFF 預約時就選好方式了，金額固定 900，
    所以行政只要按一顆「已收」，不用再打一次金額和方式。
@@ -1036,10 +1043,14 @@ async function bkVoid(id){
 async function bkCancel(id){
   var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
   if(b.checkout&&!confirm("這筆已經核銷過，取消預約不會自動退還點數。\n請先用「修正核銷」處理餘額。仍要取消嗎？"))return;
-  if(!confirm("確定取消 "+((b.customer&&b.customer.name)||"這筆")+" 的預約？\n名額會立刻釋出，客人會收到 LINE 通知。"))return;
+  var bound=!!(b.line&&b.line.userId);
+  if(!confirm("確定取消 "+((b.customer&&b.customer.name)||"這筆")+" 的預約？\n名額會立刻釋出。"+
+     (bound?"":"\n這位客人沒綁 LINE，不會收到通知。")))return;
   var reason=prompt("取消原因（可留空，會顯示在客人的通知裡）","")||"";
+  /* 現場臨時改時段、行政自己按錯這種，發通知只會讓客人緊張，所以問一句 */
+  var tellHim=bound?confirm("要傳 LINE 通知告訴客人已取消嗎？\n按取消就只釋出名額，不發通知。"):false;
   await bkPatch("/bookings/"+id+".json",{status:"cancelled",cancelledAt:new Date().toISOString(),cancelReason:reason});
-  if(b.line&&b.line.userId)fetch(NOTIFY+"/notify/cancel",{method:"POST",
+  if(bound&&tellHim)fetch(NOTIFY+"/notify/cancel",{method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({},b,{reason:reason||undefined}))}).catch(function(){});
   bkRefresh();
@@ -1152,6 +1163,7 @@ async function bkManual(editId){
 
   /* 會員搜尋 */
   await bkLoadMembers();
+  if(eb)showNotify();
   var findEl=document.getElementById("mFind");
   if(findEl)findEl.oninput=function(){
     picked=null; document.getElementById("mPick").innerHTML="";
@@ -1175,13 +1187,24 @@ async function bkManual(editId){
   };
   async function showNotify(){
     var box=document.getElementById("mNotifyBox");
-    if(!picked){ box.innerHTML=""; pickedUid=null; return }
-    var m=await bkMember(picked.phone);
-    pickedUid=m&&m.lineUserId||null;
-    box.innerHTML = pickedUid
-      ? '<label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333">'+
-        '<input type="checkbox" id="mNotify" checked style="width:16px;height:16px"> 登記後傳 LINE 通知給客人</label>'
-      : '<div class="bk-left">這位會員還沒綁定 LINE，登記後不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
+    var ph=picked?picked.phone:(eb?(eb.memberPhone||(eb.customer&&eb.customer.phone)||""):"");
+    if(!ph){
+      box.innerHTML=eb?'<div class="bk-left">這筆沒有綁定會員，改完不會發通知。</div>':"";
+      pickedUid=null; return;
+    }
+    var m=await bkMember(mbPhone(ph));
+    pickedUid=(m&&m.lineUserId)||(eb&&eb.line&&eb.line.userId)||null;
+    if(!pickedUid){
+      box.innerHTML='<div class="bk-left">這位會員還沒綁定 LINE，'+
+        (eb?"改完":"登記後")+'不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
+      return;
+    }
+    /* 修改預設不勾。客人已經收過一次確認，再收一封一樣格式的容易以為又多訂了一筆，
+       真的改了日期時間才值得通知。 */
+    box.innerHTML='<label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#333">'+
+      '<input type="checkbox" id="mNotify"'+(eb?"":" checked")+' style="width:16px;height:16px"> '+
+      (eb?"儲存後傳 LINE 通知告訴客人改了":"登記後傳 LINE 通知給客人")+'</label>'+
+      (eb?'<div class="bk-left">通知內容跟第一次預約的確認訊息一樣，會帶新的日期時段。</div>':"");
   }
 
   document.getElementById("mOK").onclick=async function(){
@@ -1223,7 +1246,7 @@ async function bkManual(editId){
       }else
       await fetch(bkf("/bookings.json"),{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
-      if(!eb&&pickedUid&&wantNotify&&wantNotify.checked){
+      if(pickedUid&&wantNotify&&wantNotify.checked){
         fetch(NOTIFY+"/notify/booking",{method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(Object.assign({},rec,{

@@ -184,8 +184,9 @@ async function renderMember(){
   h += '<div class="store-tabs" style="margin-bottom:14px">' +
        '<button class="store-btn' + (mbTab === 'members' ? ' active' : '') + '" onclick="mbSwitch(\'members\')">會員查詢</button>' +
        '<button class="store-btn' + (mbTab === 'plans' ? ' active' : '') + '" onclick="mbSwitch(\'plans\')">方案設定</button>' +
+       (mbCan('sellPlan') ? '<button class="store-btn' + (mbTab === 'import' ? ' active' : '') + '" onclick="mbSwitch(\'import\')">批次匯入</button>' : '') +
        '</div>';
-  h += (mbTab === 'plans') ? mbPlansHtml() : mbMembersHtml();
+  h += (mbTab === 'plans') ? mbPlansHtml() : (mbTab === 'import' ? mbImportHtml() : mbMembersHtml());
   el.innerHTML = h;
 
   var sb = document.getElementById('mb-search');
@@ -868,3 +869,262 @@ function mbClose(){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook);
   else hook();
 })();
+
+/* ══════════════════════════════════════════════════════════
+   批次匯入：把舊平台的餘額補進來
+
+   為什麼要防重複：餘額是 ledger 加總算出來的，多寫一筆就永遠多一筆，
+   不會自己修正。同一批資料貼兩次＝餘額變兩倍，而且很難查回去。
+   所以每一筆的 ledger key 都由「批次名稱＋電話＋類型」算出來，
+   同一批同一個人同一種餘額，key 一定一樣，第二次寫就是覆蓋不是新增。
+
+   為什麼先預覽：寫進去容易，退出來很難。預覽會分四類——
+   新增、金額相同（跳過）、金額不同（覆蓋）、找不到會員（不寫）。
+   ══════════════════════════════════════════════════════════ */
+var mbImpBatch = '', mbImpRaw = '', mbImpType = 'sessions', mbImpRows = null, mbImpBusy = false;
+
+var MB_IMP_TYPES = [
+  { k:'sessions', n:'堂數',      unit:'堂' },
+  { k:'points',   n:'點數',      unit:'點' },
+  { k:'bonus',    n:'紅利',      unit:'點' },
+  { k:'voucher',  n:'表框折價金', unit:'元' }
+];
+function mbImpUnit(){
+  var t = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
+  return t ? t.unit : '';
+}
+
+/* 一行一筆：電話 逗號或 Tab 或空白 數量。姓名那一欄有也沒關係，會忽略。 */
+function mbImpParse(raw){
+  var out = [];
+  String(raw || '').split(/\r?\n/).forEach(function(line, i){
+    var t = line.trim();
+    if (!t) return;
+    var cells = t.split(/[\t,，]|\s{2,}/).map(function(c){ return c.trim() }).filter(function(c){ return c !== '' });
+    if (cells.length < 2) cells = t.split(/\s+/);
+    if (cells.length < 2) { out.push({ line:i+1, raw:t, err:'這行只有一個欄位' }); return }
+    /* 電話取第一個看起來像號碼的欄位，數量取最後一個純數字 */
+    var phone = '', qty = null;
+    cells.forEach(function(c){
+      var d = c.replace(/\D/g, '');
+      if (!phone && d.length >= 8) phone = mbNorm(c);
+    });
+    for (var j = cells.length - 1; j >= 0; j--){
+      if (/^-?\d+(\.\d+)?$/.test(cells[j])) { qty = parseFloat(cells[j]); break }
+    }
+    if (!phone) { out.push({ line:i+1, raw:t, err:'看不出電話' }); return }
+    if (qty == null) { out.push({ line:i+1, raw:t, err:'看不出數量' }); return }
+    out.push({ line:i+1, raw:t, phone:phone, qty:qty });
+  });
+  return out;
+}
+
+/* 同一批＋同一人＋同一型別 → 固定同一個 key，重貼只會覆蓋 */
+function mbImpKey(batch, type){
+  var slug = String(batch).replace(/[^0-9A-Za-z\u4e00-\u9fa5]/g, '').slice(0, 24) || 'imp';
+  return 'imp_' + slug + '_' + type;
+}
+
+function mbImpAnalyze(){
+  var rows = mbImpParse(mbImpRaw);
+  var key = mbImpKey(mbImpBatch, mbImpType);
+  var seen = {};
+  rows.forEach(function(r){
+    if (r.err) { r.state = 'bad'; return }
+    if (seen[r.phone]) { r.state = 'dup'; r.err = '同一支電話在這批出現兩次'; return }
+    seen[r.phone] = true;
+    var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+    if (!m) { r.state = 'nomember'; r.err = '名單裡沒有這支電話'; return }
+    r.name = m.name || '';
+    r.now  = mbSum(m.ledger)[mbImpType] || 0;
+    var prev = m.ledger && m.ledger[key];
+    if (prev) {
+      r.prev = +prev.delta || 0;
+      if (r.prev === r.qty) { r.state = 'same'; return }
+      r.state = 'change';
+      return;
+    }
+    r.state = 'new';
+  });
+  mbImpRows = rows;
+  renderMember();
+}
+
+async function mbImpRun(){
+  if (mbImpBusy) return;
+  var rows = (mbImpRows || []).filter(function(r){ return r.state === 'new' || r.state === 'change' });
+  if (!rows.length) { alert('沒有要寫入的資料'); return }
+  var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0].n;
+  if (!confirm('這批「' + mbImpBatch + '」會寫入 ' + rows.length + ' 位會員的' + tn + '。\n' +
+               '已經匯過而且數字一樣的會跳過。\n確定要執行嗎？')) return;
+
+  mbImpBusy = true; renderMember();
+  var key = mbImpKey(mbImpBatch, mbImpType), now = mbNow();
+  var by = (typeof ME !== 'undefined' && ME && ME.displayName) ? ME.displayName : 'admin';
+  var okN = 0, failN = 0, failMsg = '';
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i], m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+    if (!m) continue;
+    try {
+      var body = { at:now, by:by, delta:r.qty, type:mbImpType,
+                   reason:'舊資料匯入・' + mbImpBatch, batch:mbImpBatch, imported:true };
+      await fetch(mbf('/members/' + r.phone + '/ledger/' + key + '.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      m.ledger[key] = body;
+      var sum = mbSum(m.ledger);
+      await fetch(mbf('/members/' + r.phone + '/cache.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify(sum) });
+      m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+      okN++;
+    } catch(e){
+      failN++;
+      if (!failMsg) failMsg = r.phone + '：' + e.message;
+    }
+    if (i % 10 === 9) { var el = document.getElementById('mb-imp-prog');
+      if (el) el.textContent = '寫入中… ' + (i+1) + ' / ' + rows.length; }
+  }
+  mbImpBusy = false;
+  await mbLoad(1);
+  mbImpAnalyze();
+  alert('完成：成功 ' + okN + ' 筆' + (failN ? ('，失敗 ' + failN + ' 筆\n' + failMsg) : '') +
+        '\n\n同一批再貼一次不會重複加，可以放心核對。');
+}
+
+/* 撤銷整批：把這批寫的 ledger 全刪掉再重算餘額 */
+async function mbImpUndo(){
+  if (!mbImpBatch) { alert('請先填批次名稱'); return }
+  var key = mbImpKey(mbImpBatch, mbImpType);
+  var hit = mbList.filter(function(m){ return m.ledger && m.ledger[key] });
+  if (!hit.length) { alert('找不到這批的紀錄（批次名稱和類型要跟當初一樣）'); return }
+  if (!confirm('要撤銷「' + mbImpBatch + '」這批的' +
+               MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0].n +
+               '嗎？\n會影響 ' + hit.length + ' 位會員，餘額跟著扣回去。')) return;
+  mbImpBusy = true; renderMember();
+  var n = 0;
+  for (var i = 0; i < hit.length; i++){
+    var m = hit[i];
+    try {
+      await fetch(mbf('/members/' + m.phone + '/ledger/' + key + '.json'), { method:'DELETE' });
+      delete m.ledger[key];
+      var sum = mbSum(m.ledger);
+      await fetch(mbf('/members/' + m.phone + '/cache.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify(sum) });
+      m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+      n++;
+    } catch(e){}
+  }
+  mbImpBusy = false;
+  await mbLoad(1); mbImpAnalyze();
+  alert('已撤銷 ' + n + ' 筆');
+}
+
+function mbImpSetBatch(v){ mbImpBatch = v.trim() }
+function mbImpSetType(v){ mbImpType = v; mbImpRows = null; renderMember() }
+
+function mbImportHtml(){
+  var h = '';
+  var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
+
+  h += '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">📥 批次匯入餘額</div>';
+  h += '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:14px">' +
+       '把舊平台的堂數、點數補進來。只加餘額，不會動到會員的其他資料。<br>' +
+       '同一個批次名稱貼第二次不會重複加——數字一樣的直接跳過，數字改了才覆蓋。' +
+       '所以核對時可以放心重貼。</div>';
+
+  h += '<div class="form-grid" style="margin-bottom:12px">';
+  h += '<div class="fg"><label>批次名稱</label>' +
+       '<input id="mb-imp-batch" placeholder="例：夯客堂數20260808" value="' + mbEsc(mbImpBatch) + '"></div>';
+  h += '<div class="fg"><label>要匯入哪一種</label><select id="mb-imp-type">' +
+       MB_IMP_TYPES.map(function(t){
+         return '<option value="' + t.k + '"' + (mbImpType === t.k ? ' selected' : '') + '>' + t.n + '</option>' }).join('') +
+       '</select></div>';
+  h += '</div>';
+  h += '<div class="muted" style="font-size:11.5px;margin-bottom:10px;line-height:1.7">' +
+       '批次名稱要能認得出是哪一批，之後要撤銷或重跑都靠它。取過的名字不要重複用在不同資料上。</div>';
+
+  h += '<div class="fg"><label>貼上資料（一行一位：電話、' + tn.n + '）</label>' +
+       '<textarea id="mb-imp-raw" rows="8" placeholder="0912345678,30&#10;0987654321,10&#10;&#10;直接從 Excel 複製兩欄貼上也可以">' +
+       mbEsc(mbImpRaw) + '</textarea></div>';
+  h += '<div class="muted" style="font-size:11.5px;margin:6px 0 12px;line-height:1.7">' +
+       '中間用逗號、Tab 或空白隔開都可以。有姓名那一欄也沒關係，系統只認電話和數字。' +
+       '電話會自動去掉 +886 和符號。</div>';
+
+  h += '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap">' +
+       '<button class="btn btn-gold" onclick="mbImpGo()"' + (mbImpBusy ? ' disabled' : '') + '>檢查資料</button>' +
+       '<button class="btn btn-outline btn-sm" onclick="mbImpUndo()"' + (mbImpBusy ? ' disabled' : '') + '>撤銷這一批</button>' +
+       '</div>';
+  h += '</div>';
+
+  if (mbImpBusy) {
+    h += '<div class="card"><div id="mb-imp-prog" style="font-size:14px">寫入中，請不要關掉這一頁…</div></div>';
+    return h;
+  }
+  if (!mbImpRows) return h;
+
+  var g = { 'new':[], change:[], same:[], nomember:[], bad:[], dup:[] };
+  mbImpRows.forEach(function(r){ (g[r.state] || g.bad).push(r) });
+  var willWrite = g['new'].length + g.change.length;
+
+  h += '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">檢查結果</div>';
+  h += '<div class="stat-grid" style="margin-bottom:14px">';
+  h += '<div class="stat-card"><div class="lbl">會新增</div><div class="val">' + g['new'].length + '</div></div>';
+  h += '<div class="stat-card"><div class="lbl">會覆蓋</div><div class="val">' + g.change.length + '</div></div>';
+  h += '<div class="stat-card"><div class="lbl">跳過（已匯過）</div><div class="val">' + g.same.length + '</div></div>';
+  h += '<div class="stat-card"><div class="lbl">有問題</div><div class="val" style="color:' +
+       ((g.nomember.length + g.bad.length + g.dup.length) ? 'var(--red,#c0392b)' : 'var(--text)') + '">' +
+       (g.nomember.length + g.bad.length + g.dup.length) + '</div></div>';
+  h += '</div>';
+
+  var bad = g.nomember.concat(g.bad, g.dup);
+  if (bad.length) {
+    h += '<div style="background:rgba(192,57,43,.06);border:1px solid rgba(192,57,43,.25);' +
+         'border-radius:10px;padding:12px 14px;margin-bottom:14px">' +
+         '<div style="font-size:13px;font-weight:600;color:var(--red,#c0392b);margin-bottom:8px">' +
+         '這 ' + bad.length + ' 筆不會寫入</div>';
+    bad.slice(0, 40).forEach(function(r){
+      h += '<div style="font-size:12.5px;line-height:1.9">第 ' + r.line + ' 行　' +
+           mbEsc(r.raw.slice(0, 40)) + '　<span class="muted">' + mbEsc(r.err) + '</span></div>';
+    });
+    if (bad.length > 40) h += '<div class="muted" style="font-size:12px">…另外還有 ' + (bad.length - 40) + ' 筆</div>';
+    h += '<div class="muted" style="font-size:11.5px;margin-top:8px;line-height:1.7">' +
+         '找不到電話的，多半是這位客人還沒建檔，或是電話格式不同。' +
+         '可以先到會員查詢建檔，再回來重貼一次。</div>';
+    h += '</div>';
+  }
+
+  if (willWrite) {
+    h += '<table><thead><tr><th>電話</th><th>姓名</th><th style="width:80px">目前' + tn.n + '</th>' +
+         '<th style="width:80px">這批要加</th><th style="width:90px">加完會變</th><th style="width:70px">狀態</th></tr></thead><tbody>';
+    g['new'].concat(g.change).slice(0, 300).forEach(function(r){
+      var after = r.state === 'change' ? (r.now - (r.prev || 0) + r.qty) : (r.now + r.qty);
+      h += '<tr><td>' + mbEsc(r.phone) + '</td><td>' + mbEsc(r.name || '—') + '</td>' +
+           '<td style="text-align:right">' + r.now + '</td>' +
+           '<td style="text-align:right">' + (r.state === 'change' ? (r.prev + ' → ' + r.qty) : ('+' + r.qty)) + '</td>' +
+           '<td style="text-align:right;color:var(--gold2)">' + after + ' ' + tn.unit + '</td>' +
+           '<td>' + (r.state === 'change' ? '<span style="color:var(--gold2)">覆蓋</span>' : '新增') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    if (willWrite > 300) h += '<div class="muted" style="font-size:12px;margin-top:6px">畫面只列前 300 筆，執行時會全部寫入。</div>';
+    h += '<div class="row" style="margin-top:14px">' +
+         '<button class="btn btn-gold" onclick="mbImpRun()">確認寫入 ' + willWrite + ' 筆</button></div>';
+  } else {
+    h += '<div class="muted" style="font-size:13px">沒有需要寫入的資料。' +
+         (g.same.length ? '這批已經匯過了，數字都一樣。' : '') + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function mbImpGo(){
+  var b = document.getElementById('mb-imp-batch');
+  var r = document.getElementById('mb-imp-raw');
+  var t = document.getElementById('mb-imp-type');
+  if (t) mbImpType = t.value;
+  mbImpBatch = b ? b.value.trim() : '';
+  mbImpRaw   = r ? r.value : '';
+  if (!mbImpBatch) { alert('請先填批次名稱，之後要撤銷或重跑都靠它'); return }
+  if (!mbImpRaw.trim()) { alert('請貼上資料'); return }
+  mbImpAnalyze();
+}
