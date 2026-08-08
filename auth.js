@@ -6,10 +6,22 @@
    2. 按「用 LINE 登入」→ 跳到 LINE 授權頁
    3. 授權完 LINE 把人送回來，網址上帶一組一次性的 code
    4. 前端把 code 送去 Railway，Railway 用 Channel secret 換出身分
-   5. 拿到身分就放行，並把結果記在 sessionStorage（關掉分頁就要重登）
+   5. 拿到身分就放行，並把結果記在 localStorage
 
-   目前階段：只認人，還不擋權限。
-   權限勾選與資料庫規則是下一步，做完才會真的擋得住。
+   ── 2026-08-09 這一版改了什麼 ──
+   以前這支檔案會直接從瀏覽器讀 otto2-2026 的員工名單，
+   代表那本資料庫必須開放讀取。而名單裡存著 appKey，
+   那是「主畫面 APP 專屬連結」的登入密碼——
+   任何人撈走名單就能冒充任何一位員工登入。
+
+   現在改成三件事都由 Railway 代勞，瀏覽器碰不到員工名單：
+   ・確認名單是不是空的  → GET  /auth/bootstrap
+   ・專屬連結驗證        → POST /auth/key
+   ・重新讀自己的權限    → POST /staff/me
+
+   另外登入成功時，Railway 會發一張有簽章的憑證（ME.token）。
+   後面所有跟伺服器要資料的動作都靠它證明身分，
+   不再用 LINE userId——那串在畫面上就看得到，本來就不是秘密。
    ══════════════════════════════════════════════════════════ */
 
 var AUTH_CHANNEL_ID = "2010980574";
@@ -17,7 +29,7 @@ var AUTH_API        = "https://otto2-notify-production.up.railway.app";
 var AUTH_REDIRECT   = "https://otto2tfs2000-ctrl.github.io/salary-system/";
 var AUTH_KEY        = "otto2_staff_session";
 
-var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered} */
+var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered, token} */
 
 /* 這個人能不能做某個動作。key：checkout（核銷）、void（作廢）、sellPlan（賣方案）
    名單裡沒有這個人 → 一律不行。名單整個是空的（系統剛裝好）才放行，
@@ -54,17 +66,59 @@ function authClear(){
   location.href = AUTH_REDIRECT;
 }
 
+/* ══ 跟伺服器要資料的共用管道 ══
+   member.js、booking.js 這些檔案都用這個，不要各寫各的。
+   會自動把憑證附上去；憑證過期就跳出重新登入畫面。
+
+   用法：var j = await staffApi("/staff/members", { shallow: true });
+   ════════════════════════════════════════════════════════ */
+async function staffApi(path, body){
+  if (!ME || !ME.token) throw new Error("尚未登入");
+  var payload = Object.assign({ token: ME.token }, body || {});
+  var r = await fetch(AUTH_API + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  var j = null;
+  try { j = await r.json() } catch(e){}
+  if (r.status === 401){
+    /* 憑證過期或被換過 → 清掉，要求重登 */
+    try { localStorage.removeItem(AUTH_KEY) } catch(e){}
+    authShowError("登入已過期", "請重新登入一次。");
+    throw new Error("登入已過期");
+  }
+  if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("伺服器回應異常（" + r.status + "）"));
+  return j;
+}
+
+/* 會員清單。shallow=true 只回電話清單，資料量小很多 */
+async function staffMembers(shallow){
+  var j = await staffApi("/staff/members", { shallow: !!shallow });
+  return j.members || {};
+}
+
 /* 每次開頁面重抓一次自己的權限。
    這樣管理員改完設定，對方重整就生效，不用叫他登出再登入。 */
 async function authRefreshStaff(){
-  if (!ME || !ME.userId) return;
+  if (!ME || !ME.token) return;
   try {
-    var r = await fetch("https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/staff/" +
-      ME.userId + ".json");
+    var r = await fetch(AUTH_API + "/staff/me", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: ME.token })
+    });
+    if (r.status === 401){
+      /* 憑證過期，當作沒登入 */
+      ME = null;
+      try { localStorage.removeItem(AUTH_KEY) } catch(e){}
+      return;
+    }
     if (!r.ok) return;
-    var st = await r.json();
-    ME.staff = st || null;
-    ME.registered = !!(st && st.active !== false);
+    var j = await r.json();
+    if (!j || !j.ok) return;
+    ME.staff = j.staff || null;
+    ME.registered = !!j.registered;
     authStore(ME);
   } catch(e){}
 }
@@ -131,7 +185,7 @@ function authShowError(title, detail){
 }
 
 /* 依權限收掉看不到的分頁。
-   這只是介面，真正擋住是資料庫規則的工作（下一步）。 */
+   這只是介面，真正擋住是資料庫規則的工作。 */
 function authApplyTabs(){
   if (!ME) return;
   var st = ME.staff;
@@ -186,12 +240,13 @@ function authShowNotAllowed(){
   );
 }
 
-/* 名單整個是空的嗎？是的話允許第一個人自己設成管理員 */
+/* 名單整個是空的嗎？是的話允許第一個人自己設成管理員。
+   改由伺服器回答，只回一個是非題，不吐出任何名單內容。 */
 async function authCheckBootstrap(){
   try {
-    var r = await fetch("https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/staff.json?shallow=true");
+    var r = await fetch(AUTH_API + "/auth/bootstrap");
     var j = r.ok ? await r.json() : null;
-    AUTH_BOOTSTRAP = !j || !Object.keys(j).length;
+    AUTH_BOOTSTRAP = !!(j && j.empty);
   } catch(e){ AUTH_BOOTSTRAP = false; }
   return AUTH_BOOTSTRAP;
 }
@@ -216,41 +271,53 @@ async function authGate(){
    這條路全程不離開本站，所以在哪個容器開，就存在哪個容器。
    連結格式： .../salary-system/?k=<LINE userId>.<金鑰>
    金鑰放在 otto2-2026 的 staff/{userId}/appKey
-   ════════════════════════════════════════════════════ */
-var AUTH_STAFF_DB = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 
+   ★改動★ 以前是在這裡自己讀資料庫比對金鑰，等於要求資料庫公開。
+   現在把 uid 和金鑰送去 Railway 比對，瀏覽器讀不到任何人的金鑰。
+   ════════════════════════════════════════════════════ */
 async function authKeyLogin(raw){
   var i = String(raw).indexOf(".");
   if (i < 1){ authShowLogin("這條連結格式不對，跟管理員重新要一次。"); return }
   var uid = raw.slice(0, i), key = raw.slice(i + 1);
   authScreen('<div style="font-size:14px;color:#6b665e">登入中…</div>');
   try {
-    var r  = await fetch(AUTH_STAFF_DB + "/staff/" + encodeURIComponent(uid) + ".json");
-    var st = r.ok ? await r.json() : null;
-    if (!st || !st.appKey || st.appKey !== key || st.active === false){
-      authShowLogin("這條連結已經失效，跟管理員重新要一次。");
+    var r = await fetch(AUTH_API + "/auth/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid: uid, key: key })
+    });
+    var j = null;
+    try { j = await r.json() } catch(e){}
+    if (!j || !j.ok){
+      authShowLogin((j && j.error) || "這條連結已經失效，跟管理員重新要一次。");
       return;
     }
-    ME = { userId: uid, displayName: st.name || "", picture: "", staff: st, registered: true };
-    authStore(ME);
+    ME = j;
+    authStore(j);
     history.replaceState(null, "", AUTH_REDIRECT);   /* 把金鑰從網址上藏掉 */
     await authGate();
   } catch(e){
-    authShowError("連不上資料庫", e.message);
+    authShowError("連不上登入服務", e.message);
   }
 }
 
 async function authInit(){
-  /* 已經登入過就直接放行 */
+  /* 已經登入過就直接放行。
+     注意：舊版存下來的登入紀錄沒有 token 這個欄位，
+     那種一律當作沒登入，請對方重登一次換到新的憑證。 */
   var s = authSaved();
-  if (s && s.userId){
+  if (s && s.userId && s.token){
     ME = s;
     await authRefreshStaff();
+    if (!ME){ authShowLogin("登入已過期，請重新登入。"); return }
     var old = document.getElementById("auth-badge");
     if (old) old.remove();
     if (location.search.indexOf("k=") >= 0) history.replaceState(null, "", AUTH_REDIRECT);
     await authGate();
     return;
+  }
+  if (s && s.userId && !s.token){
+    try { localStorage.removeItem(AUTH_KEY) } catch(e){}
   }
 
   /* 專屬連結（主畫面 APP 走這條，不會跳出去 LINE） */
