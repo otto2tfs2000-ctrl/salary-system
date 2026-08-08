@@ -268,7 +268,8 @@ async function bkLoad(){
 }
 async function bkLoadMembers(){
   if(bkMembers)return;
-  var j=await jget(bkf("/members.json"))||{};
+  /* 改成跟 Railway 要，理由同 member.js（2026-08-09） */
+  var j=await staffMembers(false)||{};
   bkMembers=Object.keys(j).map(function(p){ var m=j[p]||{}; var c=m.cache||{};
     return {phone:p,name:m.name||"",points:+c.points||0,sessions:+c.sessions||0,bonus:+c.bonus||0} });
   bkIndex={};
@@ -277,7 +278,7 @@ async function bkLoadMembers(){
 /* 只抓會員電話清單（shallow），不抓 ledger，畫面用這個判斷是不是會員 */
 async function bkLoadIndex(){
   if(bkIndexReady)return;
-  var j=await jget(bkf("/members.json?shallow=true"))||{};
+  var j=await staffMembers(true)||{};
   Object.keys(j).forEach(function(p){ var k=bkNorm(p); if(k)bkIndex[k]=p });
   bkIndexReady=true;
 }

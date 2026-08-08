@@ -39,7 +39,11 @@ async function mbLoad(force){
   if (mbList && !force) return;
   mbLoading = true;
   try {
-    var j = await (await fetch(mbf('/members.json'))).json() || {};
+    /* 整包會員清單改成跟 Railway 要（2026-08-09）。
+       以前是瀏覽器直接撈 /members.json，等於那本資料庫必須對外公開，
+       一千四百多位客人的姓名電話任何人都拿得到。
+       staffMembers() 在 auth.js，會自動附上登入憑證。 */
+    var j = await staffMembers(false) || {};
     mbList = Object.keys(j).map(function(phone){
       var m = j[phone] || {}, c = m.cache || {};
       return { phone: phone, name: m.name || '', note: m.note || '',
