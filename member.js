@@ -1047,7 +1047,7 @@ function mbImpSetBatch(v){ mbImpBatch = v.trim() }
 function mbImpSetType(v){ mbImpType = v; mbImpRows = null; renderMember() }
 
 function mbImportHtml(){
-  var h = mbNewBatchHtml();
+  var h = mbNewBatchHtml() + mbNoteBatchHtml();
   var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
 
   h += '<div class="card" style="margin-bottom:16px">';
@@ -1661,6 +1661,157 @@ function mbNewBatchHtml(){
            '>確認建立 ' + g.new.length + ' 位</button></div>';
     } else {
       h += '<div class="muted" style="font-size:14.5px;margin-top:12px">沒有要建立的人，這份名單裡的會員都已經在系統裡了。</div>';
+    }
+  }
+  h += '</div>';
+  return h;
+}
+
+/* ══════════════════════════════════════════════════════════
+   批次寫備註
+   堂數在系統裡只是一個數字，看不出是哪張票來的。
+   把舊平台的票券名稱、張數、到期日寫進會員備註，
+   點開客人就看得到「這 17 堂是高階30堂，2027-06-30 到期」。
+
+   備註是純文字欄位，不影響餘額計算。
+   預設「接在後面」，本來就有備註的不會被蓋掉。
+   ══════════════════════════════════════════════════════════ */
+var mbNoteRaw = '', mbNoteRows = null, mbNoteBusy = false, mbNoteMode = 'append';
+
+/* 一行一筆：電話 [Tab] 備註文字。備註裡可以有逗號空白，只用第一個 Tab 切。 */
+function mbNoteParse(raw){
+  var out = [];
+  String(raw || '').split(/\r?\n/).forEach(function(line, i){
+    var t = line.replace(/\s+$/, '');
+    if (!t.trim()) return;
+    var cut = t.indexOf('\t');
+    if (cut < 0) cut = t.search(/\s{2,}/);
+    if (cut < 0) { out.push({ line:i+1, state:'bad', err:'找不到電話跟備註的分隔' }); return }
+    var phone = mbNorm(t.slice(0, cut));
+    var note  = t.slice(cut).trim();
+    if (!phone || phone.length < 8) { out.push({ line:i+1, state:'bad', err:'電話看不出來' }); return }
+    if (!note) { out.push({ line:i+1, state:'bad', err:'備註是空的' }); return }
+    out.push({ line:i+1, phone:phone, note:note });
+  });
+  return out;
+}
+
+function mbNoteAnalyze(){
+  var rows = mbNoteParse(mbNoteRaw), seen = {};
+  rows.forEach(function(r){
+    if (r.state === 'bad') return;
+    if (seen[r.phone]) { r.state = 'dup'; r.err = '這批裡重複出現'; return }
+    seen[r.phone] = true;
+    var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+    if (!m) { r.state = 'nomember'; r.err = '名單裡沒有這支電話'; return }
+    r.name = m.name || '';
+    r.old  = m.note || '';
+    /* 已經寫過同一段就不重複接，重貼幾次結果都一樣 */
+    if (r.old.indexOf(r.note) >= 0) { r.state = 'same'; r.next = r.old; return }
+    r.next = (mbNoteMode === 'replace' || !r.old) ? r.note : (r.old + '　' + r.note);
+    r.state = r.old ? 'change' : 'new';
+  });
+  mbNoteRows = rows;
+  renderMember();
+}
+
+async function mbNoteRun(){
+  if (mbNoteBusy) return;
+  var rows = (mbNoteRows || []).filter(function(r){ return r.state === 'new' || r.state === 'change' });
+  if (!rows.length) { alert('沒有要寫入的備註'); return }
+  var over = rows.filter(function(r){ return r.state === 'change' }).length;
+  if (!confirm('要寫入 ' + rows.length + ' 位會員的備註嗎？\n' +
+               (over ? ('其中 ' + over + ' 位本來就有備註，' +
+                        (mbNoteMode === 'replace' ? '會被整段換掉。\n' : '新的會接在後面。\n')) : '') +
+               '\n備註只是文字，不會影響任何餘額。')) return;
+
+  mbNoteBusy = true; renderMember();
+  var okN = 0, failN = 0, failMsg = '';
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    try {
+      await fetch(mbf('/members/' + r.phone + '/note.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(r.next) });
+      var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+      if (m) m.note = r.next;
+      okN++;
+    } catch(e){
+      failN++;
+      if (!failMsg) failMsg = r.phone + '：' + e.message;
+    }
+    if (i % 10 === 9){
+      var el = document.getElementById('mb-note-prog');
+      if (el) el.textContent = '寫入中… ' + (i+1) + ' / ' + rows.length;
+    }
+  }
+  mbNoteBusy = false;
+  await mbLoad(1);
+  mbNoteAnalyze();
+  alert('完成：成功 ' + okN + ' 位' + (failN ? ('，失敗 ' + failN + ' 位\n' + failMsg) : ''));
+}
+
+function mbNoteGo(){
+  var r = document.getElementById('mb-note-raw');
+  var md = document.getElementById('mb-note-mode');
+  if (md) mbNoteMode = md.value;
+  mbNoteRaw = r ? r.value : '';
+  if (!mbNoteRaw.trim()) { alert('請先貼上資料'); return }
+  mbNoteAnalyze();
+}
+function mbNoteClear(){ mbNoteRaw = ''; mbNoteRows = null; renderMember() }
+
+function mbNoteBatchHtml(){
+  var h = '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">📝 批次寫備註</div>';
+  h += '<div class="muted" style="font-size:13.5px;line-height:1.8;margin-bottom:14px">' +
+       '堂數在系統裡只是一個數字，看不出是哪張票來的。' +
+       '把票券名稱、張數、到期日寫進備註，點開客人就一目瞭然。<br>' +
+       '備註是純文字，<b>不會影響任何餘額</b>。同一段文字重貼不會接兩次。</div>';
+
+  h += '<div class="fg" style="margin-bottom:10px;max-width:280px"><label>本來就有備註的怎麼辦</label>' +
+       '<select id="mb-note-mode" onchange="mbNoteGo()">' +
+       '<option value="append"' + (mbNoteMode === 'append' ? ' selected' : '') + '>接在後面（保留原本的）</option>' +
+       '<option value="replace"' + (mbNoteMode === 'replace' ? ' selected' : '') + '>整段換掉</option>' +
+       '</select></div>';
+
+  h += '<div class="fg" style="margin-bottom:10px"><label>貼上資料（一行一位：電話　備註文字）</label>' +
+       '<textarea id="mb-note-raw" rows="6" style="width:100%;font-family:monospace;font-size:13px" ' +
+       'placeholder="0912345678&#9;夯客票券：高階30堂 28(到期2027-07-22)">' + mbEsc(mbNoteRaw) + '</textarea></div>';
+
+  h += '<div class="row" style="gap:8px;margin-bottom:6px">' +
+       '<button class="btn btn-gold" onclick="mbNoteGo()"' + (mbNoteBusy ? ' disabled' : '') + '>檢查資料</button>' +
+       '<button class="btn btn-outline btn-sm" onclick="mbNoteClear()">清空</button>' +
+       '<span id="mb-note-prog" class="muted" style="font-size:13px;align-self:center"></span></div>';
+
+  if (mbNoteRows){
+    var g = { new:[], change:[], same:[], nomember:[], dup:[], bad:[] };
+    mbNoteRows.forEach(function(r){ (g[r.state] || g.bad).push(r) });
+    var will = g.new.length + g.change.length;
+    h += '<div style="background:var(--bg3);border-radius:9px;padding:11px 13px;font-size:14px;line-height:1.9;margin-top:12px">' +
+         '會寫入 <b style="color:var(--gold2)">' + will + '</b> 位' +
+         (g.change.length ? '（其中 ' + g.change.length + ' 位本來就有備註）' : '') +
+         (g.same.length ? '　已經寫過 <b>' + g.same.length + '</b> 位' : '') +
+         (g.nomember.length ? '　<span style="color:var(--red)">查無此人 ' + g.nomember.length + ' 位</span>' : '') +
+         (g.dup.length ? '　重複 ' + g.dup.length + ' 筆' : '') +
+         (g.bad.length ? '　<span style="color:var(--red)">看不懂 ' + g.bad.length + ' 行</span>' : '') +
+         '</div>';
+
+    if (will){
+      h += '<div style="max-height:34vh;overflow:auto;margin-top:12px"><table><thead><tr>' +
+           '<th style="width:120px">電話</th><th style="width:110px">姓名</th><th>備註會變成</th>' +
+           '</tr></thead><tbody>';
+      g.new.concat(g.change).slice(0, 300).forEach(function(r){
+        h += '<tr><td style="font-family:monospace;font-size:13px">' + r.phone + '</td>' +
+             '<td style="font-size:13.5px">' + (r.name ? mbEsc(r.name) : '<span class="muted">（未填）</span>') + '</td>' +
+             '<td style="font-size:13px;line-height:1.7">' + mbEsc(r.next) + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+      h += '<div class="row" style="margin-top:14px">' +
+           '<button class="btn btn-gold" onclick="mbNoteRun()"' + (mbNoteBusy ? ' disabled' : '') +
+           '>確認寫入 ' + will + ' 位</button></div>';
+    } else {
+      h += '<div class="muted" style="font-size:14.5px;margin-top:12px">沒有要寫入的備註。' +
+           (g.same.length ? '這批已經寫過了。' : '') + '</div>';
     }
   }
   h += '</div>';
