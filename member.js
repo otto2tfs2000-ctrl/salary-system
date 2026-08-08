@@ -882,6 +882,9 @@ function mbClose(){
    新增、金額相同（跳過）、金額不同（覆蓋）、找不到會員（不寫）。
    ══════════════════════════════════════════════════════════ */
 var mbImpBatch = '', mbImpRaw = '', mbImpType = 'sessions', mbImpRows = null, mbImpBusy = false;
+/* set＝以夯客為準，校正成那個數字；add＝在現有餘額上加。
+   轉換期資料還不準，預設用校正。 */
+var mbImpMode = 'set';
 
 var MB_IMP_TYPES = [
   { k:'sessions', n:'堂數',      unit:'堂' },
@@ -938,13 +941,22 @@ function mbImpAnalyze(){
     r.name = m.name || '';
     r.now  = mbSum(m.ledger)[mbImpType] || 0;
     var prev = m.ledger && m.ledger[key];
-    if (prev) {
-      r.prev = +prev.delta || 0;
-      if (r.prev === r.qty) { r.state = 'same'; return }
-      r.state = 'change';
+    r.prev = prev ? (+prev.delta || 0) : null;
+    if (mbImpMode === 'set') {
+      /* 這批以外的紀錄加起來是多少，差額就是這次要補的。
+         算出來的 delta 可能是負的——本來就比夯客多的話要扣回去。 */
+      r.others = r.now - (r.prev || 0);
+      r.delta  = r.qty - r.others;
+      r.after  = r.qty;
+      if (r.prev != null && r.prev === r.delta) { r.state = 'same'; return }
+      if (r.prev == null && r.delta === 0) { r.state = 'same'; return }
+      r.state = (r.prev == null) ? 'new' : 'change';
       return;
     }
-    r.state = 'new';
+    r.delta = r.qty;
+    r.after = (r.now - (r.prev || 0)) + r.qty;
+    if (r.prev != null && r.prev === r.qty) { r.state = 'same'; return }
+    r.state = (r.prev == null) ? 'new' : 'change';
   });
   mbImpRows = rows;
   renderMember();
@@ -955,8 +967,11 @@ async function mbImpRun(){
   var rows = (mbImpRows || []).filter(function(r){ return r.state === 'new' || r.state === 'change' });
   if (!rows.length) { alert('沒有要寫入的資料'); return }
   var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0].n;
-  if (!confirm('這批「' + mbImpBatch + '」會寫入 ' + rows.length + ' 位會員的' + tn + '。\n' +
-               '已經匯過而且數字一樣的會跳過。\n確定要執行嗎？')) return;
+  if (!confirm('這批「' + mbImpBatch + '」會處理 ' + rows.length + ' 位會員的' + tn + '。\n' +
+               (mbImpMode === 'set'
+                 ? '模式：校正——處理完他們的' + tn + '會剛好等於你貼上的數字。\n'
+                 : '模式：累加——在現有餘額上加。\n') +
+               '已經處理過而且結果一樣的會跳過。\n確定要執行嗎？')) return;
 
   mbImpBusy = true; renderMember();
   var key = mbImpKey(mbImpBatch, mbImpType), now = mbNow();
@@ -966,8 +981,10 @@ async function mbImpRun(){
     var r = rows[i], m = mbList.filter(function(x){ return x.phone === r.phone })[0];
     if (!m) continue;
     try {
-      var body = { at:now, by:by, delta:r.qty, type:mbImpType,
-                   reason:'舊資料匯入・' + mbImpBatch, batch:mbImpBatch, imported:true };
+      var body = { at:now, by:by, delta:r.delta, type:mbImpType,
+                   reason:(mbImpMode === 'set' ? '校正為夯客餘額・' : '舊資料匯入・') + mbImpBatch,
+                   batch:mbImpBatch, imported:true,
+                   target:(mbImpMode === 'set' ? r.qty : undefined) };
       await fetch(mbf('/members/' + r.phone + '/ledger/' + key + '.json'), { method:'PUT',
         headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
       m.ledger[key] = body;
@@ -1039,7 +1056,23 @@ function mbImportHtml(){
        MB_IMP_TYPES.map(function(t){
          return '<option value="' + t.k + '"' + (mbImpType === t.k ? ' selected' : '') + '>' + t.n + '</option>' }).join('') +
        '</select></div>';
+  h += '<div class="fg"><label>怎麼算</label><select id="mb-imp-mode">' +
+       '<option value="set"' + (mbImpMode === 'set' ? ' selected' : '') + '>以這份資料為準（校正）</option>' +
+       '<option value="add"' + (mbImpMode === 'add' ? ' selected' : '') + '>在現有餘額上加</option>' +
+       '</select></div>';
   h += '</div>';
+  h += '<div style="background:' + (mbImpMode === 'set' ? 'rgba(201,168,76,.08)' : 'var(--bg3)') +
+       ';border-radius:9px;padding:11px 13px;font-size:12.5px;line-height:1.8;margin-bottom:12px">' +
+       (mbImpMode === 'set'
+         ? '<b>校正模式</b>：匯完之後，每位會員的' + tn.n + '會<b>剛好等於</b>你貼上的數字。' +
+           '系統會自己算出差額補一筆，多的扣回去、少的補上來。' +
+           '重跑幾次結果都一樣，適合現在資料還不準、以夯客為準的階段。<br>' +
+           '<span style="color:var(--red,#c0392b)">要注意</span>：' +
+           '如果有人在新系統賣過方案或核銷扣過' + tn.n + '，那些變動也會被一起抹平。' +
+           '所以校正要趕在當天營業前做，不要做到一半才跑。'
+         : '<b>累加模式</b>：在會員現有的' + tn.n + '上面加。' +
+           '同一個批次名稱重貼不會加兩次，但底下原本就有的紀錄會留著。') +
+       '</div>';
   h += '<div class="muted" style="font-size:11.5px;margin-bottom:10px;line-height:1.7">' +
        '批次名稱要能認得出是哪一批，之後要撤銷或重跑都靠它。取過的名字不要重複用在不同資料上。</div>';
 
@@ -1096,16 +1129,21 @@ function mbImportHtml(){
 
   if (willWrite) {
     h += '<table><thead><tr><th>電話</th><th>姓名</th><th style="width:80px">目前' + tn.n + '</th>' +
-         '<th style="width:80px">這批要加</th><th style="width:90px">加完會變</th><th style="width:70px">狀態</th></tr></thead><tbody>';
+         '<th style="width:90px">' + (mbImpMode === 'set' ? '差額調整' : '這批要加') + '</th>' +
+         '<th style="width:100px">' + (mbImpMode === 'set' ? '校正後' : '加完會變') + '</th></tr></thead><tbody>';
     g['new'].concat(g.change).slice(0, 300).forEach(function(r){
-      var after = r.state === 'change' ? (r.now - (r.prev || 0) + r.qty) : (r.now + r.qty);
+      var d = r.delta, sign = d > 0 ? '+' : '';
       h += '<tr><td>' + mbEsc(r.phone) + '</td><td>' + mbEsc(r.name || '—') + '</td>' +
            '<td style="text-align:right">' + r.now + '</td>' +
-           '<td style="text-align:right">' + (r.state === 'change' ? (r.prev + ' → ' + r.qty) : ('+' + r.qty)) + '</td>' +
-           '<td style="text-align:right;color:var(--gold2)">' + after + ' ' + tn.unit + '</td>' +
-           '<td>' + (r.state === 'change' ? '<span style="color:var(--gold2)">覆蓋</span>' : '新增') + '</td></tr>';
+           '<td style="text-align:right;color:' + (d < 0 ? 'var(--red,#c0392b)' : 'var(--text2)') + '">' +
+             sign + d + '</td>' +
+           '<td style="text-align:right;color:var(--gold2);font-weight:600">' + r.after + ' ' + tn.unit + '</td></tr>';
     });
     h += '</tbody></table>';
+    var minus = g['new'].concat(g.change).filter(function(r){ return r.delta < 0 });
+    if (minus.length) h += '<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">' +
+      '其中 ' + minus.length + ' 位是往下扣的——他們目前的' + tn.n + '比這份資料多。' +
+      '如果那是新系統剛賣出的方案，扣掉就不見了，執行前先確認。</div>';
     if (willWrite > 300) h += '<div class="muted" style="font-size:12px;margin-top:6px">畫面只列前 300 筆，執行時會全部寫入。</div>';
     h += '<div class="row" style="margin-top:14px">' +
          '<button class="btn btn-gold" onclick="mbImpRun()">確認寫入 ' + willWrite + ' 筆</button></div>';
@@ -1122,6 +1160,8 @@ function mbImpGo(){
   var r = document.getElementById('mb-imp-raw');
   var t = document.getElementById('mb-imp-type');
   if (t) mbImpType = t.value;
+  var md = document.getElementById('mb-imp-mode');
+  if (md) mbImpMode = md.value;
   mbImpBatch = b ? b.value.trim() : '';
   mbImpRaw   = r ? r.value : '';
   if (!mbImpBatch) { alert('請先填批次名稱，之後要撤銷或重跑都靠它'); return }
