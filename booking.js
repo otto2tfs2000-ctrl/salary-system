@@ -130,6 +130,14 @@ function bkAddonMats(){
       });
   }catch(e){ return [] }
 }
+/* 品項的售價。沒設定就回 null，核銷那邊維持手動填寫的老行為。 */
+function bkMatPrice(m){
+  if(!m)return null;
+  var v=m.price;
+  if(v==null||v==="")return null;
+  v=+v;
+  return isNaN(v)?null:v;
+}
 function bkMatById(id){
   if(id==null||id==="")return null;
   return bkAddonMats().filter(function(m){ return String(m.id)===String(id) })[0]||null;
@@ -785,6 +793,11 @@ async function bkCheckout(id){
     if(a.materialId&&!(+a.qty>0))a.qty=1;
   });
   var teacher=old?old.teacher:"";
+  /* 加購金額自動帶入：庫存品項上填了售價，選到就把「售價 × 數量」填進金額欄。
+     行政自己動過金額的那一列就不再覆蓋——現場常有整組算便宜、
+     或補差額的狀況，系統算的不該把人手改的蓋掉。
+     修正核銷時載進來的舊加購一律當作手填，金額原封不動。 */
+  addons.forEach(function(a){ if(a&&+a.amt>0)a.amtEdited=true });
   /* 訂金已收就從當日應收扣掉。金額還是記全額（業績），
      只有現金流那邊分成兩天——訂金記收款那天，尾款記核銷這天。 */
   var depAmt=old?(+old.depositAmt||0):bkDepPaid(b);
@@ -903,18 +916,35 @@ async function bkCheckout(id){
           return '<option value="'+p.k+'"'+(a.way===p.k?" selected":"")+
             (p.member&&!payer?" disabled":"")+'>'+p.n+'</option>' }).join("")+'</select>'+
         '<span class="ax" data-i="'+i+'">✕</span>'+
-        (isOther?'<div class="bk-nodeduct">手打品名，不扣庫存</div>':"")+
+        (isOther
+          ? '<div class="bk-nodeduct">手打品名，不扣庫存</div>'
+          : (a.unitPrice!=null
+              ? '<div class="bk-nodeduct">售價 $'+a.unitPrice.toLocaleString()+' × '+(+a.qty||1)+
+                (a.amtEdited?'，金額已手動調整':'')+'</div>'
+              : '<div class="bk-nodeduct">這個品項還沒設售價，到「庫存盤點 → 品項管理」填一次，之後就會自動帶</div>'))+
         '</div>' }).join("");
     document.querySelectorAll("#ckAdd .am").forEach(function(el){ el.onchange=function(){
       var a=addons[+el.dataset.i];
-      if(!el.value){ a.materialId=null; a.qty=0; }
+      if(!el.value){ a.materialId=null; a.qty=0; a.unitPrice=null; }
       else{ var m=bkMatById(el.value);
         a.materialId=m?m.id:el.value; a.name=m?m.name:"";
-        if(!(+a.qty>0))a.qty=1; }
+        if(!(+a.qty>0))a.qty=1;
+        /* 換品項＝重新開始，之前手改的金額不再沿用 */
+        a.unitPrice=bkMatPrice(m); a.amtEdited=false;
+        if(a.unitPrice!=null)a.amt=a.unitPrice*(+a.qty||1); }
       drawAddons(); calc() } });
     document.querySelectorAll("#ckAdd .an").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].name=el.value } });
-    document.querySelectorAll("#ckAdd .aq").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].qty=+el.value||0 } });
-    document.querySelectorAll("#ckAdd .av").forEach(function(el){ el.oninput=function(){ addons[+el.dataset.i].amt=+el.value||0; calc() } });
+    document.querySelectorAll("#ckAdd .aq").forEach(function(el){ el.oninput=function(){
+      var a=addons[+el.dataset.i];
+      a.qty=+el.value||0;
+      if(a.unitPrice!=null&&!a.amtEdited){
+        a.amt=a.unitPrice*a.qty;
+        var av=document.querySelector('#ckAdd .av[data-i="'+el.dataset.i+'"]');
+        if(av)av.value=a.amt||"";
+      }
+      calc() } });
+    document.querySelectorAll("#ckAdd .av").forEach(function(el){ el.oninput=function(){
+      var a=addons[+el.dataset.i]; a.amt=+el.value||0; a.amtEdited=true; calc() } });
     document.querySelectorAll("#ckAdd .aw").forEach(function(el){ el.onchange=function(){ addons[+el.dataset.i].way=el.value; calc() } });
     document.querySelectorAll("#ckAdd .ax").forEach(function(el){ el.onclick=function(){ addons.splice(+el.dataset.i,1); drawAddons(); calc() } });
     var w=document.getElementById("ckAddWarn");

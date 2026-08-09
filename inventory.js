@@ -811,7 +811,8 @@ function addInvItem() {
     var maxOrder = st.items.reduce(function(m, it){ return Math.max(m, getInvItemOrder(it)); }, -1);
     newOrder = maxOrder + 1;
   }
-  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe, cost: cost, order: newOrder });
+  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe,
+                  cost: cost, price: null, order: newOrder });
   save();
   document.getElementById('inv-new-name').value = '';
   document.getElementById('inv-new-safe').value = '';
@@ -885,6 +886,10 @@ function updateInvItemField(id, field, value) {
   if (!item) return;
   if (field === 'safeStock') item[field] = parseFloat(value) || 0;
   else if (field === 'cost') item[field] = value === '' ? 0 : (parseFloat(value) || 0);
+  /* 售價：核銷加購時自動帶入的金額。跟 cost（進價）分成兩欄——
+     一個算毛利，一個是跟客人收的錢，混在一起遲早會拿進價去跟客人收。
+     留空代表沒設定，核銷那邊就維持原本讓行政手填的行為。 */
+  else if (field === 'price') item[field] = value === '' ? null : (parseFloat(value) || 0);
   else if (field === 'estUsage') item[field] = value === '' ? null : (parseFloat(value) || 0);
   else item[field] = value;
   save();
@@ -1011,7 +1016,7 @@ function renderInvItemList() {
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
   var sorted = sortInvItems(items);
   var html = '<div class="muted" style="margin-bottom:8px;font-size:13.5px">🖐 直接按住每一列左側的「⠿」拖曳，可任意調整順序（不限分類）</div>';
-  html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody id="inv-item-tbody">';
+  html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody id="inv-item-tbody">';
   sorted.forEach(function(it) {
     html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
       'ondragstart="invHandleDragStart(event,'+it.id+')" '+
@@ -1042,6 +1047,7 @@ function renderInvItemList() {
     html += '<td>'+imgHtml+'</td>';
     html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
     html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)" title="這個品項一個單位多少錢，用來算課程成本與毛利"></td>';
+    html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
     html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
     html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
     html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
