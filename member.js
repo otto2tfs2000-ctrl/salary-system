@@ -91,6 +91,20 @@ function mbIsRenewal(m){
   var l = m.ledger || {};
   return Object.keys(l).some(function(k){ return l[k] && l[k].planName });
 }
+/* 判成續約是因為哪一筆——把理由講出來，行政才知道要不要推翻。
+   夯客匯進來的舊資料只要帶了方案名稱，這個人就永遠是「續約」，
+   所以自動判斷只能當預設值，不能當結論。 */
+function mbRenewWhy(m){
+  var l = m.ledger || {};
+  var k = Object.keys(l).filter(function(x){ return l[x] && l[x].planName })[0];
+  return k ? String(l[k].planName || '') : '';
+}
+/* 賣方案畫面上實際採用的身分：行政選了就聽行政的，沒選才用自動判斷 */
+function mbSellRenew(m){
+  var el = document.getElementById('mb-s-renew');
+  if (el) return el.value === 'renew';
+  return mbIsRenewal(m);
+}
 
 /* 依方案效期算到期日 */
 function mbExpiry(months){
@@ -601,6 +615,17 @@ function mbSell(phone){
          return '<option value="' + i + '">' + mbEsc(p.name) + '　$' + (+p.price || 0).toLocaleString() +
                 (give.length ? '　→ ' + give.join('、') : '') + '</option>';
        }).join('') + '</select></div>';
+  var rnDef = mbIsRenewal(m), rnWhy = mbRenewWhy(m);
+  h += '<div class="fg"><label>會員身分（決定回饋點數）</label>' +
+       '<select id="mb-s-renew" onchange="mbSellPreview(\'' + phone + '\')">' +
+       '<option value="new"' + (rnDef ? '' : ' selected') + '>新客首購</option>' +
+       '<option value="renew"' + (rnDef ? ' selected' : '') + '>續約會員</option>' +
+       '</select>' +
+       '<div class="muted" style="font-size:12.5px;margin-top:5px;line-height:1.7">' +
+       (rnDef
+         ? '系統看到明細裡有「' + mbEsc(rnWhy || '方案') + '」的購買紀錄，先當續約。'
+         : '系統在明細裡找不到任何方案購買紀錄，先當新客。') +
+       '判斷錯了直接改，回饋點數會跟著重算。</div></div>';
   h += '<div class="fg"><label>付款方式</label><select id="mb-s-pay">' +
        ['現金','LINE Pay','刷卡','匯款'].map(function(w){ return '<option>' + w + '</option>' }).join('') +
        '</select></div>';
@@ -628,7 +653,7 @@ function mbSellPreview(phone){
   var box = document.getElementById('mb-s-prev');
   if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:13.5px">選了方案會顯示明細</div>'; return; }
   var p = mbActivePlans()[+i];
-  var renew = mbIsRenewal(m);
+  var renew = mbSellRenew(m);
   var giftPts = renew ? (+p.renewBonus || 0) : (+p.newBonus || 0);
   var addPts = (+p.points || 0) + (+p.bonusPoints || 0) + giftPts;
   var addSes = +p.sessions || 0, addVou = +p.voucher || 0;
@@ -659,13 +684,15 @@ async function mbSellSave(phone){
   var p = mbActivePlans()[+i];
   var pay = document.getElementById('mb-s-pay').value;
   var note = document.getElementById('mb-s-note').value.trim();
-  var renew = mbIsRenewal(m);
+  var renew = mbSellRenew(m);
+  var rnAuto = mbIsRenewal(m);
   var giftPts = renew ? (+p.renewBonus || 0) : (+p.newBonus || 0);
   var addSes = +p.sessions || 0, addVou = +p.voucher || 0;
   var exp = mbExpiry(p.months);
 
   if (!confirm('確認售出？\n\n' + p.name + '　$' + (+p.price || 0).toLocaleString() + '（' + pay + '）\n' +
-      (renew ? '身分：續約會員' : '身分：新客首購') + '\n' +
+      (renew ? '身分：續約會員' : '身分：新客首購') +
+      (renew !== rnAuto ? '（人工改的，系統原本判斷是' + (rnAuto ? '續約' : '新客') + '）' : '') + '\n' +
       (+p.points ? '基本點數 +' + (+p.points).toLocaleString() + '\n' : '') +
       (+p.bonusPoints ? '創作回饋 +' + (+p.bonusPoints).toLocaleString() + '\n' : '') +
       (giftPts ? (renew ? '續約回饋 +' : '首次入會回饋 +') + giftPts.toLocaleString() + '\n' : '') +
@@ -681,7 +708,9 @@ async function mbSellSave(phone){
   var stamp = now.replace(/[-:.TZ]/g, '').slice(0, 14);
   var by = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER : 'admin';
   var reason = p.name + '（' + pay + '）' + (note ? '・' + note : '');
-  var base = { at: now, by: by, planName: p.name, pay: pay };
+  var base = { at: now, by: by, planName: p.name, pay: pay, renew: renew };
+  /* 身分是人工改的就記一筆，之後對帳看得出來為什麼回饋是這個數 */
+  if (renew !== rnAuto) base.renewManual = true;
   if (exp) base.expiry = exp;
   var writes = [];
   var mk = function(suffix, delta, type, why, extra){
