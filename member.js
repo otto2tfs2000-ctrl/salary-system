@@ -6,6 +6,8 @@
    ══════════════════════════════════════════════════════════ */
 
 var MB_URL = 'https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app';
+/* 推播走 Railway，不直接碰 LINE API——金鑰不能出現在瀏覽器裡 */
+var MB_NOTIFY = 'https://otto2-notify-production.up.railway.app';
 var mbList = null, mbLoading = false, mbQuery = '', mbOpenPhone = null, mbTab = 'members';
 
 var mbf = function(p){ return MB_URL.replace(/\/$/, '') + p };
@@ -50,6 +52,7 @@ async function mbLoad(force){
                points: +c.points || 0, sessions: +c.sessions || 0, bonus: +c.bonus || 0,
                ledger: m.ledger || {}, createdAt: m.createdAt || '',
                tickets: Array.isArray(m.tickets) ? m.tickets : null,
+               lineUserId: m.lineUserId || '',
                archived: m.archived || null };
     });
   } catch(e) { mbList = []; }
@@ -603,6 +606,16 @@ function mbSell(phone){
        '</select></div>';
   h += '<div class="fg"><label>備註</label><input id="mb-s-note" placeholder="選填，例：生日優惠"></div>';
   h += '<div class="card" id="mb-s-prev" style="margin-top:6px"><div class="muted" style="font-size:13.5px">選了方案會顯示明細</div></div>';
+  /* 綁了 LINE 才給勾。沒綁的直接說明原因，免得行政以為勾了就會發。
+     預設勾起來——入完方案本來就該讓客人知道自己有什麼。 */
+  h += m.lineUserId
+    ? '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">' +
+      '<input type="checkbox" id="mb-s-notify" checked style="width:16px;height:16px"> ' +
+      '售出後傳 LINE 通知客人</label>' +
+      '<div class="muted" style="font-size:12.5px;margin-top:4px;line-height:1.7">' +
+      '卡片會列出方案內容、拿到多少點數堂數、到期日，還有目前餘額。</div>'
+    : '<div class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.7">' +
+      '這位會員還沒綁定 LINE，售出後不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
   h += '<div class="row" style="margin-top:14px;gap:8px">' +
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
@@ -703,9 +716,36 @@ async function mbSellSave(phone){
   /* 方案收入記進當天業績，月報看得到 */
   mbLogSale(p, pay, m);
 
+  /* 推播。餘額用剛剛算出來的 sum，跟寫進明細的是同一批數字，
+     不會出現「卡片說 31,260、系統裡是別的數」這種事。
+     推播失敗不擋流程——方案已經入好了，通知沒發成再補發就好。 */
+  var wantNotify = document.getElementById('mb-s-notify');
+  var notified = null;
+  if (m.lineUserId && wantNotify && wantNotify.checked){
+    try {
+      var r = await fetch(MB_NOTIFY + '/notify/plan', { method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          line: { userId: m.lineUserId },
+          name: m.name || '',
+          renew: renew,
+          plan: { name: p.name, price: +p.price || 0, pay: pay,
+                  months: +p.months || 0, expiry: exp || '', gift: p.gift || '' },
+          add: { points: +p.points || 0, bonusPoints: +p.bonusPoints || 0,
+                 giftPoints: giftPts, sessions: addSes, voucher: addVou },
+          balance: { points: sum.points, sessions: sum.sessions,
+                     bonus: sum.bonus, voucher: sum.voucher }
+        }) });
+      var jr = await r.json().catch(function(){ return null });
+      notified = (jr && jr.ok) ? true : false;
+    } catch(e){ notified = false }
+  }
+
   mbClose();
   renderMember();
-  alert('已售出：' + p.name + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂');
+  alert('已售出：' + p.name + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
+        (notified === true  ? '\n\nLINE 通知已送出。' : '') +
+        (notified === false ? '\n\n⚠ LINE 通知沒送出去，方案已經入好了。要補通知請再賣一次是不行的，請直接用 LINE 手動告知客人。' : ''));
 }
 
 /* 把方案收入寫進 salesData，月報與當日營收讀得到 */
