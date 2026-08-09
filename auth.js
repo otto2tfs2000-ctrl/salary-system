@@ -31,6 +31,24 @@ var AUTH_KEY        = "otto2_staff_session";
 
 var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered, token} */
 
+/* ══ 診斷追蹤（2026-08-09b）══════════════════════════════
+   「每次重整都要重新登入」查不出原因，是因為出問題的三個地方
+   都被 try{}catch(e){} 靜靜吞掉了，畫面上一點跡象都沒有。
+   這一版把每個判斷點記下來，並印在登入卡片下面，
+   不用開 Console 也看得到到底走了哪一條路。
+   查清楚之後這段可以整個拿掉。 */
+var AUTH_TRACE = [];
+function authLog(m, d){
+  AUTH_TRACE.push(m);
+  try { console.log("[auth] " + m, d === undefined ? "" : d) } catch(e){}
+}
+function authTraceHtml(){
+  if (!AUTH_TRACE.length) return "";
+  return '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #ece7dc;' +
+         'font-size:10.5px;color:#a8a29a;line-height:1.6;text-align:left;word-break:break-all">' +
+         AUTH_TRACE.map(function(x){ return "・" + x }).join("<br>") + '</div>';
+}
+
 /* 這個人能不能做某個動作。key：checkout（核銷）、void（作廢）、sellPlan（賣方案）
    名單裡沒有這個人 → 一律不行。名單整個是空的（系統剛裝好）才放行，
    讓第一個人有辦法把自己設成管理員。 */
@@ -48,20 +66,34 @@ function can(k){
    存 30 天，超過就要求再登入一次。 */
 var AUTH_DAYS = 30;
 function authSaved(){
-  try {
-    var v = JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
-    if (!v || !v.userId) return null;
-    if (v.savedAt && Date.now() - v.savedAt > AUTH_DAYS * 86400000) return null;
-    return v;
-  } catch(e){ return null }
+  var raw = null;
+  try { raw = localStorage.getItem(AUTH_KEY) }
+  catch(e){ authLog("讀 localStorage 失敗：" + e.name); return null }
+  if (!raw){ authLog("localStorage 裡沒有登入紀錄"); return null }
+  var v = null;
+  try { v = JSON.parse(raw) }
+  catch(e){ authLog("登入紀錄的 JSON 壞掉（" + raw.length + " 字）"); return null }
+  if (!v || !v.userId){ authLog("登入紀錄裡沒有 userId"); return null }
+  if (v.savedAt && Date.now() - v.savedAt > AUTH_DAYS * 86400000){
+    authLog("登入紀錄超過 " + AUTH_DAYS + " 天（存於 " + new Date(v.savedAt).toLocaleString() + "）");
+    return null;
+  }
+  authLog("找到登入紀錄：" + (v.displayName || v.userId) +
+          "／token " + (v.token ? "有" : "沒有") +
+          "／存於 " + (v.savedAt ? new Date(v.savedAt).toLocaleTimeString() : "未知"));
+  return v;
 }
 function authStore(v){
   try {
     v.savedAt = Date.now();
     localStorage.setItem(AUTH_KEY, JSON.stringify(v));
-  } catch(e){}
+    authLog("已寫入登入紀錄");
+  } catch(e){
+    authLog("★寫入登入紀錄失敗：" + e.name + "——這就是每次都要重登的原因");
+  }
 }
 function authClear(){
+  authLog("使用者按了登出／重新登入，清掉紀錄");
   try { localStorage.removeItem(AUTH_KEY) } catch(e){}
   location.href = AUTH_REDIRECT;
 }
@@ -84,6 +116,7 @@ async function staffApi(path, body){
   try { j = await r.json() } catch(e){}
   if (r.status === 401){
     /* 憑證過期或被換過 → 清掉，要求重登 */
+    authLog("★staffApi " + path + " 回 401，清掉登入紀錄");
     try { localStorage.removeItem(AUTH_KEY) } catch(e){}
     authShowError("登入已過期", "請重新登入一次。");
     throw new Error("登入已過期");
@@ -101,26 +134,33 @@ async function staffMembers(shallow){
 /* 每次開頁面重抓一次自己的權限。
    這樣管理員改完設定，對方重整就生效，不用叫他登出再登入。 */
 async function authRefreshStaff(){
-  if (!ME || !ME.token) return;
+  if (!ME || !ME.token){ authLog("沒有 token，跳過重讀權限"); return }
+  var t0 = Date.now();
   try {
     var r = await fetch(AUTH_API + "/staff/me", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: ME.token })
     });
+    var ms = Date.now() - t0;
     if (r.status === 401){
       /* 憑證過期，當作沒登入 */
+      authLog("★/staff/me 回 401（" + ms + "ms），憑證被伺服器拒絕");
       ME = null;
       try { localStorage.removeItem(AUTH_KEY) } catch(e){}
       return;
     }
-    if (!r.ok) return;
+    if (!r.ok){ authLog("/staff/me 回 " + r.status + "（" + ms + "ms），權限沿用舊的"); return }
     var j = await r.json();
-    if (!j || !j.ok) return;
+    if (!j || !j.ok){ authLog("/staff/me 回應內容異常，權限沿用舊的"); return }
     ME.staff = j.staff || null;
     ME.registered = !!j.registered;
+    authLog("/staff/me 正常（" + ms + "ms）／身分 " +
+            ((j.staff && j.staff.role) || "不在名單") );
     authStore(ME);
-  } catch(e){}
+  } catch(e){
+    authLog("★連不上 /staff/me：" + e.message + "（" + (Date.now()-t0) + "ms），權限沿用舊的");
+  }
 }
 
 /* 導去 LINE 授權頁。state 是防造假用的一次性亂數 */
@@ -170,7 +210,7 @@ function authShowLogin(msg){
       (msg || "請用 LINE 登入，系統會認出你是誰。") + '</div>' +
     '<button onclick="authGoLine()" style="width:100%;padding:13px;border:none;border-radius:9px;' +
       'background:#06C755;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit">' +
-      '用 LINE 登入</button>'
+      '用 LINE 登入</button>' + authTraceHtml()
   );
 }
 
@@ -236,7 +276,7 @@ function authShowNotAllowed(){
       'color:#6b665e;word-break:break-all;margin-bottom:18px">' + ((ME && ME.userId) || "") + '</div>' +
     '<button onclick="authClear()" style="width:100%;padding:12px;border:1px solid #d0c9ba;' +
       'border-radius:9px;background:#fff;color:#6b665e;font-size:14px;cursor:pointer;font-family:inherit">' +
-      '換一個帳號登入</button>'
+      '換一個帳號登入</button>' + authTraceHtml()
   );
 }
 
@@ -255,8 +295,12 @@ async function authCheckBootstrap(){
 async function authGate(){
   await authCheckBootstrap();
   var st = ME && ME.staff;
-  if (st && st.active !== false){ authHideScreen(); authBadge(); return true }
-  if (AUTH_BOOTSTRAP){ authHideScreen(); authBadge(); return true }
+  if (st && st.active !== false){
+    authLog("放行：" + (ME.displayName || "") + "／" + (st.role || ""));
+    authHideScreen(); authBadge(); return true;
+  }
+  if (AUTH_BOOTSTRAP){ authLog("名單是空的，放行讓第一個人設定管理員"); authHideScreen(); authBadge(); return true }
+  authLog("★擋下：" + (st ? "帳號被停用" : "不在員工名單裡"));
   authShowNotAllowed();
   return false;
 }
@@ -305,8 +349,10 @@ async function authInit(){
   /* 已經登入過就直接放行。
      注意：舊版存下來的登入紀錄沒有 token 這個欄位，
      那種一律當作沒登入，請對方重登一次換到新的憑證。 */
+  authLog("authInit 開始，網址 " + location.pathname + location.search);
   var s = authSaved();
   if (s && s.userId && s.token){
+    authLog("走「已登入」這條");
     ME = s;
     await authRefreshStaff();
     if (!ME){ authShowLogin("登入已過期，請重新登入。"); return }
@@ -317,12 +363,13 @@ async function authInit(){
     return;
   }
   if (s && s.userId && !s.token){
+    authLog("★舊版紀錄沒有 token，刪掉要求重登");
     try { localStorage.removeItem(AUTH_KEY) } catch(e){}
   }
 
   /* 專屬連結（主畫面 APP 走這條，不會跳出去 LINE） */
   var kq = new URLSearchParams(location.search).get("k");
-  if (kq){ await authKeyLogin(kq); return; }
+  if (kq){ authLog("走「專屬連結」這條"); await authKeyLogin(kq); return; }
 
   /* 從 LINE 回來，網址上會帶 code */
   var q = new URLSearchParams(location.search);
@@ -333,6 +380,7 @@ async function authInit(){
     return;
   }
   if (!code){
+    authLog("★沒有可用的登入紀錄，也沒有 LINE 回傳的 code → 顯示登入畫面");
     var iv = q.get("invite");
     authShowLogin(iv ? "這是一組邀請連結。用 LINE 登入之後，帳號就會自動建立好。" : null);
     return;
@@ -375,6 +423,7 @@ async function authInit(){
 /* 頁面一開就先擋起來，避免資料閃一下才蓋住 */
 (function(){
   function boot(){
+    authLog("頁面載入（" + document.readyState + "）");
     if (!authSaved()) authShowLogin();
     authInit();
   }
