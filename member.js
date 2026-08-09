@@ -49,6 +49,7 @@ async function mbLoad(force){
       return { phone: phone, name: m.name || '', note: m.note || '',
                points: +c.points || 0, sessions: +c.sessions || 0, bonus: +c.bonus || 0,
                ledger: m.ledger || {}, createdAt: m.createdAt || '',
+               tickets: Array.isArray(m.tickets) ? m.tickets : null,
                archived: m.archived || null };
     });
   } catch(e) { mbList = []; }
@@ -381,6 +382,7 @@ function mbDetail(phone){
   }
   h += '</div>';
 
+  h += mbTktCardHtml(m);
   h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' +
        '每一筆都可以按 ✎ 補上來源與說明。半透明的標籤是系統推斷的，確認過存一次就會變實心。</div>';
   h += '<div style="max-height:46vh;overflow:auto"><table><thead><tr>' +
@@ -1108,7 +1110,7 @@ function mbImpSetBatch(v){ mbImpBatch = v.trim() }
 function mbImpSetType(v){ mbImpType = v; mbImpRows = null; renderMember() }
 
 function mbImportHtml(){
-  var h = mbNewBatchHtml() + mbNoteBatchHtml();
+  var h = mbNewBatchHtml() + mbNoteBatchHtml() + mbTktBatchHtml();
   var tn = MB_IMP_TYPES.filter(function(x){ return x.k === mbImpType })[0];
 
   h += '<div class="card" style="margin-bottom:16px">';
@@ -2082,6 +2084,296 @@ function mbNoteBatchHtml(){
            (g.same.length ? '這批已經寫過了。' : '') + '</div>';
     }
   }
+  h += '</div>';
+  return h;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   票券清單（夯客帶過來的）
+
+   為什麼不直接加進堂數：那 72 張票券裡只有 49 張真的是課程堂數。
+   其餘是 100 元現金抵用券、流動熊氣球狗這類實體贈品、
+   還沒拆的贈課券、看不出內容的組合票。全部塞進 sessions，
+   堂數會憑空多出來，客人打開預約頁還會以為自己多了幾堂課。
+
+   所以票券是獨立的一份清單（members/{phone}/tickets），
+   只記錄「這個人手上有什麼」，餘額一點都不碰。
+   後台明細看得到、客人端也看得到，紙本核對有依據。
+
+   ── 現階段做得到什麼、做不到什麼 ──
+   做得到：看得到每張票券的名稱、剩餘、到期日、性質，過期標紅。
+   做不到：系統不會阻止客人拿素描的堂數去約多媒材課。
+           要擋得改核銷流程，那是另一件事。
+
+   資料長這樣：
+   tickets: [ { name, qty, expiry, kind, raw, batch, at, by } ]
+   ══════════════════════════════════════════════════════════ */
+
+var MB_TKT_KIND = {
+  session: { n:'課程堂數',   bg:'#1F7A4D' },
+  bundle:  { n:'贈課券',     bg:'#8A6D1F' },
+  cash:    { n:'現金抵用',   bg:'#A6741F' },
+  goods:   { n:'實體贈品',   bg:'#7A5A9E' },
+  event:   { n:'活動票',     bg:'#4A5568' },
+  combo:   { n:'組合票',     bg:'#B0603A' },
+  other:   { n:'其他',       bg:'#5A6478' }
+};
+
+/* 從票券名稱判斷性質。判斷不出來的一律當課程堂數，
+   因為那是最常見的，而且進來之後人工還看得到原文可以改。 */
+function mbTktKind(name){
+  var s = String(name || '');
+  if (/抵用|折抵|現金券/.test(s))                 return 'cash';
+  if (/畫冊/.test(s))                             return 'goods';
+  if (/^贈/.test(s) && /熊|狗|貓|偶|娃|杯|包|袋|框/.test(s)) return 'goods';
+  if (/展覽|沙龍|之旅/.test(s))                   return 'event';
+  if (/師資|培訓/.test(s))                        return 'other';
+  if (/組合/.test(s))                             return 'combo';
+  if (/^購/.test(s))                              return 'bundle';
+  return 'session';
+}
+
+function mbTktToday(){
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function mbTktExpired(t){ return !!(t && t.expiry && t.expiry < mbTktToday()) }
+
+/* ── 解析 ──
+   一行一位：電話 [Tab] 夯客票券：名稱 數量(到期YYYY-MM-DD)／名稱 數量／…
+   「夯客票券：」這幾個字有沒有都能吃。多張用全形／分隔。 */
+function mbTktParseLine(rest){
+  var out = [];
+  String(rest).replace(/^夯客票券[：:]\s*/, '').split(/[／\/]/).forEach(function(part){
+    part = part.trim();
+    if (!part) return;
+    var m = part.match(/^(.*?)\s+(\d+(?:\.\d+)?)(?:\s*[（(]到期\s*(\d{4}-\d{2}-\d{2})[)）])?$/);
+    if (m){
+      out.push({ name: m[1].trim(), qty: +m[2], expiry: m[3] || '',
+                 kind: mbTktKind(m[1]), raw: part });
+    } else {
+      /* 數量看不出來就留 null，預覽會標出來讓人自己看 */
+      out.push({ name: part, qty: null, expiry: '', kind: mbTktKind(part), raw: part });
+    }
+  });
+  return out;
+}
+
+var mbTktBatch = '', mbTktRaw = '', mbTktRows = null, mbTktBusy = false;
+
+function mbTktParse(raw){
+  var rows = [];
+  String(raw || '').split(/\r?\n/).forEach(function(line){
+    if (!line.trim()) return;
+    var parts = line.split(/\t|,(?=\S)/);
+    var phone = mbNorm(parts[0] || '');
+    var rest  = line.slice(line.indexOf(parts[0]) + parts[0].length).replace(/^[\t,]\s*/, '');
+    if (!phone || !rest.trim()) return;
+    rows.push({ phone: phone, tickets: mbTktParseLine(rest) });
+  });
+  return rows;
+}
+
+function mbTktAnalyze(){
+  var rows = mbTktParse(mbTktRaw);
+  mbTktRows = rows.map(function(r){
+    var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+    var sess = 0, bad = 0;
+    r.tickets.forEach(function(t){
+      if (t.qty == null) bad++;
+      else if (t.kind === 'session') sess += t.qty;
+    });
+    return Object.assign({}, r, {
+      found: !!m,
+      name: m ? (m.name || '（未填姓名）') : '',
+      now: m ? (+m.sessions || 0) : 0,
+      sess: sess,
+      bad: bad,
+      had: !!(m && m.tickets && m.tickets.length),
+      state: m ? ((m.tickets && m.tickets.length) ? 'over' : 'new') : 'miss'
+    });
+  });
+  renderMember();
+}
+
+function mbTktSync(){
+  var b = document.getElementById('mb-tkt-batch');
+  var r = document.getElementById('mb-tkt-raw');
+  if (b) mbTktBatch = b.value.trim();
+  if (r) mbTktRaw   = r.value;
+}
+function mbTktGo(){
+  mbTktSync();
+  if (!mbTktBatch){ alert('請先填批次名稱，之後要撤銷靠它'); return }
+  if (!mbTktRaw.trim()){ alert('請貼上票券資料'); return }
+  mbTktAnalyze();
+}
+function mbTktClear(){ mbTktRaw = ''; mbTktRows = null; renderMember() }
+
+async function mbTktRun(){
+  if (mbTktBusy) return;
+  var rows = (mbTktRows || []).filter(function(r){ return r.found });
+  if (!rows.length){ alert('沒有可以寫入的資料'); return }
+  if (!confirm('這批「' + mbTktBatch + '」會把票券清單寫到 ' + rows.length + ' 位會員底下。\n\n' +
+               '只是掛一份清單，堂數、點數、紅利通通不會動。\n' +
+               '同一個人重貼會整份覆蓋，不會累加。\n\n確定嗎？')) return;
+
+  mbTktBusy = true; renderMember();
+  var now = mbNow(), by = mbWho(), ok = 0, fail = 0, msg = '';
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var list = r.tickets.map(function(t){
+      return { name:t.name, qty:t.qty, expiry:t.expiry || '', kind:t.kind,
+               raw:t.raw, batch:mbTktBatch, at:now, by:by };
+    });
+    try {
+      await fetch(mbf('/members/' + r.phone + '/tickets.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(list) });
+      var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
+      if (m) m.tickets = list;
+      ok++;
+    } catch(e){ fail++; if (!msg) msg = r.phone + '：' + e.message }
+    var el = document.getElementById('mb-tkt-prog');
+    if (el) el.textContent = '寫入中… ' + (i+1) + ' / ' + rows.length;
+  }
+  mbTktBusy = false;
+  await mbLoad(1);
+  mbTktAnalyze();
+  alert('完成：成功 ' + ok + ' 位' + (fail ? ('，失敗 ' + fail + ' 位\n' + msg) : '') +
+        '\n\n餘額沒有任何變動。');
+}
+
+async function mbTktUndo(){
+  mbTktSync();
+  if (!mbTktBatch){ alert('請先填批次名稱，要跟當初匯入時一模一樣'); return }
+  var hit = mbList.filter(function(m){
+    return m.tickets && m.tickets.length && m.tickets[0].batch === mbTktBatch;
+  });
+  if (!hit.length){ alert('找不到「' + mbTktBatch + '」這一批的票券。名稱要完全一樣。'); return }
+  if (!confirm('要清掉「' + mbTktBatch + '」這批票券嗎？\n會影響 ' + hit.length + ' 位會員。\n餘額本來就沒動過，所以不受影響。')) return;
+  mbTktBusy = true; renderMember();
+  var n = 0;
+  for (var i = 0; i < hit.length; i++){
+    try {
+      await fetch(mbf('/members/' + hit[i].phone + '/tickets.json'), { method:'DELETE' });
+      hit[i].tickets = null; n++;
+    } catch(e){}
+  }
+  mbTktBusy = false;
+  await mbLoad(1); mbTktAnalyze();
+  alert('已清掉 ' + n + ' 位會員的票券清單');
+}
+
+/* ── 匯入頁的區塊 ── */
+function mbTktBatchHtml(){
+  var h = '<div class="card" style="margin-bottom:16px">';
+  h += '<div class="card-title">🎟 票券清單匯入</div>';
+  h += '<div class="muted" style="font-size:13.5px;line-height:1.8;margin-bottom:14px">' +
+       '把夯客的票券備註原封不動搬過來，記錄每個人手上有什麼票券、剩幾張、什麼時候到期。<br>' +
+       '<b>這裡完全不會動到堂數、點數、紅利</b>——票券裡有現金抵用券、實體贈品、' +
+       '還沒拆的贈課券，混進堂數會讓餘額憑空多出來。<br>' +
+       '匯完之後後台明細跟客人端都看得到，過期的會標紅。</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>批次名稱</label>' +
+       '<input id="mb-tkt-batch" placeholder="例：夯客票券20260809" value="' + mbEsc(mbTktBatch) + '"></div>';
+  h += '<div class="fg" style="margin-bottom:12px"><label>貼上資料（一行一位：電話　Tab　票券內容）</label>' +
+       '<textarea id="mb-tkt-raw" rows="6" placeholder="0900394793&#9;夯客票券：4堂活動方案 3(到期2026-10-12)&#10;0912389560&#9;夯客票券：組合票券-50 1／組合課程票券-100 8">' +
+       mbEsc(mbTktRaw) + '</textarea></div>';
+
+  h += '<div class="row" style="gap:8px;margin-bottom:12px">' +
+       '<button class="btn" style="flex:1" onclick="mbTktGo()">檢查資料</button>' +
+       '<button class="btn btn-sm" onclick="mbTktClear()">清空</button>' +
+       '<button class="btn btn-sm" style="color:var(--red);border-color:#EBD3D0" onclick="mbTktUndo()">撤銷整批</button>' +
+       '</div>';
+
+  if (mbTktBusy){
+    h += '<div class="info-box" id="mb-tkt-prog">寫入中…</div></div>';
+    return h;
+  }
+
+  if (mbTktRows){
+    var miss = mbTktRows.filter(function(r){ return !r.found });
+    var over = mbTktRows.filter(function(r){ return r.state === 'over' });
+    var bad  = mbTktRows.filter(function(r){ return r.bad > 0 });
+    var gap  = mbTktRows.filter(function(r){ return r.found && r.sess && r.sess !== r.now });
+    var kc = {};
+    mbTktRows.forEach(function(r){ r.tickets.forEach(function(t){ kc[t.kind] = (kc[t.kind]||0)+1 }) });
+
+    h += '<div class="info-box" style="margin-bottom:12px;line-height:1.9">' +
+         '<b>' + mbTktRows.length + ' 位會員、' +
+         mbTktRows.reduce(function(a,r){ return a + r.tickets.length }, 0) + ' 張票券</b><br>' +
+         Object.keys(kc).map(function(k){
+           return (MB_TKT_KIND[k] || {n:k}).n + ' ' + kc[k] + ' 張';
+         }).join('　') +
+         (miss.length ? '<br><span style="color:var(--red)">找不到會員 ' + miss.length + ' 位，不會寫入</span>' : '') +
+         (over.length ? '<br>已經有票券清單、會被整份覆蓋 ' + over.length + ' 位' : '') +
+         (bad.length  ? '<br><span style="color:var(--gold2)">看不出數量 ' + bad.length + ' 位，仍會照原文存起來</span>' : '') +
+         (gap.length  ? '<br><span style="color:var(--gold2)">課程堂數跟系統現有堂數對不起來 ' + gap.length + ' 位（只是提醒，不會自動改）</span>' : '') +
+         '</div>';
+
+    h += '<div style="max-height:44vh;overflow:auto"><table><thead><tr>' +
+         '<th style="width:100px">電話</th><th style="width:90px">姓名</th>' +
+         '<th>票券</th><th style="width:64px">課程堂數</th><th style="width:64px">系統現有</th>' +
+         '<th style="width:70px">狀態</th></tr></thead><tbody>';
+    mbTktRows.forEach(function(r){
+      var st = r.state === 'miss' ? '<span style="color:var(--red)">找不到人</span>'
+             : r.state === 'over' ? '覆蓋' : '新增';
+      h += '<tr' + (r.state === 'miss' ? ' style="opacity:.5"' : '') + '>' +
+        '<td class="muted" style="font-size:12.5px">' + r.phone + '</td>' +
+        '<td style="font-size:13px">' + mbEsc(r.name) + '</td>' +
+        '<td style="font-size:12.5px;line-height:1.9">' +
+          r.tickets.map(function(t){
+            var k = MB_TKT_KIND[t.kind] || MB_TKT_KIND.other;
+            return '<span style="font-size:10.5px;background:' + k.bg + ';color:#fff;padding:1px 6px;' +
+                   'border-radius:99px;margin-right:5px">' + k.n + '</span>' + mbEsc(t.name) +
+                   ' <b>' + (t.qty == null ? '？' : t.qty) + '</b>' +
+                   (t.expiry ? '<span class="muted" style="font-size:11.5px' +
+                     (mbTktExpired(t) ? ';color:var(--red)' : '') + '">　到期 ' + t.expiry +
+                     (mbTktExpired(t) ? '（已過期）' : '') + '</span>' : '');
+          }).join('<br>') + '</td>' +
+        '<td style="text-align:right">' + (r.sess || '—') + '</td>' +
+        '<td style="text-align:right' + ((r.sess && r.sess !== r.now) ? ';color:var(--gold2);font-weight:600' : '') +
+          '">' + (r.found ? r.now : '—') + '</td>' +
+        '<td style="font-size:12.5px">' + st + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+
+    var can = mbTktRows.filter(function(r){ return r.found }).length;
+    h += '<button class="btn btn-gold" style="width:100%;margin-top:12px" onclick="mbTktRun()">' +
+         '寫入 ' + can + ' 位會員的票券清單（不動餘額）</button>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+/* ── 會員明細頁上的票券卡 ── */
+function mbTktCardHtml(m){
+  var ts = (m && Array.isArray(m.tickets)) ? m.tickets : [];
+  if (!ts.length) return '';
+  var expN = ts.filter(mbTktExpired).length;
+  var h = '<div class="card" style="margin-bottom:14px">' +
+    '<div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
+    '<div style="font-size:13.5px;font-weight:600">🎟 手上的票券（' + ts.length + ' 張）</div>' +
+    (expN ? '<div style="font-size:12.5px;color:var(--red)">' + expN + ' 張已過期</div>' : '') +
+    '</div>';
+  ts.forEach(function(t){
+    var k = MB_TKT_KIND[t.kind] || MB_TKT_KIND.other;
+    var ex = mbTktExpired(t);
+    h += '<div style="padding:6px 0;border-top:1px solid var(--border);font-size:13px;line-height:1.7' +
+         (ex ? ';opacity:.7' : '') + '">' +
+      '<span style="font-size:10.5px;background:' + k.bg + ';color:#fff;padding:1px 6px;' +
+      'border-radius:99px;margin-right:6px">' + k.n + '</span>' +
+      mbEsc(t.name) + '　<b>' + (t.qty == null ? '？' : t.qty) + '</b>' +
+      (t.expiry
+        ? '<span style="font-size:12px;margin-left:8px;color:' + (ex ? 'var(--red)' : 'var(--muted,#948e83)') + '">' +
+          (ex ? '已於 ' + t.expiry + ' 過期' : '到期 ' + t.expiry) + '</span>'
+        : '') +
+      '</div>';
+  });
+  h += '<div class="muted" style="font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);line-height:1.7">' +
+       '票券只是紀錄，不影響上面的餘額。核銷仍然扣總堂數，系統不會自動判斷客人約的課能不能用這張票。</div>';
   h += '</div>';
   return h;
 }
