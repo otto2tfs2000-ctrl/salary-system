@@ -1117,7 +1117,6 @@ async function bkManual(editId){
      原本只能取消重開，客人的 LINE 通知會再發一次。 */
   var eb=editId?bkList.filter(function(x){return x.id===editId})[0]:null;
   if(editId&&!eb)return;
-  var ec=eb&&eb.items&&eb.items[0];
   bkSheet('<h3>'+(eb?"修改預約":"手動登記預約")+'</h3><div class="bk-sh2">'+
    (eb?"改完會直接覆蓋，不會重發通知":"代客人預約、現場加開")+'</div>'+
    (eb?'':'<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
@@ -1126,8 +1125,9 @@ async function bkManual(editId){
        '<input id="mDate" type="date" value="'+(eb?String(eb.date).replace(/\//g,"-"):ds(bkDate).replace(/\//g,"-"))+'"></div>'+
      '<div class="bk-f"><label>時段</label><select id="mSlot"></select>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
-   '<div class="bk-f"><label>課程</label><select id="mCourse"><option value="">載入中…</option></select>'+
-     '<div class="bk-left" id="mCInfo"></div></div>'+
+   '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
+     '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
+     '<div class="bk-left" id="mItemSum"></div></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
        '<input id="mAdult" inputmode="numeric" value="'+(eb?(+eb.adults||0):1)+'"></div>'+
      '<div class="bk-f"><label>小孩</label>'+
@@ -1195,24 +1195,147 @@ async function bkManual(editId){
 
   /* 課程 */
   await bkLoadCourses(); await bkLoadSched();
-  var cSel=document.getElementById("mCourse");
-  cSel.innerHTML='<option value="">（不指定，手動填金額）</option>'+
-    bkCourses.map(function(c,i){ return '<option value="'+i+'">'+esc(c.label)+'</option>' }).join("");
-  function fillAmt(){
-    var i=cSel.value, info=document.getElementById("mCInfo");
-    if(i===""){ info.innerHTML=""; return }
-    var c=bkCourses[+i], ppl=+document.getElementById("mPeople").value||1;
-    document.getElementById("mAmt").value=c.price*ppl;
-    info.innerHTML="單價 $"+c.price.toLocaleString()+(c.dur?"　時長 "+esc(c.dur):"");
+
+  /* ══ 品項清單（2026-08-09）══════════════════════════════
+     一組客人一起來，各上各的課——三個人來，一個畫流動畫、
+     兩個做透明框，本來只能選一種課，金額和用料都對不起來。
+
+     為什麼不拆成三筆預約：他們是同一組、同一個時段、同一支
+     電話。拆開的話那個時段的「預約組數」會變成 3，跟現場
+     實際狀況對不上，客人也會收到三封通知。
+
+     資料結構本來就撐得住——items 一直是陣列，核銷的課程排行、
+     用料表 invRecipeGroups、扣庫存 consumeInvForBooking
+     全部都是掃整個陣列。只有這張表單以前做不出第二列而已。
+     所以下游一支都不用改。
+
+     每一列：ci＝bkCourses 的索引（空字串＝不指定）、
+             qty＝這門課幾個人、amt＝這一列的小計。
+     只有一列的時候 qty 自動跟著大人＋小孩走，維持舊習慣；
+     加到第二列就得自己填，畫面會比對合計對不對得起來。
+     ═════════════════════════════════════════════════════ */
+  var mItems=[], mItemsDirty=false;
+  if(eb&&eb.items&&eb.items.length){
+    eb.items.forEach(function(it){
+      var ci=-1;
+      bkCourses.forEach(function(c,i){
+        if(ci<0&&c.name===it.name&&String(c.spec||"")===String(it.spec||""))ci=i });
+      var qty=+it.qty||1, price=+it.price||0;
+      mItems.push({ ci: ci>=0?String(ci):"", qty:qty, amt:price*qty,
+                    qtyManual:true, amtManual:false,
+                    lostName: ci<0 ? (it.name||"") : "" });
+    });
   }
-  cSel.onchange=fillAmt;
-  if(ec){
-    /* 用課名加規格回頭找出是哪一門，找不到就留在「不指定」讓金額照舊 */
-    var ci=-1;
-    bkCourses.forEach(function(c,i){
-      if(ci<0&&c.name===ec.name&&String(c.spec||"")===String(ec.spec||""))ci=i });
-    if(ci>=0){ cSel.value=String(ci); }
+  if(!mItems.length) mItems.push({ ci:"", qty:0, amt:0, qtyManual:false, amtManual:false, lostName:"" });
+  /* 編輯既有預約時，金額以原本存的為準，不要被單價重算蓋掉 */
+  if(eb) mItems.forEach(function(r){ r.amtManual=true });
+  if(eb&&mItems.length===1) mItems[0].amt=+eb.total||mItems[0].amt;
+
+  function mPplNow(){
+    return (+document.getElementById("mAdult").value||0)+(+document.getElementById("mKid").value||0);
   }
+  function mRowPrice(r){
+    if(r.ci==="")return 0;
+    var c=bkCourses[+r.ci]; return c?(+c.price||0):0;
+  }
+  function mRecalc(){
+    var t=0; mItems.forEach(function(r){ t+=+r.amt||0 });
+    var amtEl=document.getElementById("mAmt");
+    if(amtEl) amtEl.value=t||"";
+    var sum=document.getElementById("mItemSum"); if(!sum)return;
+    var q=0, chosen=0;
+    mItems.forEach(function(r){ q+=+r.qty||0; if(r.ci!=="")chosen++ });
+    var ppl=mPplNow();
+    if(!chosen&&mItems.length===1){ sum.innerHTML="不指定課程時，直接在右邊的金額欄手動填。"; return }
+    var h="品項合計 <b>"+q+"</b> 位・<b>$"+t.toLocaleString()+"</b>";
+    if(mItems.length>1){
+      h+=(q===ppl)
+        ? '　<span class="bk-ok">跟現場總人數 '+ppl+' 位相符</span>'
+        : '　<span class="bk-full">現場總人數是 '+ppl+' 位，差 '+Math.abs(ppl-q)+' 位</span>';
+    }
+    sum.innerHTML=h;
+  }
+  function mDraw(){
+    var box=document.getElementById("mItems"); if(!box)return;
+    /* 只有一列而且沒手動改過人數時，人數跟著大人＋小孩走 */
+    if(mItems.length===1&&!mItems[0].qtyManual){
+      mItems[0].qty=mPplNow()||1;
+      if(mItems[0].ci!==""&&!mItems[0].amtManual)
+        mItems[0].amt=mRowPrice(mItems[0])*mItems[0].qty;
+    }
+    box.innerHTML=mItems.map(function(r,i){
+      var c=r.ci===""?null:bkCourses[+r.ci];
+      var opts='<option value="">（不指定，手動填金額）</option>'+
+        (r.lostName?'<option value="" selected>'+esc(r.lostName)+'（原資料，清單裡沒有）</option>':'')+
+        bkCourses.map(function(cc,j){
+          return '<option value="'+j+'"'+(String(r.ci)===String(j)?" selected":"")+'>'+esc(cc.label)+'</option>' }).join("");
+      return '<div class="bk-irow">'+
+        '<select data-ir="'+i+'" data-f="ci">'+opts+'</select>'+
+        '<input data-ir="'+i+'" data-f="qty" inputmode="numeric" value="'+(r.qty||0)+'" placeholder="位">'+
+        '<input data-ir="'+i+'" data-f="amt" inputmode="numeric" value="'+(r.amt||"")+'" placeholder="小計">'+
+        (mItems.length>1?'<button type="button" class="bk-idel" data-del="'+i+'">✕</button>':'<span class="bk-ipad"></span>')+
+        '</div>'+
+        (c?'<div class="bk-left bk-iinfo">單價 $'+(+c.price||0).toLocaleString()+
+            (c.dur?"　時長 "+esc(c.dur):"")+'</div>':'');
+    }).join("");
+
+    box.querySelectorAll("select[data-f=ci]").forEach(function(el){
+      el.onchange=function(){
+        var r=mItems[+el.dataset.ir];
+        r.ci=el.value; r.lostName=""; r.amtManual=false; mItemsDirty=true;
+        if(!r.qty) r.qty=mItems.length===1?(mPplNow()||1):1;
+        r.amt=mRowPrice(r)*(+r.qty||0);
+        mDraw();
+      };
+    });
+    box.querySelectorAll("input[data-f=qty]").forEach(function(el){
+      el.oninput=function(){
+        var r=mItems[+el.dataset.ir];
+        r.qty=+el.value||0; r.qtyManual=true; mItemsDirty=true;
+        if(r.ci!==""&&!r.amtManual){
+          r.amt=mRowPrice(r)*r.qty;
+          var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
+          if(ae)ae.value=r.amt||"";
+        }
+        mRecalc();
+      };
+    });
+    box.querySelectorAll("input[data-f=amt]").forEach(function(el){
+      el.oninput=function(){
+        var r=mItems[+el.dataset.ir];
+        r.amt=+el.value||0; r.amtManual=true; mItemsDirty=true; mRecalc();
+      };
+    });
+    box.querySelectorAll("[data-del]").forEach(function(el){
+      el.onclick=function(){
+        mItems.splice(+el.dataset.del,1); mItemsDirty=true;
+        if(!mItems.length)mItems.push({ci:"",qty:mPplNow()||1,amt:0,qtyManual:false,amtManual:false,lostName:""});
+        mDraw();
+      };
+    });
+    mRecalc();
+  }
+  document.getElementById("mAddItem").onclick=function(){
+    mItemsDirty=true;
+    /* 加第二列時，第一列的人數就得定下來，不然它還會跟著總人數跑 */
+    if(mItems.length===1) mItems[0].qtyManual=true;
+    mItems.push({ci:"",qty:1,amt:0,qtyManual:true,amtManual:false,lostName:""});
+    mDraw();
+  };
+  /* 大人／小孩變動時沿用原本的 fillAmt 名稱，syncPpl 不用改 */
+  function fillAmt(){ mDraw() }
+  function mItemsOut(){
+    var out=[];
+    mItems.forEach(function(r){
+      if(r.ci==="")return;
+      var c=bkCourses[+r.ci]; if(!c)return;
+      out.push({name:c.name,spec:c.spec,qty:+r.qty||1,price:+c.price||0});
+    });
+    /* 沒動過品項就別把原本的資料洗掉 */
+    if(!out.length&&eb&&!mItemsDirty)return eb.items||[];
+    return out;
+  }
+  mDraw();
   showLeft();
 
   /* 會員搜尋 */
@@ -1266,9 +1389,14 @@ async function bkManual(editId){
     var nA=+g("mAdult")||0, nK=+g("mKid")||0;
     document.getElementById("mPeople").value=nA+nK;
     if(!g("mName")||!(nA+nK)){ alert("姓名和人數必填"); return }
-    var ppl=nA+nK, ci=cSel.value;
-    var c=ci===""?null:bkCourses[+ci];
+    var ppl=nA+nK;
     var amt=+g("mAmt")||0;
+    var outItems=mItemsOut();
+    if(outItems.length>1){
+      var iq=outItems.reduce(function(a,x){ return a+(+x.qty||0) },0);
+      if(iq!==ppl&&!confirm("品項的人數加起來是 "+iq+" 位，但大人＋小孩填的是 "+ppl+" 位。\n\n"+
+                            "核銷扣用料是照品項的人數算的，這樣會對不起來。\n確定要這樣存嗎？"))return;
+    }
     var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
     var sBase=bkBase(sl);
     if(sBase){
@@ -1281,8 +1409,7 @@ async function bkManual(editId){
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))return;
     }
     var rec={date:d,slot:sl,people:ppl,adults:nA,kids:nK,
-      items:c?[{name:c.name,spec:c.spec,qty:ppl,price:c.price}]
-             :(eb?(eb.items||[]):[]),
+      items:outItems,
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
       status:"new",source:"manual",ts:new Date().toISOString()};
@@ -1465,6 +1592,17 @@ css.textContent=
   "box-shadow:0 0 0 2px rgba(58,76,122,.1)}"+
 ".bk-way.dis{opacity:.3;pointer-events:none}"+
 ".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}"+
+".bk-irow{display:flex;gap:6px;align-items:center;margin-bottom:7px}"+
+".bk-irow>select{flex:1;min-width:0}"+
+".bk-irow>input{width:64px;text-align:right}"+
+".bk-irow>input[data-f=amt]{width:86px}"+
+".bk-idel{width:30px;height:36px;border:1px solid #E3D6D4;border-radius:8px;"+
+  "background:#fff;color:#C25E4A;cursor:pointer;font-size:14px;flex:none}"+
+".bk-ipad{width:30px;flex:none}"+
+".bk-iinfo{margin:-3px 0 9px}"+
+".bk-additem{border:1px dashed var(--bkGold,#C99A3B);background:transparent;"+
+  "color:var(--bkGold,#C99A3B);border-radius:8px;padding:7px 12px;font-size:13.5px;"+
+  "cursor:pointer;font-family:inherit;margin-bottom:6px}"+
 ".bk-addon .am{flex:2 1 132px}.bk-addon .an{flex:2 1 108px}.bk-addon .aq{flex:0 1 60px}"+
 ".bk-addon .av{flex:1 1 70px}.bk-addon .aw{flex:1 1 88px}"+
 ".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;"+
