@@ -767,6 +767,13 @@ async function bkCheckout(id){
   var payer=null;
   /* course: 課程本身；addons: 加價項目 */
   var course={amt:old?old.courseAmt:(b.total||0), way:old?old.coursePay:""};
+  /* 牌價要另外留一份。堂數扣抵時「課程費用」會歸零——那堂課的錢
+     客人買方案時就付了，今天沒收現金，收了就是同一堂課收兩次。
+     但業績認列還是要有個底：查得到方案單價就用單價，查不到才退回牌價，
+     所以牌價不能被歸零蓋掉。切回現金或刷卡時也要能還原。 */
+  var courseList=+((old?old.courseAmt:b.total)||0);
+  if(course.way==="sessions"&&old&&+old.courseRev)courseList=+old.courseRev;
+  var ckAmtTouched=false;   /* 行政手動改過金額就不再自動歸零 */
   var addons=old&&old.addons?JSON.parse(JSON.stringify(old.addons)):[];
   /* 舊紀錄沒有 materialId，用品名回頭比對庫存品項，對得上就補回去，行政在畫面上看得到 */
   addons.forEach(function(a){
@@ -857,7 +864,17 @@ async function bkCheckout(id){
       return '<div class="bk-way'+(course.way===p.k?" on":"")+(p.member&&!payer?" dis":"")+
         '" data-w="'+p.k+'">'+p.n+'</div>' }).join("");
     document.querySelectorAll("#ckWays [data-w]").forEach(function(el){
-      el.onclick=function(){ course.way=el.dataset.w; drawWays(); calc() } });
+      el.onclick=function(){
+        var prev=course.way, next=el.dataset.w;
+        var amtEl=document.getElementById("ckAmt");
+        if(next==="sessions"&&prev!=="sessions"){
+          if(+amtEl.value>0)courseList=+amtEl.value;   /* 先把牌價收好 */
+          amtEl.value=""; course.amt=0;
+        }else if(prev==="sessions"&&next!=="sessions"){
+          if(!(+amtEl.value>0)){ amtEl.value=courseList||""; course.amt=courseList||0 }
+        }
+        course.way=next; drawWays(); calc();
+      } });
   }
   function drawAddons(){
     var mats=bkAddonMats();
@@ -909,6 +926,11 @@ async function bkCheckout(id){
 
   function calc(){
     course.amt=+document.getElementById("ckAmt").value||0;
+    if(course.way==="sessions"&&course.amt>0&&!ckAmtTouched){
+      /* 修正核銷時舊資料可能還帶著牌價，第一次算就歸零 */
+      courseList=course.amt; course.amt=0;
+      document.getElementById("ckAmt").value="";
+    }
     var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
     var total=course.amt+addTotal;
     var bonus=bonusOf(course.amt), su=null; /* 加價項目不算紅利 */
@@ -930,6 +952,9 @@ async function bkCheckout(id){
         if(left<0)h+='<div class="bk-err">點數不足，還差 '+Math.abs(left).toLocaleString()+' 點</div>'; }
       if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)-1;
         h+="扣堂數 <b>1</b>，剩 <b>"+l2+"</b><br>";
+        if(!course.amt&&courseList)
+          h+='<span class="bk-cap">牌價 $'+courseList.toLocaleString()+
+             ' 不另收，這堂的錢買方案時已經付過</span><br>';
         if(l2<0)h+='<div class="bk-err">堂數不足</div>';
         /* 堂數方案的一堂值多少，跟課程標價不一樣。
            業績要認列的是方案攤下來的單價，不是牌價。 */
@@ -944,11 +969,11 @@ async function bkCheckout(id){
           var tn=bkTktNameOnly(payer);
           h+='<div class="bk-warn">'+
              (tn?("「"+esc(tn)+"」還沒有單價，"):"查不到這位客人的堂數方案，")+
-             '業績先用課程費用 $'+course.amt.toLocaleString()+' 認列。</div>';
+             '業績先用牌價 $'+(courseList||0).toLocaleString()+' 認列。</div>';
         } }
       /* 用堂數扣的，紅利要用方案攤下來的單堂價算，不是當天的牌價。
          牌價 1,300 跟單堂 1,000 除以 500 之後差一點，是實打實的誤差。 */
-      var bBase=(course.way==="sessions"&&su)?su.unit:course.amt;
+      var bBase=(course.way==="sessions")?(su?su.unit:(courseList||0)):course.amt;
       bonus=bonusOf(bBase);
       h+="紅利回饋 <b>+"+bonus+"</b> 點（"+
          ((course.way==="sessions"&&su)?"單堂認列 ":"課程 ")+
@@ -956,7 +981,7 @@ async function bkCheckout(id){
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
   }
-  document.getElementById("ckAmt").oninput=calc;
+  document.getElementById("ckAmt").oninput=function(){ ckAmtTouched=true; calc() };
   document.getElementById("ckT").onchange=function(){ teacher=this.value };
 
   function pplHint(){
@@ -1010,7 +1035,9 @@ async function bkCheckout(id){
     if(!(nAdult+nKid)){ alert("大人和小孩不能都是 0"); return }
     var t=document.getElementById("ckT").value;
     var cp=PAYWAYS.filter(function(p){return p.k===course.way})[0];
-    if(!course.amt||!cp||!t){ alert("課程費用、付款方式、上課老師都要填"); return }
+    if(!cp||!t){ alert("付款方式和上課老師都要填"); return }
+    /* 堂數扣抵本來就不收錢，0 元是正常的，其他方式才要求填金額 */
+    if(course.way!=="sessions"&&!course.amt){ alert("課程費用要填"); return }
     if(cp.member&&!payer){ alert("這個付款方式需要先選會員"); return }
     addons=addons.filter(function(a){ return a.materialId||a.name||a.amt });
     for(var i=0;i<addons.length;i++){
@@ -1048,9 +1075,9 @@ async function bkCheckout(id){
       /* 課程實際認列的營收。堂數扣抵要用方案單價，其餘就是收的金額。
          算好存起來，之後報表不用重算，客人再買新方案也不會回頭改到舊帳。 */
       var sUnit=useSe?bkSessionUnit(payer):null;
-      var courseRev=(useSe&&sUnit)?(sUnit.unit*useSe):course.amt;
+      var courseRev=useSe?((sUnit?sUnit.unit:(courseList||course.amt))*useSe):course.amt;
       /* 紅利基準跟畫面上顯示的那個要一致，不然客人看到的跟實際入帳的會不一樣 */
-      var bonus=bonusOf((useSe&&sUnit)?sUnit.unit:course.amt);
+      var bonus=bonusOf(useSe?(sUnit?sUnit.unit:(courseList||0)):course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
