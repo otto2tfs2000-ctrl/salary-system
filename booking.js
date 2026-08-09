@@ -11,11 +11,27 @@ var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebas
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
+/* ══ 晚上時段（2026-08-10）══════════════════════════════
+   晚上不是每天都開，週一固定、其他時候看情況加開。所以它不是
+   第四個固定時段，而是「那天有排才存在」。
+
+   班表原本一天只存一個數字（老師數），三個時段共用。要讓晚上
+   能單獨開關又不影響白天，那個位置改成也能放物件：
+
+     3                → 白天 3 位、晚上不開（舊資料長這樣）
+     { t:3, ev:1 }    → 白天 3 位、晚上 1 位
+
+   舊的純數字照樣讀得懂，不用回頭改任何一天的班表。
+
+   晚上的老師數獨立算容量——白天排 3 位不代表晚上也有 3 位，
+   共用的話晚上會顯示可收 15 人，實際只有一位老師在。 */
+var EVE_SLOT = "18:30-21:00";
 /* 手動登記可以選的時段比表定多。SLOTS 拿來算表定容量，不能亂加，
    所以額外開一份給下拉選單用。半點開始的那幾個是現場常見的加開。 */
 var SLOTS_MANUAL = ["09:30-11:30","10:00-12:00","10:30-12:30",
                     "13:30-15:30","14:00-16:00","14:30-16:30",
-                    "15:00-17:00","15:30-17:30","16:00-18:00","16:30-18:30"];
+                    "15:00-17:00","15:30-17:30","16:00-18:00","16:30-18:30",
+                    "18:30-21:00","19:00-21:00"];
 /* 加開時段歸到哪個表定時段底下。老師是照表定三個時段排的，
    9:30 進來的人一樣佔用 10:00 那一場的老師，所以人數要算在一起，
    不然表定剩幾位會算錯，一路加到爆。 */
@@ -24,7 +40,8 @@ var SLOT_BASE = {
   "10:00-12:00":"10:00-12:00","10:30-12:30":"10:00-12:00",
   "13:30-15:30":"14:00-16:00","14:00-16:00":"14:00-16:00","14:30-16:30":"14:00-16:00",
   "15:00-17:00":"16:00-18:00","15:30-17:30":"16:00-18:00",
-  "16:00-18:00":"16:00-18:00","16:30-18:30":"16:00-18:00"
+  "16:00-18:00":"16:00-18:00","16:30-18:30":"16:00-18:00",
+  "18:30-21:00":"18:30-21:00","19:00-21:00":"18:30-21:00"
 };
 /* 這個時段算在哪一場。對不到就回空字串，歸「其他」 */
 function bkBase(sl){ return SLOT_BASE[String(sl||"").trim()] || "" }
@@ -213,16 +230,27 @@ async function bkLoadSched(force){
       if(d&&v!=="")m[d]=Math.max(0,bkNum(v));
     });
   }catch(e){}
-  /* 2) Firebase /schedule 蓋過去（預約後台按 ＋／− 存的就是這裡） */
+  /* 2) Firebase /schedule 蓋過去（預約後台按 ＋／− 存的就是這裡）
+        值可能是數字（舊）或 {t,ev}（含晚上），兩種都原封不動收下，
+        要用的時候再交給 bkSchedVal 正規化。 */
   try{
     var j=await (await fetch(bkf("/schedule.json"))).json();
     if(j)for(var k in j){
       var v2=j[k];
-      if(v2!==null&&v2!==undefined&&v2!=="")
-        m[String(k).replace(/-/g,"/")]=Math.max(0,+v2||0);
+      if(v2===null||v2===undefined||v2==="")continue;
+      m[String(k).replace(/-/g,"/")]=
+        (typeof v2==="object")?{t:Math.max(0,+v2.t||0),ev:Math.max(0,+v2.ev||0)}
+                              :Math.max(0,+v2||0);
     }
   }catch(e){}
   bkSched=m;
+}
+/* 班表的值 → {t, ev}。數字就是舊格式，晚上一律當沒開。 */
+function bkSchedVal(d){
+  var v=bkSched?bkSched[d]:null;
+  if(v==null)return null;
+  if(typeof v==="object")return {t:Math.max(0,+v.t||0),ev:Math.max(0,+v.ev||0)};
+  return {t:Math.max(0,+v||0),ev:0};
 }
 /* 沒特別指定的日子，看星期幾 */
 function bkBaseOn(d){
@@ -231,14 +259,43 @@ function bkBaseOn(d){
   return BK_BASE_WEEK[w]==null?1:BK_BASE_WEEK[w];
 }
 function bkTeachersOn(d){
-  if(bkSched&&bkSched[d]!=null)return bkSched[d];
-  return bkBaseOn(d);
+  var v=bkSchedVal(d);
+  return v?v.t:bkBaseOn(d);
 }
+/* 晚上有幾位老師。沒排就是 0，代表那天晚上不開。 */
+function bkEveOn(d){ var v=bkSchedVal(d); return v?v.ev:0 }
 function bkCapOf(d){ return Math.min(bkTeachersOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+function bkEveCap(d){ return Math.min(bkEveOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+/* 這一天實際存在的時段。晚上有排才會多一格。 */
+function bkSlotsOn(d){ return bkEveOn(d)>0?SLOTS.concat([EVE_SLOT]):SLOTS.slice() }
+/* 某個時段的容量。晚上走晚上的老師數，白天走白天的。 */
+function bkCapOfSlot(d,slot){ return slot===EVE_SLOT?bkEveCap(d):bkCapOf(d) }
 /* 改老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
 async function bkSetTeachers(dateStr,val){
+  /* val 是數字＝只改白天，晚上維持原樣；null＝恢復預設 */
   if(!bkSched)bkSched={};
-  if(val===null)delete bkSched[dateStr]; else bkSched[dateStr]=val;
+  if(val===null){ delete bkSched[dateStr] }
+  else{
+    var ev=bkEveOn(dateStr);
+    bkSched[dateStr]= ev>0 ? {t:Math.max(0,+val||0),ev:ev} : Math.max(0,+val||0);
+  }
+  await bkSchedWrite(dateStr,val===null?null:bkSched[dateStr]);
+}
+/* 只改晚上，白天不動 */
+async function bkSetEve(dateStr,ev){
+  if(!bkSched)bkSched={};
+  var t=bkTeachersOn(dateStr);
+  ev=Math.max(0,+ev||0);
+  /* 晚上關掉、白天又是星期預設值 → 整筆刪掉，格子回到「未指定」 */
+  if(ev===0&&t===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
+    delete bkSched[dateStr];
+    await bkSchedWrite(dateStr,null);
+    return;
+  }
+  bkSched[dateStr]= ev>0 ? {t:t,ev:ev} : t;
+  await bkSchedWrite(dateStr,bkSched[dateStr]);
+}
+async function bkSchedWrite(dateStr,val){
   var path=bkf("/schedule/"+dateStr.replace(/\//g,"-")+".json");
   try{
     if(val===null)await fetch(path,{method:"DELETE"});
@@ -248,7 +305,7 @@ async function bkSetTeachers(dateStr,val){
 }
 /* 那個時段還剩幾位 */
 function bkSlotInfo(dateStr,slot){
-  var cap=bkCapOf(dateStr);
+  var cap=bkCapOfSlot(dateStr,slot);
   var rows=bkList.filter(function(b){
     return b.date===dateStr&&
       (bkBase(b.slot)===slot||bkBase(b.slot2)===slot||b.slot===slot||b.slot2===slot)&&
@@ -423,7 +480,9 @@ async function bkRender(){
   var pplSub=totKid?"含小孩 "+totKid:"";
   /* 有沒有哪個時段爆掉 */
   var capNow=bkCapOf(dsNow);
-  var over=SLOTS.filter(function(s){ return bkSlotInfo(dsNow,s).used>capNow });
+  var slotsNow=bkSlotsOn(dsNow), eveNow=bkEveOn(dsNow);
+  var over=slotsNow.filter(function(s){
+    return bkSlotInfo(dsNow,s).used>bkCapOfSlot(dsNow,s) });
 
   root.innerHTML=
    '<div class="bk-bar">'+
@@ -437,7 +496,8 @@ async function bkRender(){
        '<button class="bk-tbtn" id="bkTMinus">−</button>'+
        '<span class="bk-tnum">'+tOn+'</span>'+
        '<button class="bk-tbtn" id="bkTPlus">＋</button></b>'+
-       '<span>可開課老師・'+(tSet?"已指定":"預設")+'</span></div>'+
+       '<span>可開課老師・'+(tSet?"已指定":"預設")+
+         (eveNow?'<br>晚上 '+eveNow+' 位':'')+'</span></div>'+
      '<div><b>'+bkList.length+'</b><span>預約組數</span></div>'+
      '<div><b>'+totalPeople+'</b><span>總人數'+(pplSub?"・"+pplSub:"")+'</span></div>'+
      '<div><b>'+doneCount+'/'+bkList.length+'</b><span>已核銷</span></div>'+
@@ -447,17 +507,25 @@ async function bkRender(){
      ' 超過表定上限（每時段 '+capNow+' 位），請確認人手。</div>':"")+
    '<button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
    (function(){ var ci=0;
-    return SLOTS.concat(["其他"]).map(function(sl){
+    /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
+       所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
+    var show=slotsNow.slice();
+    if(show.indexOf(EVE_SLOT)<0&&bkList.some(function(b){
+      return bkBase(b.slot)===EVE_SLOT||bkBase(b.slot2)===EVE_SLOT }))show.push(EVE_SLOT);
+    return show.concat(["其他"]).map(function(sl){
       var g=bkList.filter(function(b){
         return sl==="其他"
-          ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0)
+          ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0&&b.slot!==EVE_SLOT)
           : (bkBase(b.slot)===sl||bkBase(b.slot2)===sl||b.slot===sl||b.slot2===sl) });
       if(!g.length)return "";
       var cls="bk-slot c"+(ci++%2);
       var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
-      var full=sl!=="其他"&&n>capNow;
-      return '<div class="'+cls+'"><div class="bk-sh">'+sl+'　<span'+(full?' class="bk-shfull"':'')+'>'+
-        n+(sl==="其他"?"":" / "+capNow)+' 位'+(full?"・超載":"")+'</span></div>'+
+      var capS=bkCapOfSlot(dsNow,sl);
+      var full=sl!=="其他"&&n>capS;
+      return '<div class="'+cls+'"><div class="bk-sh">'+sl+
+        (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
+        '　<span'+(full?' class="bk-shfull"':'')+'>'+
+        n+(sl==="其他"?"":" / "+capS)+' 位'+(full?"・超載":"")+'</span></div>'+
         g.map(bkCard).join("")+'</div>';
     }).join("");
    })()+
@@ -595,23 +663,27 @@ async function bkSchedRender(){
   h+='<div class="bk-cgrid">';
   ["一","二","三","四","五","六","日"].forEach(function(w){
     h+='<div class="bk-cwd">'+w+'</div>' });
-  var i, seats=0, openDays=0;
+  var i, seats=0, openDays=0, eveDays=0;
   for(i=0;i<lead;i++)h+='<div class="bk-mday void"></div>';
   for(i=1;i<=days;i++){
     var k=bkCalY+"/"+bk2(bkCalM)+"/"+bk2(i);
     var t2=bkTeachersOn(k), cap=bkCapOf(k);
+    var ev=bkEveOn(k), evCap=bkEveCap(k);
     var set=bkSched&&bkSched[k]!=null;
     if(t2>0){ seats+=cap*SLOTS.length; openDays++ }
-    h+='<button class="bk-mday'+(t2===0?" off":"")+(set?" set":"")+
+    if(ev>0){ seats+=evCap; eveDays++ }
+    h+='<button class="bk-mday'+(t2===0&&ev===0?" off":"")+(set?" set":"")+
        (k===todayK?" now":"")+'" data-d="'+k+'">'+
        '<span class="d">'+i+'</span>'+
        '<span class="n">'+(t2===0?"休":t2)+'</span>'+
-       '<span class="c">'+(t2===0?"不開課":cap+" 位")+'</span></button>';
+       '<span class="c">'+(t2===0?"不開課":cap+" 位")+'</span>'+
+       (ev>0?'<span class="bk-eve">夜 '+evCap+'</span>':'')+'</button>';
   }
   h+='</div>';
   h+='<div class="bk-cfoot">本月開課 '+openDays+' 天・可容納 '+seats.toLocaleString()+' 人次'+
-     '（每天 '+SLOTS.length+' 個時段）<br>'+
-     '深色外框代表你手動指定過，淺色是照星期幾的預設值。點任一天可以改。</div>';
+     '（白天每天 '+SLOTS.length+' 個時段'+(eveDays?'，另有 '+eveDays+' 天加開晚上':'')+'）<br>'+
+     '深色外框代表你手動指定過，淺色是照星期幾的預設值。點任一天可以改。<br>'+
+     '格子右下角有「夜」的，代表那天有加開 '+EVE_SLOT+'。</div>';
   root.innerHTML=h;
 
   document.getElementById("bkCPrev").onclick=function(){
@@ -638,15 +710,44 @@ function bkSchedPick(k){
        (n===0?"休":n)+'<small>'+(n===0?"不開課":cap+" 位")+'</small></button>';
   }
   h+='</div>';
+  /* 晚上時段：獨立的老師數，0 就是不開。
+     跟白天分開是因為白天排 3 位不代表晚上也有 3 位。 */
+  var evCur=bkEveOn(k);
+  h+='<div style="margin-top:18px;padding-top:14px;border-top:1px solid #E8E3DA">'+
+     '<div style="font-size:14px;font-weight:600;margin-bottom:2px">晚上時段 '+EVE_SLOT+'</div>'+
+     '<div class="bk-hint" style="padding:0 0 10px">'+
+     (evCur?'目前開放・'+evCur+' 位老師・可收 '+bkEveCap(k)+' 位'
+           :'目前不開放，客人端不會看到這個時段')+'</div>';
+  h+='<div class="bk-nopts">';
+  for(var e2=0;e2<=4;e2++){
+    var ecap=Math.min(e2*CAP_PER_TEACHER,SEAT_CAP);
+    h+='<button class="bk-nopt'+(e2===evCur?" on":"")+'" data-ev="'+e2+'">'+
+       (e2===0?"不開":e2)+'<small>'+(e2===0?"—":ecap+" 位")+'</small></button>';
+  }
+  h+='</div></div>';
   if(isSet)h+='<button class="bk-cancel" style="width:100%;margin-top:12px" id="bkNReset">'+
     '恢復預設（'+base+' 位）</button>';
   h+='<div class="bk-act"><button class="bk-cancel" onclick="bkClose()">關閉</button></div>';
   h+='<div class="bk-hint" style="padding:12px 2px 0">改完立即生效，客人端該日名額同步更新。'+
      '已經約進來的預約不會被取消，若因此超載，今日排課頁會顯示紅色警示。</div>';
   bkSheet(h);
-  document.querySelectorAll(".bk-nopt").forEach(function(el){
+  document.querySelectorAll(".bk-nopt[data-n]").forEach(function(el){
     el.onclick=async function(){
       await bkSetTeachers(k,+el.dataset.n); bkClose(); bkSchedRender();
+      if(ds(bkDate)===k&&document.getElementById("bkRoot"))bkRender();
+    } });
+  document.querySelectorAll(".bk-nopt[data-ev]").forEach(function(el){
+    el.onclick=async function(){
+      var ev=+el.dataset.ev;
+      /* 關掉晚上之前先確認有沒有人已經約了，不然客人會撲空 */
+      if(ev===0){
+        var booked=bkList.filter(function(b){
+          return b.date===k&&b.status!=="cancelled"&&b.status!=="expired"&&
+            (bkBase(b.slot)===EVE_SLOT||bkBase(b.slot2)===EVE_SLOT) }).length;
+        if(booked&&!confirm("這天晚上已經有 "+booked+" 組預約。\n\n"+
+          "關掉只會讓客人端不能再約，已經約進來的不會被取消。\n確定嗎？"))return;
+      }
+      await bkSetEve(k,ev); bkClose(); bkSchedRender();
       if(ds(bkDate)===k&&document.getElementById("bkRoot"))bkRender();
     } });
   var rs=document.getElementById("bkNReset");
@@ -1740,6 +1841,9 @@ css.textContent=
   "box-shadow:0 0 0 2px rgba(58,76,122,.1)}"+
 ".bk-way.dis{opacity:.3;pointer-events:none}"+
 ".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}"+
+".bk-eve{position:absolute;right:5px;bottom:4px;font-size:10.5px;line-height:1;"+
+  "background:var(--bkNavy,#1E2B4F);color:#fff;padding:2px 5px;border-radius:5px}"+
+".bk-mday{position:relative}"+
 ".bk-irow{display:flex;gap:6px;align-items:center;margin-bottom:7px}"+
 ".bk-irow>select{flex:1;min-width:0}"+
 ".bk-irow>input{width:64px;text-align:right}"+
