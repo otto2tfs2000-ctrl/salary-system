@@ -303,6 +303,82 @@ function bkSearch(q){
    30 堂 30,000 是一堂 1,000、70 堂 60,000 是一堂約 857，
    所以要看這位客人當初買的是哪一個方案，用買的金額除以堂數。
    回傳 null 代表算不出來（舊資料匯入的沒有購買紀錄）。 */
+/* ══ 夯客舊票券的方案單價對照表 ════════════════════════
+   從夯客校正進來的堂數，明細裡只有堂數沒有金額。核銷時
+   算不出「這一堂認列多少」，就會退而用當天的課程牌價
+   （例如 1,300）當業績——對散客沒錯，對方案客人完全錯，
+   人家那一堂是一次買斷攤下來的。
+
+   夯客沒有給購買日期，但給了到期日，而效期是固定的，
+   所以「到期日 − 效期」就推得出購買日，價格改版才分得開。
+   高階30堂 2026 年 3 月改版：三月前 28,500、三月起 30,000。
+
+   這張表只服務夯客帶進來的舊票券。以後在系統裡賣的方案，
+   明細本來就會寫 price，走上面那條原本的路，不會進到這裡。
+   ═════════════════════════════════════════════════════ */
+var BK_TKT_PLAN = [
+  { name:"高階30堂",      months:12, mult:1,
+    rules:[ { from:"2026-03-01", qty:30, price:30000 },
+            {                    qty:30, price:28500 } ] },
+  { name:"高階30堂(0.5)", months:12, mult:0.5,
+    rules:[ { from:"2026-03-01", qty:30, price:30000 },
+            {                    qty:30, price:28500 } ] },
+  { name:"高階45堂",      months:15, mult:1,
+    rules:[ { qty:45, price:40500 } ] },
+  { name:"高階70堂",      months:24, mult:1,
+    rules:[ { qty:70, price:60000 } ] },
+  { name:"高階70堂(0.5)", months:24, mult:0.5,
+    rules:[ { qty:70, price:60000 } ] }
+];
+
+/* 到期日往回推效期＝推估購買日。曾經展延過效期的人會偏後，
+   所以顯示的時候一定要標「推估」，不要讓人以為是夯客給的。 */
+function bkTktBuyDate(expiry, months){
+  if(!expiry||!months)return "";
+  var p=String(expiry).split("-");
+  if(p.length<3)return "";
+  var d=new Date(+p[0],+p[1]-1,+p[2]);
+  d.setMonth(d.getMonth()-months);
+  var z=function(n){ return String(n).padStart(2,"0") };
+  return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
+}
+function bkTktPlanOf(name){
+  for(var i=0;i<BK_TKT_PLAN.length;i++)
+    if(BK_TKT_PLAN[i].name===name)return BK_TKT_PLAN[i];
+  return null;
+}
+/* 一個人可能有好幾張票券，取到期日最晚的那張——那是最近買的，
+   最能代表他現在手上的堂數是什麼價。 */
+function bkTktUnit(m){
+  var ts=(m&&Array.isArray(m.tickets))?m.tickets:[];
+  var best=null, bestPlan=null;
+  ts.forEach(function(t){
+    if(!t||t.kind!=="session")return;
+    var pl=bkTktPlanOf(t.name); if(!pl)return;
+    if(!best||String(t.expiry||"")>String(best.expiry||"")){ best=t; bestPlan=pl }
+  });
+  if(!best)return null;
+  var buy=bkTktBuyDate(best.expiry,bestPlan.months);
+  var rule=null;
+  for(var i=0;i<bestPlan.rules.length;i++){
+    var r=bestPlan.rules[i];
+    if(!r.from){ rule=r; break }
+    if(buy&&buy>=r.from){ rule=r; break }
+  }
+  if(!rule)return null;
+  return { unit:Math.round(rule.price/rule.qty*(bestPlan.mult||1)),
+           plan:best.name, qty:rule.qty, price:rule.price,
+           buy:buy, fromTicket:true };
+}
+/* 有票券但表上查不到價的，至少把方案名稱講出來，
+   別只丟一句「查不到」讓人不知道要去補什麼。 */
+function bkTktNameOnly(m){
+  var ts=(m&&Array.isArray(m.tickets))?m.tickets:[];
+  for(var i=0;i<ts.length;i++)
+    if(ts[i]&&ts[i].kind==="session")return ts[i].name||"";
+  return "";
+}
+
 function bkSessionUnit(m){
   var l=(m&&m.ledger)||{}, best=null;
   Object.keys(l).forEach(function(k){
@@ -312,7 +388,7 @@ function bkSessionUnit(m){
     if(d<=0||p<=0)return;                    /* 消耗掉的那些是負的，跳過 */
     if(!best||String(r.at||"")>String(best.at||""))best=r;
   });
-  if(!best)return null;
+  if(!best)return bkTktUnit(m);      /* 明細沒金額，改用夯客票券的方案對照表 */
   return {unit:Math.round((+best.price)/(+best.delta)),
           plan:best.planName||"",qty:+best.delta,price:+best.price};
 }
@@ -835,7 +911,7 @@ async function bkCheckout(id){
     course.amt=+document.getElementById("ckAmt").value||0;
     var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
     var total=course.amt+addTotal;
-    var bonus=bonusOf(course.amt);          /* 加價項目不算紅利 */
+    var bonus=bonusOf(course.amt), su=null; /* 加價項目不算紅利 */
     var h="課程 <b>$"+course.amt.toLocaleString()+"</b>";
     if(addTotal)h+="　加價 <b>$"+addTotal.toLocaleString()+"</b>";
     h+="　合計 <b>$"+total.toLocaleString()+"</b><br>";
@@ -857,13 +933,26 @@ async function bkCheckout(id){
         if(l2<0)h+='<div class="bk-err">堂數不足</div>';
         /* 堂數方案的一堂值多少，跟課程標價不一樣。
            業績要認列的是方案攤下來的單價，不是牌價。 */
-        var su=bkSessionUnit(payer);
-        h+=su
-          ?("這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（"+
-             esc(su.plan||"堂數方案")+"　"+su.qty+" 堂 $"+su.price.toLocaleString()+"）<br>")
-          :('<div class="bk-warn">查不到這位客人的堂數方案，'+
-            '業績先用課程費用 $'+course.amt.toLocaleString()+' 認列。</div>'); }
-      h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+course.amt.toLocaleString()+" ÷ 500，加價不計）";
+        su=bkSessionUnit(payer);
+        if(su){
+          h+="這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（"+
+             esc(su.plan||"堂數方案")+"　"+su.qty+" 堂 $"+su.price.toLocaleString()+"）";
+          h+=su.fromTicket
+            ? '<span class="bk-cap">夯客票券・推估 '+esc(su.buy||"")+' 購買</span><br>'
+            : "<br>";
+        }else{
+          var tn=bkTktNameOnly(payer);
+          h+='<div class="bk-warn">'+
+             (tn?("「"+esc(tn)+"」還沒有單價，"):"查不到這位客人的堂數方案，")+
+             '業績先用課程費用 $'+course.amt.toLocaleString()+' 認列。</div>';
+        } }
+      /* 用堂數扣的，紅利要用方案攤下來的單堂價算，不是當天的牌價。
+         牌價 1,300 跟單堂 1,000 除以 500 之後差一點，是實打實的誤差。 */
+      var bBase=(course.way==="sessions"&&su)?su.unit:course.amt;
+      bonus=bonusOf(bBase);
+      h+="紅利回饋 <b>+"+bonus+"</b> 點（"+
+         ((course.way==="sessions"&&su)?"單堂認列 ":"課程 ")+
+         bBase.toLocaleString()+" ÷ 500，加價不計）";
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
   }
@@ -955,11 +1044,13 @@ async function bkCheckout(id){
       }
       var proxy=payer&&b.memberPhone&&payer.phone!==b.memberPhone;
       var tail=proxy?"（代 "+(b.customer&&b.customer.name||"")+" 扣課）":"";
-      var useSe=(course.way==="sessions"?1:0), bonus=bonusOf(course.amt);
+      var useSe=(course.way==="sessions"?1:0);
       /* 課程實際認列的營收。堂數扣抵要用方案單價，其餘就是收的金額。
          算好存起來，之後報表不用重算，客人再買新方案也不會回頭改到舊帳。 */
       var sUnit=useSe?bkSessionUnit(payer):null;
       var courseRev=(useSe&&sUnit)?(sUnit.unit*useSe):course.amt;
+      /* 紅利基準跟畫面上顯示的那個要一致，不然客人看到的跟實際入帳的會不一樣 */
+      var bonus=bonusOf((useSe&&sUnit)?sUnit.unit:course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
