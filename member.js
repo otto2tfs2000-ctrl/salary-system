@@ -381,8 +381,10 @@ function mbDetail(phone){
   }
   h += '</div>';
 
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' +
+       '每一筆都可以按 ✎ 補上來源與說明。半透明的標籤是系統推斷的，確認過存一次就會變實心。</div>';
   h += '<div style="max-height:46vh;overflow:auto"><table><thead><tr>' +
-       '<th style="width:120px">時間</th><th style="width:60px">類型</th><th style="width:80px">增減</th><th>原因</th><th style="width:70px">經手</th><th style="width:40px"></th>' +
+       '<th style="width:120px">時間</th><th style="width:60px">類型</th><th style="width:80px">增減</th><th>原因</th><th style="width:70px">經手</th><th style="width:76px"></th>' +
        '</tr></thead><tbody>';
   if (!rows.length) h += '<tr><td colspan="6"><div class="empty" style="padding:16px">還沒有任何紀錄</div></td></tr>';
   rows.forEach(function(r){
@@ -392,13 +394,16 @@ function mbDetail(phone){
       '<td style="font-size:13.5px">' + (TYPE[r.type] || r.type || '—') + '</td>' +
       '<td style="text-align:right;font-weight:600;color:' + (d >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (d > 0 ? '+' : '') + d.toLocaleString() + '</td>' +
       '<td style="font-size:13.5px">' +
+        mbSrcChip(r) +
         (r.manual ? '<span style="font-size:11.5px;background:var(--gold);color:#000;padding:1px 6px;border-radius:99px;margin-right:6px">手動</span>' : '') +
         mbEsc(r.reason || '') +
         (r.expiryNew
           ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiryNew + '（原 ' + (r.expiry || '—') + '，已延 ' + ((r.extends || []).length) + ' 次）</span>'
           : (r.expiry ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiry + '</span>' : '')) + '</td>' +
       '<td class="muted" style="font-size:12.5px">' + mbEsc(r.by || '') + '</td>' +
-      '<td style="text-align:center"><button class="btn btn-sm" style="padding:2px 7px;color:var(--red);border-color:#EBD3D0" onclick="mbDelLedger(\'' + phone + '\',\'' + r._k + '\')">✕</button></td>' +
+      '<td style="text-align:center;white-space:nowrap">' +
+        '<button class="btn btn-sm" style="padding:2px 7px" title="編輯這一筆" onclick="mbEditLedger(\'' + phone + '\',\'' + r._k + '\')">✎</button> ' +
+        '<button class="btn btn-sm" style="padding:2px 7px;color:var(--red);border-color:#EBD3D0" onclick="mbDelLedger(\'' + phone + '\',\'' + r._k + '\')">✕</button></td>' +
       '</tr>';
   });
   h += '</tbody></table></div>';
@@ -1587,6 +1592,203 @@ async function mbDelLedger(phone, key){
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(sum) });
     m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
   } catch(e){ alert('刪除失敗：' + e.message); return }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
+}
+
+/* ══ 4. 來源標記 ════════════════════════════════════════
+   同樣是 +10 堂，用買的、活動送的、客訴補償的，意義完全不同。
+   退費要不要算、業績要不要認、效期怎麼給，全看這個。
+   所以來源獨立成一個欄位 src，不是塞在原因文字裡讓人用讀的——
+   欄位可以掃、可以篩，文字只能一行一行看。
+
+   舊資料沒有 src，用既有欄位推斷：有 planName 就是買的，
+   imported 就是夯客帶過來的。推斷出來的標籤畫成半透明，
+   提醒這是猜的，人確認過存一次才變實心。
+   ═════════════════════════════════════════════════════════ */
+var MB_SRC = [
+  { k:'buy',      n:'購買',     bg:'#1F7A4D' },
+  { k:'gift',     n:'贈送',     bg:'#B8860B' },
+  { k:'event',    n:'活動加贈', bg:'#8A6D1F' },
+  { k:'comp',     n:'補償',     bg:'#A33A32' },
+  { k:'transfer', n:'轉讓',     bg:'#4A5568' },
+  { k:'fix',      n:'校正',     bg:'#566072' },
+  { k:'legacy',   n:'夯客帶入', bg:'#5A6478' }
+];
+function mbSrcInfo(k){
+  for (var i = 0; i < MB_SRC.length; i++) if (MB_SRC[i].k === k) return MB_SRC[i];
+  return null;
+}
+function mbSrcOf(r){
+  if (r && r.src) return r.src;
+  if (r && r.imported) return 'legacy';
+  if (r && r.planName) return 'buy';
+  return '';
+}
+function mbSrcChip(r){
+  var info = mbSrcInfo(mbSrcOf(r));
+  if (!info) return '';
+  var guess = !(r && r.src);
+  return '<span title="' + (guess ? '系統推斷的，按 ✎ 確認' : '已確認') +
+    '" style="font-size:11.5px;background:' + info.bg + ';color:#fff;padding:1px 7px;' +
+    'border-radius:99px;margin-right:6px;white-space:nowrap' + (guess ? ';opacity:.55' : '') + '">' +
+    info.n + '</span>';
+}
+
+/* ══ 5. 編輯單筆明細 ════════════════════════════════════
+   紙本對帳用的。以前一筆寫錯只能刪掉重加，但刪掉會斷開
+   跟匯入批次的關聯，之後想撤銷整批就撈不到那一筆。
+   改成就地編輯：類型、增減、來源、說明、日期都能改。
+   每次改動把「改之前長什麼樣」整包存進 edits，
+   誰在什麼時候把什麼改成什麼，事後查得到。
+
+   匯入進來的那幾筆不給改類型。撤銷整批是靠
+   「批次名稱＋類型」算出 key 去找的，類型一改，
+   那批堂數就永遠撤不掉了。其他欄位照改。
+   ═════════════════════════════════════════════════════════ */
+function mbLeVal(id){
+  var el = document.getElementById(id);
+  return el ? String(el.value == null ? '' : el.value) : '';
+}
+/* at 是 ISO 字串，明細列是直接切前 16 碼顯示的。
+   這裡沿用同一套切法，看到什麼就編輯什麼，不做時區換算，
+   免得改完之後整排時間跳掉 8 小時。 */
+function mbLeAtIn(at){
+  var s = String(at || '');
+  return s.length >= 16 ? s.slice(0, 16) : '';
+}
+function mbLeAtOut(v, fallback){
+  if (!v) return fallback || mbNow();
+  return (v.length === 16) ? (v + ':00.000Z') : v;
+}
+
+function mbEditLedger(phone, key){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m || !m.ledger || !m.ledger[key]) return;
+  if (!mbCanEdit()) { alert('沒有編輯權限'); return }
+  var r = m.ledger[key];
+  var money = mbCanMoney();
+  var lockType = !!r.imported;
+  var TYPE = { points:'點數', sessions:'堂數', bonus:'紅利', voucher:'折價金' };
+  var cur = mbSrcOf(r);
+
+  var h = '<h3 style="margin:0 0 2px">編輯這一筆明細</h3>' +
+    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
+
+  h += '<div class="card" style="margin-bottom:14px;font-size:13.5px">' +
+       '<div class="muted" style="font-size:12.5px;margin-bottom:4px">原本這一筆</div>' +
+       (TYPE[r.type] || r.type) + '　' +
+       ((+r.delta || 0) > 0 ? '+' : '') + (+r.delta || 0).toLocaleString() + '　' +
+       String(r.at || '').slice(0, 16).replace('T', ' ') +
+       (r.by ? '　經手 ' + mbEsc(r.by) : '') +
+       (r.batch ? '<br><span class="muted" style="font-size:12.5px">匯入批次：' + mbEsc(r.batch) + '</span>' : '') +
+       '</div>';
+
+  h += '<div class="form-grid" style="margin-bottom:12px">';
+  h += '<div class="fg"><label>類型' + (lockType ? '（匯入的不能改）' : '') + '</label>' +
+       '<select id="mb-le-type"' + ((lockType || !money) ? ' disabled' : '') + '>' +
+       MB_ADJ_TYPES.map(function(t){
+         return '<option value="' + t.k + '"' + (t.k === r.type ? ' selected' : '') + '>' + t.n + '</option>';
+       }).join('') + '</select></div>';
+  h += '<div class="fg"><label>增減' + (money ? '' : '（沒有權限，唯讀）') + '</label>' +
+       '<input id="mb-le-delta" type="number" step="0.5" value="' + (+r.delta || 0) + '"' +
+       (money ? '' : ' disabled') + '></div>';
+  h += '</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>這些是怎麼來的</label>' +
+       '<select id="mb-le-src">' +
+       '<option value="">（先不標）</option>' +
+       MB_SRC.map(function(t){
+         return '<option value="' + t.k + '"' + (t.k === cur ? ' selected' : '') + '>' + t.n + '</option>';
+       }).join('') + '</select>' +
+       (!r.src && cur
+         ? '<div class="muted" style="font-size:12.5px;margin-top:6px">' +
+           '現在顯示的「' + ((mbSrcInfo(cur) || {}).n || '') + '」是系統推斷的，存一次就確認下來。</div>'
+         : '') +
+       '</div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>說明（會顯示在明細上）</label>' +
+       '<textarea id="mb-le-reason" rows="2" style="width:100%">' + mbEsc(r.reason || '') + '</textarea>' +
+       '<div class="muted" style="font-size:12.5px;margin-top:6px">' +
+       '例：週年慶滿三千送兩堂／課程臨時取消補償／朋友轉讓，原持有人 0912345678</div></div>';
+
+  h += '<div class="fg" style="margin-bottom:12px"><label>日期時間</label>' +
+       '<input id="mb-le-at" type="datetime-local" value="' + mbLeAtIn(r.at) + '"></div>';
+
+  if (Array.isArray(r.edits) && r.edits.length){
+    var last = r.edits[r.edits.length - 1] || {};
+    h += '<div class="info-box" style="margin-bottom:12px;font-size:12.5px">' +
+         '這筆改過 ' + r.edits.length + ' 次，最近一次 ' +
+         String(last.at || '').slice(0, 16).replace('T', ' ') + '　' + mbEsc(last.by || '') + '</div>';
+  }
+
+  h += '<div id="mb-le-err" style="color:var(--red);font-size:13.5px;margin-bottom:10px"></div>';
+  h += '<div class="row" style="gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbDetail(\'' + phone + '\')">取消</button>' +
+       '<button class="btn btn-gold" style="flex:2" id="mb-le-ok" ' +
+       'onclick="mbSaveLedger(\'' + phone + '\',\'' + key + '\')">儲存</button></div>';
+  mbModal(h);
+}
+
+async function mbSaveLedger(phone, key){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m || !m.ledger || !m.ledger[key]) return;
+  var r = m.ledger[key];
+  var err = document.getElementById('mb-le-err');
+  var money = mbCanMoney();
+
+  var type = (r.imported || !money) ? r.type : (mbLeVal('mb-le-type') || r.type);
+  var delta = (+r.delta || 0);
+  if (money){
+    var raw = mbLeVal('mb-le-delta');
+    if (raw === '' || isNaN(+raw)) { if (err) err.textContent = '增減請填數字。'; return }
+    delta = +raw;
+  }
+  var src    = mbLeVal('mb-le-src');
+  var reason = mbLeVal('mb-le-reason').trim();
+  var at     = mbLeAtOut(mbLeVal('mb-le-at'), r.at);
+
+  if (!reason){ if (err) err.textContent = '請寫一句說明，之後翻明細的人才知道這筆是怎麼回事。'; return }
+
+  var before = { type: r.type, delta: (+r.delta || 0), src: r.src || '',
+                 reason: r.reason || '', at: r.at || '' };
+  var changed = before.type !== type || before.delta !== delta || before.src !== src ||
+                before.reason !== reason || before.at !== at;
+  if (!changed){ mbDetail(phone); return }
+
+  /* 動到餘額就再問一次，避免手滑多打一個零 */
+  var diff = delta - before.delta;
+  var big  = (type === 'points' || type === 'voucher') ? 3000 : 10;
+  if (Math.abs(diff) >= big){
+    var TYPE2 = { points:'點數', sessions:'堂數', bonus:'紅利', voucher:'折價金' };
+    if (!confirm('這次改動會讓餘額變動：\n\n' + (TYPE2[type] || type) + ' ' +
+                 (diff > 0 ? '+' : '') + diff.toLocaleString() + '\n\n確定嗎？')) return;
+  }
+
+  var btn = document.getElementById('mb-le-ok');
+  if (btn){ btn.disabled = true; btn.textContent = '儲存中…' }
+
+  var body = Object.assign({}, r);
+  body.type = type; body.delta = delta; body.reason = reason; body.at = at;
+  if (src) body.src = src; else delete body.src;
+  body.edits = (Array.isArray(r.edits) ? r.edits : []).concat([
+    { at: mbNow(), by: mbWho(), before: before }
+  ]);
+
+  try {
+    await fetch(mbf('/members/' + phone + '/ledger/' + key + '.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    m.ledger[key] = body;
+    var sum = mbSum(m.ledger);
+    await fetch(mbf('/members/' + phone + '/cache.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(sum) });
+    m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+  } catch(e){
+    if (err) err.textContent = '儲存失敗：' + e.message;
+    if (btn){ btn.disabled = false; btn.textContent = '儲存' }
+    return;
+  }
   mbDetail(phone);
   if (typeof mbDrawHits === 'function') mbDrawHits();
 }
