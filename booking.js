@@ -918,6 +918,34 @@ async function bkCheckout(id){
     if(a.materialId&&!(+a.qty>0))a.qty=1;
   });
   var teacher=old?old.teacher:"";
+
+  /* ══ 核銷時可以改課程與扣堂數（2026-08-10）══════════════
+     兩個問題同源。
+
+     一、扣堂數本來寫死 1，不管幾個人。兩個人一起上、都用堂數扣，
+         系統只扣一堂、只認列一堂的營收。少扣的堂數客人賺到，
+         少認的營收月報看不到，而且完全沒有跡象。
+         改成預設跟著人數走，並且獨立成一個欄位讓人能改——
+         兩個人來但只有一個人用堂數，這種狀況現場很常見。
+
+     二、課程項目以前只能在「修改預約」改。可是客人是上課當下才
+         改主意的，核銷才是那個當下。逼人先跳去修改預約再回來核銷，
+         等於同一件事做兩遍。
+
+     課程一改，用料表和庫存扣帳都要跟著改，所以下面 drawMats、
+     consumeInvForBooking 全部改讀這份即時的品項，不再讀預約單。 */
+  var ckItems=[], ckItemsDirty=false;
+  (b.items||[]).forEach(function(it){
+    var ci=-1;
+    bkCourses.forEach(function(c,i){
+      if(ci<0&&c.name===it.name&&String(c.spec||"")===String(it.spec||""))ci=i });
+    ckItems.push({ ci: ci>=0?String(ci):"", qty:+it.qty||1,
+                   lostName: ci<0?(it.name||""):"" });
+  });
+  if(!ckItems.length)ckItems.push({ci:"",qty:0,lostName:""});
+  /* 這次要扣幾堂。修正核銷時沿用原本扣的，新核銷預設等於人數。 */
+  var useSeN=(old&&old.useSessions!=null)?(+old.useSessions||0):0;
+  var seTouched=!!(old&&old.useSessions!=null);
   /* 加購金額自動帶入：庫存品項上填了售價，選到就把「售價 × 數量」填進金額欄。
      行政自己動過金額的那一列就不再覆蓋——現場常有整組算便宜、
      或補差額的狀況，系統算的不該把人手改的蓋掉。
@@ -946,8 +974,13 @@ async function bkCheckout(id){
      '<div class="bk-f"><label>小孩</label>'+
        '<input id="ckKid" inputmode="numeric" value="'+nKid+'"></div></div>'+
    '<div class="bk-left" id="ckPplHint" style="margin:-6px 0 11px"></div>'+
+   '<div class="bk-f"><label>課程項目</label><div id="ckItems"></div>'+
+     '<button type="button" class="bk-mini" id="ckItemAdd">＋ 再加一門課</button>'+
+     '<div class="bk-left" id="ckItemSum"></div></div>'+
    '<div class="bk-f"><label>課程費用</label><input id="ckAmt" inputmode="numeric" value="'+(course.amt||"")+'"></div>'+
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
+   '<div class="bk-f" id="ckSeBox" style="display:none"><label>這次扣幾堂</label>'+
+     '<input id="ckSe" inputmode="numeric" value=""><div class="bk-left" id="ckSeHint"></div></div>'+
    '<div class="bk-f"><label>加價項目（畫布、公仔等）</label><div id="ckAdd"></div>'+
      '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button><div id="ckAddWarn"></div></div>'+
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
@@ -962,13 +995,70 @@ async function bkCheckout(id){
 
   document.getElementById("ckX").onclick=bkClose;
 
+  function ckItemsOut(){
+    var out=[];
+    ckItems.forEach(function(r){
+      if(r.ci===""){
+        /* 課表上找不到的舊品項，原樣留著，不要因為核銷就把它弄丟 */
+        if(r.lostName)out.push({name:r.lostName,spec:"",qty:+r.qty||1,price:0});
+        return;
+      }
+      var c=bkCourses[+r.ci]; if(!c)return;
+      out.push({name:c.name,spec:c.spec,qty:+r.qty||1,price:+c.price||0});
+    });
+    return out;
+  }
+  function ckItemsQty(){
+    return ckItems.reduce(function(s,r){ return s+(r.ci===""&&!r.lostName?0:(+r.qty||0)) },0);
+  }
+  function ckDrawItems(){
+    var box=document.getElementById("ckItems"); if(!box)return;
+    box.innerHTML=ckItems.map(function(r,i){
+      var c=r.ci===""?null:bkCourses[+r.ci];
+      var opts='<option value="">（不指定）</option>'+
+        (r.lostName?'<option value="" selected>'+esc(r.lostName)+'（原資料，課表裡沒有）</option>':'')+
+        bkCourseOptions(r.ci);
+      return '<div class="bk-irow">'+
+        '<select data-cr="'+i+'" data-cf="ci">'+opts+'</select>'+
+        '<input data-cr="'+i+'" data-cf="qty" inputmode="numeric" value="'+(r.qty||0)+'" placeholder="位">'+
+        (ckItems.length>1?'<button type="button" class="bk-idel" data-cdel="'+i+'">✕</button>'
+                         :'<span class="bk-ipad"></span>')+
+        '</div>'+
+        (c?'<div class="bk-left bk-iinfo">單價 $'+(+c.price||0).toLocaleString()+
+            (c.dur?"　時長 "+esc(c.dur):"")+'</div>':'');
+    }).join("");
+    box.querySelectorAll("select[data-cf=ci]").forEach(function(el){
+      el.onchange=function(){
+        var r=ckItems[+el.dataset.cr];
+        r.ci=el.value; r.lostName=""; ckItemsDirty=true;
+        if(!(+r.qty>0))r.qty=1;
+        ckDrawItems(); drawMats(); calc();
+      } });
+    box.querySelectorAll("input[data-cf=qty]").forEach(function(el){
+      el.oninput=function(){
+        ckItems[+el.dataset.cr].qty=+el.value||0; ckItemsDirty=true; calc();
+      } });
+    box.querySelectorAll("[data-cdel]").forEach(function(el){
+      el.onclick=function(){
+        ckItems.splice(+el.dataset.cdel,1); ckItemsDirty=true;
+        if(!ckItems.length)ckItems.push({ci:"",qty:0,lostName:""});
+        ckDrawItems(); drawMats(); calc();
+      } });
+  }
+  document.getElementById("ckItemAdd").onclick=function(){
+    ckItemsDirty=true;
+    ckItems.push({ci:"",qty:1,lostName:""});
+    ckDrawItems(); drawMats(); calc();
+  };
+  ckDrawItems();
+
   /* 課程用料裡標了群組的材料，一組列一行讓老師點選。
      沒標群組的課程完全不受影響，這一區直接不出現。 */
   function drawMats(){
     var box=document.getElementById("ckMats"); if(!box)return;
     var gs=[];
     try{
-      if(typeof invRecipeGroups==="function")gs=invRecipeGroups(b.items||[])||[];
+      if(typeof invRecipeGroups==="function")gs=invRecipeGroups(ckItemsOut())||[];
     }catch(e){ gs=[] }
     if(!gs.length){ box.innerHTML=""; return }
     var h='<div class="bk-f"><label>材料選擇</label>';
@@ -1079,8 +1169,31 @@ async function bkCheckout(id){
   document.getElementById("ckAddNew").onclick=function(){
     addons.push({materialId:null,name:"",qty:0,amt:0,way:payer?"points":"cash"}); drawAddons(); calc() };
 
+  /* 這次要扣幾堂。人沒動過就跟著人數走，動過就聽人的。 */
+  function ckSeNow(){
+    if(!seTouched){
+      var n=ckItemsQty()||(nAdult+nKid)||1;
+      useSeN=n;
+      var el=document.getElementById("ckSe");
+      if(el&&String(el.value)!==String(n))el.value=n;
+    }
+    return Math.max(0,+useSeN||0);
+  }
+  function drawSe(){
+    var box=document.getElementById("ckSeBox"); if(!box)return;
+    var on=(course.way==="sessions");
+    box.style.display=on?"":"none";
+    if(!on)return;
+    var n=ckSeNow();
+    var hint=document.getElementById("ckSeHint");
+    if(hint)hint.innerHTML=seTouched
+      ? "手動指定 "+n+" 堂"
+      : "跟著課程人數走（目前 "+n+" 位）。只有部分人用堂數扣的話，直接改這格。";
+  }
+
   function calc(){
     course.amt=+document.getElementById("ckAmt").value||0;
+    drawSe();
     if(course.way==="sessions"&&course.amt>0&&!ckAmtTouched){
       /* 修正核銷時舊資料可能還帶著牌價，第一次算就歸零 */
       courseList=course.amt; course.amt=0;
@@ -1101,12 +1214,12 @@ async function bkCheckout(id){
     if(payer){
       var usePt=(course.way==="points"?course.amt:0)+
         addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
-      var useSe=(course.way==="sessions"?1:0);
+      var useSe=(course.way==="sessions")?ckSeNow():0;
       if(usePt){ var left=(payer.cache&&payer.cache.points||0)-usePt;
         h+="扣點數 <b>"+usePt.toLocaleString()+"</b>，剩 <b>"+left.toLocaleString()+"</b><br>";
         if(left<0)h+='<div class="bk-err">點數不足，還差 '+Math.abs(left).toLocaleString()+' 點</div>'; }
-      if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)-1;
-        h+="扣堂數 <b>1</b>，剩 <b>"+l2+"</b><br>";
+      if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)-useSe;
+        h+="扣堂數 <b>"+useSe+"</b>，剩 <b>"+l2+"</b><br>";
         if(!course.amt&&courseList)
           h+='<span class="bk-cap">牌價 $'+courseList.toLocaleString()+
              ' 不另收，這堂的錢買方案時已經付過</span><br>';
@@ -1115,7 +1228,9 @@ async function bkCheckout(id){
            業績要認列的是方案攤下來的單價，不是牌價。 */
         su=bkSessionUnit(payer);
         if(su){
-          h+="這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（"+
+          h+=(useSe>1?"認列 <b>$"+(su.unit*useSe).toLocaleString()+"</b>（單堂 $"+
+                      su.unit.toLocaleString()+" × "+useSe+" 堂・"
+              :"這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（")+
              esc(su.plan||"堂數方案")+"　"+su.qty+" 堂 $"+su.price.toLocaleString()+"）";
           h+=su.fromTicket
             ? '<span class="bk-cap">夯客票券・推估 '+esc(su.buy||"")+' 購買</span><br>'
@@ -1128,15 +1243,18 @@ async function bkCheckout(id){
         } }
       /* 用堂數扣的，紅利要用方案攤下來的單堂價算，不是當天的牌價。
          牌價 1,300 跟單堂 1,000 除以 500 之後差一點，是實打實的誤差。 */
-      var bBase=(course.way==="sessions")?(su?su.unit:(courseList||0)):course.amt;
+      var bBase=(course.way==="sessions")
+        ?(su?su.unit*useSe:(courseList||0)):course.amt;
       bonus=bonusOf(bBase);
       h+="紅利回饋 <b>+"+bonus+"</b> 點（"+
-         ((course.way==="sessions"&&su)?"單堂認列 ":"課程 ")+
+         ((course.way==="sessions"&&su)?"認列 ":"課程 ")+
          bBase.toLocaleString()+" ÷ 500，加價不計）";
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
   }
   document.getElementById("ckAmt").oninput=function(){ ckAmtTouched=true; calc() };
+  document.getElementById("ckSe").oninput=function(){
+    seTouched=true; useSeN=+this.value||0; calc() };
   document.getElementById("ckT").onchange=function(){ teacher=this.value };
 
   function pplHint(){
@@ -1194,6 +1312,13 @@ async function bkCheckout(id){
     /* 堂數扣抵本來就不收錢，0 元是正常的，其他方式才要求填金額 */
     if(course.way!=="sessions"&&!course.amt){ alert("課程費用要填"); return }
     if(cp.member&&!payer){ alert("這個付款方式需要先選會員"); return }
+    if(course.way==="sessions"){
+      var seN=ckSeNow();
+      if(!seN){ alert("堂數扣抵至少要扣 1 堂"); return }
+      var q=ckItemsQty();
+      if(q&&seN!==q&&!confirm("課程項目合計 "+q+" 位，但這次只扣 "+seN+" 堂。\n\n"+
+        "確定嗎？（部分人用堂數、其他人付現的話這樣是對的）"))return;
+    }
     addons=addons.filter(function(a){ return a.materialId||a.name||a.amt });
     for(var i=0;i<addons.length;i++){
       var ap=PAYWAYS.filter(function(p){return p.k===addons[i].way})[0];
@@ -1226,13 +1351,18 @@ async function bkCheckout(id){
       }
       var proxy=payer&&b.memberPhone&&payer.phone!==b.memberPhone;
       var tail=proxy?"（代 "+(b.customer&&b.customer.name||"")+" 扣課）":"";
-      var useSe=(course.way==="sessions"?1:0);
+      var useSe=(course.way==="sessions")?ckSeNow():0;
+      var outItems=ckItemsOut();
       /* 課程實際認列的營收。堂數扣抵要用方案單價，其餘就是收的金額。
          算好存起來，之後報表不用重算，客人再買新方案也不會回頭改到舊帳。 */
       var sUnit=useSe?bkSessionUnit(payer):null;
-      var courseRev=useSe?((sUnit?sUnit.unit:(courseList||course.amt))*useSe):course.amt;
+      /* 查得到方案單價就「單堂 × 堂數」；查不到才退回牌價——
+         牌價本來就是整筆的總價，不能再乘一次堂數。 */
+      var courseRev=useSe
+        ?(sUnit?sUnit.unit*useSe:(courseList||course.amt))
+        :course.amt;
       /* 紅利基準跟畫面上顯示的那個要一致，不然客人看到的跟實際入帳的會不一樣 */
-      var bonus=bonusOf(useSe?(sUnit?sUnit.unit:(courseList||0)):course.amt);
+      var bonus=bonusOf(useSe?(sUnit?sUnit.unit*useSe:(courseList||0)):course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
@@ -1262,9 +1392,9 @@ async function bkCheckout(id){
         depositAmt:depAmt,depositWay:depWay,due:due,
         courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
         /* 課程排行要按課名分組，所以拆成陣列存，不要只存一串文字 */
-        courses:(b.items||[]).map(function(i){
+        courses:outItems.map(function(i){
           return {name:i.name||"",spec:i.spec||"",qty:+i.qty||1} }),
-        items:(b.items||[]).map(function(i){return i.name}).join("、"),
+        items:outItems.map(function(i){return i.name}).join("、"),
         bookingId:id,at:now,voided:false};
       var logId="";
       try{ var r=await (await fetch(salf("/deductions.json"),{method:"POST",
@@ -1276,6 +1406,8 @@ async function bkCheckout(id){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
       if(depAmt)sumTxt=(sumTxt?sumTxt+"　·　":"")+"訂金 "+bkWayName(depWay)+" $"+depAmt.toLocaleString();
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
+        /* 核銷時改過課程就寫回預約單，卡片、月報、用料才會一致 */
+        items:outItems,
         checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
           depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
@@ -1293,7 +1425,7 @@ async function bkCheckout(id){
       try{
         if(typeof releaseInvAutoUse==="function")releaseInvAutoUse(id);
         var r1=(typeof consumeInvForBooking==="function")
-          ?consumeInvForBooking(id,b.date,b.items||[]):{ok:[],miss:[]};
+          ?consumeInvForBooking(id,b.date,outItems):{ok:[],miss:[]};
         var r2=(typeof consumeInvForAddons==="function")
           ?consumeInvForAddons(id,b.date,addons):{ok:[],skip:[]};
         if(typeof save==="function")save();
