@@ -13,10 +13,45 @@ function rcData(){
   if (!S.recipes) S.recipes = {};
   return S.recipes;
 }
+/* 把名稱切成「文字段」和「數字段」，數字當數字比。
+   純字串比對會把 2F 排到 25P 後面——因為它比的是第一個字元，
+   「2」小於「2」再看第二個，「F」大於「5」。看起來就像亂排。
+   切開之後：2F、2P、3F、4F、10F、12F、15F、20F、25F… */
+function rcNatKey(s){
+  return String(s || '').match(/\d+(?:\.\d+)?|\D+/g) || [];
+}
+function rcNatCmp(a, b){
+  var x = rcNatKey(a), y = rcNatKey(b);
+  for (var i = 0; i < Math.max(x.length, y.length); i++){
+    var p = x[i], q = y[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    var pn = /^\d/.test(p), qn = /^\d/.test(q);
+    if (pn && qn){
+      var d = parseFloat(p) - parseFloat(q);
+      if (d) return d;
+    } else {
+      var c = p.localeCompare(q, 'zh-Hant');
+      if (c) return c;
+    }
+  }
+  return 0;
+}
+
 function rcMaterials(){
   if (!S.inventory || !S.inventory[RC_STORE] || !S.inventory[RC_STORE].items) return [];
-  return S.inventory[RC_STORE].items.slice().sort(function(a,b){
-    return (a.cat||'').localeCompare(b.cat||'') || (a.name||'').localeCompare(b.name||'');
+  var items = S.inventory[RC_STORE].items;
+  /* 分類的先後照庫存盤點裡的排列走——你在那邊拖曳排好的順序，
+     這裡照著用，不要再按筆劃重排一次。 */
+  var catOrder = {}, n = 0;
+  items.forEach(function(m){
+    var k = m.cat || '';
+    if (catOrder[k] === undefined) catOrder[k] = n++;
+  });
+  return items.slice().sort(function(a, b){
+    var ca = catOrder[a.cat || ''], cb = catOrder[b.cat || ''];
+    if (ca !== cb) return ca - cb;
+    return rcNatCmp(a.name, b.name);
   });
 }
 function rcMat(id){
