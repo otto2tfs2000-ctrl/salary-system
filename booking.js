@@ -292,6 +292,29 @@ function bkCapOf(d){ return Math.min(bkTeachersOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
 function bkEveCap(d){ return Math.min(bkEveOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
 /* 這一天實際存在的時段。晚上有排才會多一格。 */
 function bkSlotsOn(d){ return bkEveOn(d)>0?SLOTS.concat([EVE_SLOT]):SLOTS.slice() }
+/* ══ 一筆預約可能橫跨好幾個時段（2026-08-10）══════════════
+   有人一畫就是一整天，三個時段都要佔。原本只有 slot 和 slot2
+   兩個欄位，裝不下第三個。
+
+   改成存 slots 陣列，同時保留 slot／slot2＝前兩個，
+   舊的報表、行事曆、通知卡片照樣讀得到，不用一次全部改完。
+   讀取端一律走這支，兩種格式都認得。 */
+function bkSlotsOf(b){
+  if(b&&Array.isArray(b.slots)&&b.slots.length)
+    return b.slots.filter(Boolean);
+  return [b&&b.slot,b&&b.slot2].filter(Boolean);
+}
+/* 這筆預約有沒有佔到某個表定時段 */
+function bkHitsSlot(b,slot){
+  return bkSlotsOf(b).some(function(x){ return x===slot||bkBase(x)===slot });
+}
+/* 依開始時間排序，順序亂填也不影響 */
+function bkSortSlots(list){
+  return list.slice().sort(function(a,b){
+    var f=function(x){ var m=String(x).match(/(\d{1,2}):(\d{2})/); return m?+m[1]*60+ +m[2]:9999 };
+    return f(a)-f(b);
+  });
+}
 /* 某個時段的容量。晚上走晚上的老師數，白天走白天的。 */
 function bkCapOfSlot(d,slot){ return slot===EVE_SLOT?bkEveCap(d):bkCapOf(d) }
 /* 改老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
@@ -332,7 +355,7 @@ function bkSlotInfo(dateStr,slot){
   var cap=bkCapOfSlot(dateStr,slot);
   var rows=bkList.filter(function(b){
     return b.date===dateStr&&
-      (bkBase(b.slot)===slot||bkBase(b.slot2)===slot||b.slot===slot||b.slot2===slot)&&
+      bkHitsSlot(b,slot)&&
       b.status!=="cancelled"&&b.status!=="expired";
   });
   var used=rows.reduce(function(s,b){ return s+(+b.people||0) },0);
@@ -635,12 +658,12 @@ async function bkRender(){
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
     var show=slotsNow.slice();
     if(show.indexOf(EVE_SLOT)<0&&bkList.some(function(b){
-      return bkBase(b.slot)===EVE_SLOT||bkBase(b.slot2)===EVE_SLOT }))show.push(EVE_SLOT);
+      return bkHitsSlot(b,EVE_SLOT) }))show.push(EVE_SLOT);
     return show.concat(["其他"]).map(function(sl){
       var g=bkList.filter(function(b){
         return sl==="其他"
           ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0&&b.slot!==EVE_SLOT)
-          : (bkBase(b.slot)===sl||bkBase(b.slot2)===sl||b.slot===sl||b.slot2===sl) });
+          : bkHitsSlot(b,sl) });
       if(!g.length)return "";
       var cls="bk-slot c"+(ci++%2);
       var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
@@ -867,7 +890,7 @@ function bkSchedPick(k){
       if(ev===0){
         var booked=bkList.filter(function(b){
           return b.date===k&&b.status!=="cancelled"&&b.status!=="expired"&&
-            (bkBase(b.slot)===EVE_SLOT||bkBase(b.slot2)===EVE_SLOT) }).length;
+            bkHitsSlot(b,EVE_SLOT) }).length;
         if(booked&&!confirm("這天晚上已經有 "+booked+" 組預約。\n\n"+
           "關掉只會讓客人端不能再約，已經約進來的不會被取消。\n確定嗎？"))return;
       }
@@ -1661,7 +1684,10 @@ async function bkManual(editId){
      '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
        '<input id="mDate" type="date" value="'+(eb?String(eb.date).replace(/\//g,"-"):ds(bkDate).replace(/\//g,"-"))+'"></div>'+
-     '<div class="bk-f"><label>時段</label><select id="mSlot"></select>'+
+     '<div class="bk-f"><label>時段（可複選，畫一整天就多選幾個）</label>'+
+       '<div class="bk-ways" id="mSlots"></div>'+
+       '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
+         '<input id="mSlotOther" placeholder="自訂時段，例如 09:00-13:00"></div>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
    '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
      '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
@@ -1685,38 +1711,70 @@ async function bkManual(editId){
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
 
-  /* 時段 */
-  var slotSel=document.getElementById("mSlot");
-  slotSel.innerHTML=SLOTS_MANUAL.map(function(s){return "<option>"+s+"</option>"}).join("")+"<option>其他</option>";
-  if(eb&&eb.slot){
-    /* 舊資料的時段可能不在清單裡，補一個選項免得被改掉 */
-    if(SLOTS_MANUAL.indexOf(eb.slot)<0&&eb.slot!=="其他")
-      slotSel.insertAdjacentHTML("afterbegin","<option>"+esc(eb.slot)+"</option>");
-    slotSel.value=eb.slot;
+  /* 時段：可複選。有人一畫就是一整天，三個時段都要佔。 */
+  var mSlots=eb?bkSlotsOf(eb):[];
+  var extraSlots=mSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 });
+  function drawSlots(){
+    var box=document.getElementById("mSlots"); if(!box)return;
+    var all=SLOTS_MANUAL.concat(extraSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 }));
+    box.innerHTML=all.map(function(sl){
+      return '<div class="bk-way'+(mSlots.indexOf(sl)>=0?" on":"")+'" data-sl="'+esc(sl)+'">'+
+        esc(sl)+'</div>' }).join("")+
+      '<div class="bk-way" data-slother="1">其他…</div>';
+    box.querySelectorAll("[data-sl]").forEach(function(el){
+      el.onclick=function(){
+        var sl=el.dataset.sl, i=mSlots.indexOf(sl);
+        if(i>=0)mSlots.splice(i,1); else mSlots.push(sl);
+        mSlots=bkSortSlots(mSlots);
+        drawSlots(); showLeft();
+      } });
+    box.querySelector("[data-slother]").onclick=function(){
+      var b=document.getElementById("mSlotOtherBox");
+      b.style.display=b.style.display==="none"?"":"none";
+      if(b.style.display==="")document.getElementById("mSlotOther").focus();
+    };
   }
+  document.getElementById("mSlotOther").onchange=function(){
+    var v=this.value.trim();
+    if(!v)return;
+    if(mSlots.indexOf(v)<0){ mSlots.push(v); mSlots=bkSortSlots(mSlots);
+      extraSlots.push(v); }
+    this.value="";
+    document.getElementById("mSlotOtherBox").style.display="none";
+    drawSlots(); showLeft();
+  };
+  drawSlots();
   function showLeft(){
     var d=document.getElementById("mDate").value.replace(/-/g,"/");
-    var sl=slotSel.value, el=document.getElementById("mLeft");
-    var base=bkBase(sl);
-    if(!base){ el.innerHTML=""; return }
-    var s=bkSlotInfo(d,base), ppl=+document.getElementById("mPeople").value||1;
-    /* 實際人數永遠擺第一位。老師現場可能已自行超收，
-       行政若只記得表定數字會再加上去，容易一路加到爆。 */
-    var line=(base!==sl?'<span class="bk-cap">加開時段，算在 '+base+' 這一場</span>':"")+
-      '<span class="bk-cnt">目前已預約 <b>'+s.used+'</b> 位</span>';
-    if(s.cap>0){
-      line+='<span class="bk-cap">表定上限 '+s.cap+' 位</span>';
-      if(s.left<0)        line+='<span class="bk-full">已超過表定 '+Math.abs(s.left)+' 位</span>';
-      else if(s.left===0) line+='<span class="bk-full">已達表定上限，仍可加開</span>';
-      else if(s.left<ppl) line+='<span class="bk-full">表定剩 '+s.left+' 位，這筆要 '+ppl+' 位</span>';
-      else                line+='<span class="bk-ok">表定剩 '+s.left+' 位</span>';
-    }else{
-      line+='<span class="bk-cap">班表這天沒排老師，沒有表定上限</span>';
-    }
-    if(s.names.length)line+='<div class="bk-names">已約：'+s.names.map(esc).join("、")+'</div>';
-    el.innerHTML=line;
+    var el=document.getElementById("mLeft");
+    if(!mSlots.length){ el.innerHTML='<span class="bk-cap">還沒選時段</span>'; return }
+    var ppl=+document.getElementById("mPeople").value||1;
+    /* 每個選到的時段各看一次。一整天的預約在每個時段都要佔位，
+       只看第一格會以為還有空位。 */
+    var seen={}, out=[];
+    mSlots.forEach(function(sl){
+      var base=bkBase(sl)||sl;
+      if(seen[base])return; seen[base]=1;
+      var s=bkSlotInfo(d,base);
+      /* 實際人數永遠擺第一位。老師現場可能已自行超收，
+         行政若只記得表定數字會再加上去，容易一路加到爆。 */
+      var line='<div style="margin-top:4px"><b>'+esc(base)+'</b>　'+
+        (base!==sl?'<span class="bk-cap">（'+esc(sl)+' 加開，算這一場）</span>':"")+
+        '<span class="bk-cnt">已預約 <b>'+s.used+'</b> 位</span>';
+      if(s.cap>0){
+        line+='<span class="bk-cap">上限 '+s.cap+'</span>';
+        if(s.left<0)        line+='<span class="bk-full">超過 '+Math.abs(s.left)+' 位</span>';
+        else if(s.left===0) line+='<span class="bk-full">已達上限，仍可加開</span>';
+        else if(s.left<ppl) line+='<span class="bk-full">剩 '+s.left+' 位，這筆要 '+ppl+' 位</span>';
+        else                line+='<span class="bk-ok">剩 '+s.left+' 位</span>';
+      }else{
+        line+='<span class="bk-cap">班表沒排老師，無上限</span>';
+      }
+      if(s.names.length)line+='<div class="bk-names">已約：'+s.names.map(esc).join("、")+'</div>';
+      out.push(line+'</div>');
+    });
+    el.innerHTML=out.join("");
   }
-  slotSel.onchange=showLeft;
   document.getElementById("mDate").onchange=async function(){
     /* 換日期要重抓那天的預約才算得準 */
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
@@ -1934,18 +1992,29 @@ async function bkManual(editId){
       if(iq!==ppl&&!confirm("品項的人數加起來是 "+iq+" 位，但大人＋小孩填的是 "+ppl+" 位。\n\n"+
                             "核銷扣用料是照品項的人數算的，這樣會對不起來。\n確定要這樣存嗎？"))return;
     }
-    var d=g("mDate").replace(/-/g,"/"), sl=g("mSlot");
-    var sBase=bkBase(sl);
-    if(sBase){
+    var d=g("mDate").replace(/-/g,"/");
+    if(!mSlots.length){ alert("請選時段"); return }
+    var useSlots=bkSortSlots(mSlots);
+    /* 每個時段都要檢查，一整天的預約在每一格都會佔位 */
+    var warned={}, stop=false;
+    useSlots.forEach(function(sl){
+      if(stop)return;
+      var sBase=bkBase(sl); if(!sBase||warned[sBase])return;
+      warned[sBase]=1;
       var si=bkSlotInfo(d,sBase);
       if(si.cap>0&&si.left<ppl&&
-         !confirm("這個時段目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
-                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))return;
-      if(si.cap<=0&&si.used>0&&
-         !confirm("這個時段班表沒排老師，目前已預約 "+si.used+" 位。\n"+
-                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))return;
-    }
-    var rec={date:d,slot:sl,people:ppl,adults:nA,kids:nK,
+         !confirm(sBase+" 目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
+                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))stop=true;
+      else if(si.cap<=0&&si.used>0&&
+         !confirm(sBase+" 班表沒排老師，目前已預約 "+si.used+" 位。\n"+
+                  "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))stop=true;
+    });
+    if(stop)return;
+    var rec={date:d,
+      /* slots 是完整清單；slot／slot2 保留前兩個，
+         讓還沒改的報表、行事曆、通知卡片照樣讀得到 */
+      slots:useSlots, slot:useSlots[0], slot2:useSlots[1]||"",
+      people:ppl,adults:nA,kids:nK,
       items:outItems,
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
