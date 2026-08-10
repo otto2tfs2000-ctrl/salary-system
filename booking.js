@@ -405,7 +405,10 @@ function bkSearch(q){
    這張表只服務夯客帶進來的舊票券。以後在系統裡賣的方案，
    明細本來就會寫 price，走上面那條原本的路，不會進到這裡。
    ═════════════════════════════════════════════════════ */
-var BK_TKT_PLAN = [
+/* 內建值只是備援。試算表有「舊方案單價」這個分頁就以那邊為準——
+   價格會隨著查證陸續修正（45 堂原本以為 40,500，實際是 42,000），
+   每次都要改程式太慢，而且改錯了你也看不出來。 */
+var BK_TKT_PLAN_BUILTIN = [
   { name:"高階30堂",      months:12, mult:1,
     rules:[ { from:"2026-03-01", qty:30, price:30000 },
             {                    qty:30, price:28500 } ] },
@@ -413,12 +416,62 @@ var BK_TKT_PLAN = [
     rules:[ { from:"2026-03-01", qty:30, price:30000 },
             {                    qty:30, price:28500 } ] },
   { name:"高階45堂",      months:15, mult:1,
-    rules:[ { qty:45, price:40500 } ] },
+    rules:[ { qty:45, price:42000 } ] },
   { name:"高階70堂",      months:24, mult:1,
     rules:[ { qty:70, price:60000 } ] },
   { name:"高階70堂(0.5)", months:24, mult:0.5,
     rules:[ { qty:70, price:60000 } ] }
 ];
+var BK_TKT_PLAN = BK_TKT_PLAN_BUILTIN;
+var bkTktPlanSrc = "內建";
+
+/* ══ 從試算表讀舊方案單價 ══════════════════════════════
+   分頁名稱：舊方案單價
+   欄位（順序固定，標題列會自動略過）：
+     A 票券名稱   ← 要跟夯客票券上的名稱一字不差
+     B 總價       ← 這個方案賣多少
+     C 堂數       ← 總共幾堂
+     D 效期月數   ← 用來從到期日回推購買日
+     E 生效日起   ← 空白＝一直有效；填 2026-03-01 代表那天起改這個價
+     F 單堂價     ← 填了就直接用，不再拿總價除堂數（處理除不盡的狀況）
+     G 備註       ← 給人看的，程式不讀
+
+   同一個方案改過價，就多寫一列、填不同的生效日。
+   系統會挑「生效日 ≤ 推估購買日」裡最晚的那一條。
+
+   名稱帶 (0.5) 的自動當成半堂，單價自動對半，不用另外填。 */
+async function bkLoadTktPlans(){
+  var rows=[];
+  try{ rows=await bkGviz("舊方案單價") }catch(e){ return }   /* 分頁不存在就沿用內建 */
+  if(!rows.length)return;
+  if(String(rows[0][0]||"").indexOf("票券")>=0||String(rows[0][0]||"").indexOf("名稱")>=0)rows.shift();
+
+  var byName={}, order=[];
+  rows.forEach(function(r){
+    var name=String(r[0]||"").trim();
+    if(!name)return;
+    var price=bkNum(r[1]), qty=bkNum(r[2]);
+    var unit=bkNum(r[5]);
+    if(!qty&&!unit)return;                       /* 兩個都沒有就算不出單價 */
+    if(!byName[name]){
+      byName[name]={ name:name, months:bkNum(r[3])||0,
+                     mult:/\(0?\.5\)/.test(name)?0.5:1, rules:[] };
+      order.push(name);
+    }
+    if(!byName[name].months&&bkNum(r[3]))byName[name].months=bkNum(r[3]);
+    byName[name].rules.push({
+      from:String(r[4]||"").trim().replace(/\//g,"-"),
+      qty:qty||1, price:price, unit:unit||0 });
+  });
+  if(!order.length)return;
+
+  /* 生效日晚的排前面，比對時由上往下取第一個符合的 */
+  order.forEach(function(n){
+    byName[n].rules.sort(function(a,b){ return String(b.from||"").localeCompare(String(a.from||"")) });
+  });
+  BK_TKT_PLAN=order.map(function(n){ return byName[n] });
+  bkTktPlanSrc="試算表";
+}
 
 /* 到期日往回推效期＝推估購買日。曾經展延過效期的人會偏後，
    所以顯示的時候一定要標「推估」，不要讓人以為是夯客給的。 */
@@ -455,9 +508,11 @@ function bkTktUnit(m){
     if(buy&&buy>=r.from){ rule=r; break }
   }
   if(!rule)return null;
-  return { unit:Math.round(rule.price/rule.qty*(bestPlan.mult||1)),
+  /* 有填單堂價就直接用——42,000 ÷ 45 = 933.33，除不盡的自己指定比較準 */
+  var unit=rule.unit?rule.unit:(rule.price/rule.qty);
+  return { unit:Math.round(unit*(bestPlan.mult||1)),
            plan:best.name, qty:rule.qty, price:rule.price,
-           buy:buy, fromTicket:true };
+           buy:buy, src:bkTktPlanSrc, fromTicket:true };
 }
 /* 有票券但表上查不到價的，至少把方案名稱講出來，
    別只丟一句「查不到」讓人不知道要去補什麼。 */
@@ -899,7 +954,7 @@ async function bkCheckout(id){
   /* 核銷現在可以改課程，所以要先有課表。
      以前不需要——課程是預約時就選好的，核銷只照著結帳。
      少了這一行，沒先開過手動登記的人一按核銷就會整個視窗開不起來。 */
-  await bkLoadCourses();
+  await bkLoadCourses(); await bkLoadTktPlans();
   var old=b.checkout;
   var payer=null;
   /* course: 課程本身；addons: 加價項目 */
@@ -1246,7 +1301,8 @@ async function bkCheckout(id){
               :"這堂認列 <b>$"+su.unit.toLocaleString()+"</b>（")+
              esc(su.plan||"堂數方案")+"　"+su.qty+" 堂 $"+su.price.toLocaleString()+"）";
           h+=su.fromTicket
-            ? '<span class="bk-cap">夯客票券・推估 '+esc(su.buy||"")+' 購買</span><br>'
+            ? '<span class="bk-cap">夯客票券・推估 '+esc(su.buy||"")+' 購買・單價來自'+
+              esc(su.src||"內建")+'</span><br>'
             : "<br>";
         }else{
           var tn=bkTktNameOnly(payer);
@@ -1629,7 +1685,7 @@ async function bkManual(editId){
   document.getElementById("mKid").oninput=syncPpl;
 
   /* 課程 */
-  await bkLoadCourses(); await bkLoadSched();
+  await bkLoadCourses(); await bkLoadSched(); await bkLoadTktPlans();
 
   /* ══ 品項清單（2026-08-09）══════════════════════════════
      一組客人一起來，各上各的課——三個人來，一個畫流動畫、
