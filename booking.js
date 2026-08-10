@@ -896,6 +896,10 @@ async function bkDeposit(id){
 /* ══ 核銷 ══ */
 async function bkCheckout(id){
   var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  /* 核銷現在可以改課程，所以要先有課表。
+     以前不需要——課程是預約時就選好的，核銷只照著結帳。
+     少了這一行，沒先開過手動登記的人一按核銷就會整個視窗開不起來。 */
+  await bkLoadCourses();
   var old=b.checkout;
   var payer=null;
   /* course: 課程本身；addons: 加價項目 */
@@ -917,7 +921,16 @@ async function bkCheckout(id){
     }
     if(a.materialId&&!(+a.qty>0))a.qty=1;
   });
-  var teacher=old?old.teacher:"";
+  /* ══ 老師可以複選（2026-08-10）══════════════════════════
+     兩個人一起來不一定同一位老師帶。以前只存一位，另一位的
+     人次就不見了——薪資是按人次算的，等於少算一場。
+
+     存法：teachers 存陣列，teacher 仍然存一個字串（用頓號串起來）。
+     舊的報表、卡片、每日登記都還在讀 teacher，不動它們就不會壞；
+     要細算的時候讀 teachers 那個陣列。 */
+  var teachers=(old&&Array.isArray(old.teachers)&&old.teachers.length)
+    ?old.teachers.slice()
+    :((old&&old.teacher)?String(old.teacher).split(/[、,／\/]/).map(function(x){return x.trim()}).filter(Boolean):[]);
 
   /* ══ 核銷時可以改課程與扣堂數（2026-08-10）══════════════
      兩個問題同源。
@@ -986,8 +999,8 @@ async function bkCheckout(id){
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
      '<input type="checkbox" id="ckProxy" style="width:16px;height:16px"> 用其他會員的點數（朋友代扣）</label>'+
      '<div id="ckProxyBox"></div></div>'+
-   '<div class="bk-f"><label>上課老師</label><select id="ckT"><option value="">請選擇</option>'+
-     bkTeachers().map(function(t){return '<option'+(teacher===t?" selected":"")+'>'+esc(t)+'</option>'}).join("")+'</select></div>'+
+   '<div class="bk-f"><label>上課老師（可複選）</label><div class="bk-ways" id="ckTs"></div>'+
+     '<div class="bk-left" id="ckTHint"></div></div>'+
    '<div id="ckMats"></div>'+
    '<div class="bk-calc" id="ckCalc"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="ckX">取消</button>'+
@@ -1255,7 +1268,23 @@ async function bkCheckout(id){
   document.getElementById("ckAmt").oninput=function(){ ckAmtTouched=true; calc() };
   document.getElementById("ckSe").oninput=function(){
     seTouched=true; useSeN=+this.value||0; calc() };
-  document.getElementById("ckT").onchange=function(){ teacher=this.value };
+  function drawTeachers(){
+    var box=document.getElementById("ckTs"); if(!box)return;
+    box.innerHTML=bkTeachers().map(function(t){
+      return '<div class="bk-way'+(teachers.indexOf(t)>=0?" on":"")+'" data-t="'+esc(t)+'">'+
+        esc(t)+'</div>' }).join("");
+    box.querySelectorAll("[data-t]").forEach(function(el){
+      el.onclick=function(){
+        var t=el.dataset.t, i=teachers.indexOf(t);
+        if(i>=0)teachers.splice(i,1); else teachers.push(t);
+        drawTeachers();
+      } });
+    var hint=document.getElementById("ckTHint");
+    if(hint)hint.textContent=teachers.length>1
+      ? "這場算 "+teachers.length+" 位老師的人次"
+      : (teachers.length?"":"點一下選取，可以複選");
+  }
+  drawTeachers();
 
   function pplHint(){
     nAdult=+document.getElementById("ckAdult").value||0;
@@ -1306,9 +1335,9 @@ async function bkCheckout(id){
   document.getElementById("ckOK").onclick=async function(){
     calc(); pplHint();
     if(!(nAdult+nKid)){ alert("大人和小孩不能都是 0"); return }
-    var t=document.getElementById("ckT").value;
+    var t=teachers.join("、");
     var cp=PAYWAYS.filter(function(p){return p.k===course.way})[0];
-    if(!cp||!t){ alert("付款方式和上課老師都要填"); return }
+    if(!cp||!teachers.length){ alert("付款方式和上課老師都要填"); return }
     /* 堂數扣抵本來就不收錢，0 元是正常的，其他方式才要求填金額 */
     if(course.way!=="sessions"&&!course.amt){ alert("課程費用要填"); return }
     if(cp.member&&!payer){ alert("這個付款方式需要先選會員"); return }
@@ -1384,7 +1413,7 @@ async function bkCheckout(id){
         return (a.name||"未命名")+" $"+(+a.amt||0).toLocaleString() }).join("、");
       var log={date:b.date,month:dt.getMonth()+1,day:dt.getDate(),dept:"4F",
         customer:(b.customer&&b.customer.name)||"",phone:ownPhone||b.memberPhone||"",
-        payerPhone:payer?payer.phone:"",teacher:t,
+        payerPhone:payer?payer.phone:"",teacher:t,teachers:teachers.slice(),
         people:nAdult+nKid,adults:nAdult,kids:nKid,
         courseAmt:course.amt,coursePay:course.way,
         addons:addons,addonTotal:addTotal,addonText:addonTxt,
@@ -1413,7 +1442,8 @@ async function bkCheckout(id){
           depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
           courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
           adults:nAdult,kids:nKid,
-          teacher:t,payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
+          teacher:t,teachers:teachers.slice(),
+          payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
       if(autoMatched&&ownPhone)patch.memberPhone=ownPhone;
       await bkPatch("/bookings/"+id+".json",patch);
