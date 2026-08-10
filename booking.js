@@ -217,6 +217,30 @@ async function bkLoadCourses(){
     bkCourses=out;
   }catch(e){ bkCourses=[]; }
 }
+/* ══ 課程下拉依分類分組 ══════════════════════════════════
+   課程有五十幾門，一長串平鋪下來要滑很久，還很容易選錯規格
+   （A4／A5 只差一個字）。試算表第一欄本來就有分類，讀進來也
+   一直留著，只是渲染時沒用上。
+
+   用 optgroup 分組，分類的順序照試算表由上而下，不另外排序——
+   你在試算表怎麼排，下拉就怎麼出現，改順序不用動程式。
+   順便把價格帶進選項，選之前就看得到，不用選完再確認。 */
+function bkCourseOptions(sel){
+  var order=[], byCat={};
+  bkCourses.forEach(function(c,i){
+    var k=c.cat||"未分類";
+    if(!byCat[k]){ byCat[k]=[]; order.push(k) }
+    byCat[k].push({c:c,i:i});
+  });
+  return order.map(function(k){
+    return '<optgroup label="'+esc(k)+'">'+
+      byCat[k].map(function(o){
+        return '<option value="'+o.i+'"'+(String(sel)===String(o.i)?" selected":"")+'>'+
+          esc(o.c.label)+(o.c.price?"　$"+o.c.price.toLocaleString():"")+'</option>';
+      }).join("")+'</optgroup>';
+  }).join("");
+}
+
 async function bkLoadSched(force){
   if(bkSched&&!force)return;
   var m={};
@@ -1516,8 +1540,7 @@ async function bkManual(editId){
       var c=r.ci===""?null:bkCourses[+r.ci];
       var opts='<option value="">（不指定，手動填金額）</option>'+
         (r.lostName?'<option value="" selected>'+esc(r.lostName)+'（原資料，清單裡沒有）</option>':'')+
-        bkCourses.map(function(cc,j){
-          return '<option value="'+j+'"'+(String(r.ci)===String(j)?" selected":"")+'>'+esc(cc.label)+'</option>' }).join("");
+        bkCourseOptions(r.ci);
       return '<div class="bk-irow">'+
         '<select data-ir="'+i+'" data-f="ci">'+opts+'</select>'+
         '<input data-ir="'+i+'" data-f="qty" inputmode="numeric" value="'+(r.qty||0)+'" placeholder="位">'+
