@@ -203,7 +203,14 @@ async function bkLoadCourses(){
   if(bkCourses)return;
   try{
     var rows=await bkGviz("課程");
-    if(rows.length&&String(rows[0][0]).trim()==="分類")rows.shift();
+    /* 前十一欄照位置讀（沿用舊行為）；之後新增的欄位照標題找，
+       這樣你在試算表要加在哪、順序怎麼排都不會弄壞。 */
+    var head={}, first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
+    if(first[0]==="分類"){
+      ["佔位","計時"].forEach(function(n){
+        var i=first.indexOf(n); if(i>=0)head[n]=i });
+      rows.shift();
+    }
     var out=[];
     rows.forEach(function(r){
       var name=String(r[1]||"").trim();
@@ -212,11 +219,16 @@ async function bkLoadCourses(){
       var spec=String(r[3]||"").trim();
       out.push({cat:String(r[0]||"").trim(),name:name,spec:spec,
         dur:String(r[4]||"").trim(),price:bkNum(r[5]),
+        /* 地毯這類課：一組不管幾個人都佔 3 位、按小時計價。
+           客人端已經在用，後台以前讀不到，所以單價會顯示 $0。 */
+        seats:head["佔位"]!=null?bkNum(r[head["佔位"]]):0,
+        hourly:head["計時"]!=null?bkNum(r[head["計時"]]):0,
         label:name+(spec?"（"+spec+"）":"")});
     });
     bkCourses=out;
   }catch(e){ bkCourses=[]; }
 }
+var BK_HOUR_MIN=2, BK_HOUR_MAX=4;
 /* ══ 課程下拉依分類分組 ══════════════════════════════════
    課程有五十幾門，一長串平鋪下來要滑很久，還很容易選錯規格
    （A4／A5 只差一個字）。試算表第一欄本來就有分類，讀進來也
@@ -235,8 +247,10 @@ function bkCourseOptions(sel){
   return order.map(function(k){
     return '<optgroup label="'+esc(k)+'">'+
       byCat[k].map(function(o){
+        var tag=o.c.hourly?("　每小時 $"+o.c.hourly.toLocaleString())
+                          :(o.c.price?"　$"+o.c.price.toLocaleString():"");
         return '<option value="'+o.i+'"'+(String(sel)===String(o.i)?" selected":"")+'>'+
-          esc(o.c.label)+(o.c.price?"　$"+o.c.price.toLocaleString():"")+'</option>';
+          esc(o.c.label)+tag+'</option>';
       }).join("")+'</optgroup>';
   }).join("");
 }
@@ -1818,6 +1832,7 @@ async function bkManual(editId){
         if(ci<0&&c.name===it.name&&String(c.spec||"")===String(it.spec||""))ci=i });
       var qty=+it.qty||1, price=+it.price||0;
       mItems.push({ ci: ci>=0?String(ci):"", qty:qty, amt:price*qty,
+                    hours:+it.hours||0,
                     qtyManual:true, amtManual:false,
                     lostName: ci<0 ? (it.name||"") : "" });
     });
@@ -1832,7 +1847,10 @@ async function bkManual(editId){
   }
   function mRowPrice(r){
     if(r.ci==="")return 0;
-    var c=bkCourses[+r.ci]; return c?(+c.price||0):0;
+    var c=bkCourses[+r.ci]; if(!c)return 0;
+    /* 計時課的單價＝每小時 × 時數 */
+    if(+c.hourly>0)return (+c.hourly)*(+r.hours||BK_HOUR_MIN);
+    return +c.price||0;
   }
   function mRecalc(){
     var t=0; mItems.forEach(function(r){ t+=+r.amt||0 });
@@ -1843,11 +1861,18 @@ async function bkManual(editId){
     mItems.forEach(function(r){ q+=+r.qty||0; if(r.ci!=="")chosen++ });
     var ppl=mPplNow();
     if(!chosen&&mItems.length===1){ sum.innerHTML="不指定課程時，直接在右邊的金額欄手動填。"; return }
-    var h="品項合計 <b>"+q+"</b> 位・<b>$"+t.toLocaleString()+"</b>";
-    if(mItems.length>1){
-      h+=(q===ppl)
-        ? '　<span class="bk-ok">跟現場總人數 '+ppl+' 位相符</span>'
-        : '　<span class="bk-full">現場總人數是 '+ppl+' 位，差 '+Math.abs(ppl-q)+' 位</span>';
+    /* 這個數字是「件數」不是「人數」。一個人畫一整天做三件作品
+       就該填 3，用料也是照件數扣的。所以只有「件數比人數少」才
+       值得提醒——那通常是漏填；件數多於人數是正常的。 */
+    var h="品項合計 <b>"+q+"</b> 件・<b>$"+t.toLocaleString()+"</b>";
+    if(mItems.length>1||q!==ppl){
+      if(q<ppl)
+        h+='　<span class="bk-full">現場有 '+ppl+' 位，但只填了 '+q+' 件，'+
+           '少的那 '+(ppl-q)+' 位不會扣到用料</span>';
+      else if(q>ppl)
+        h+='　<span class="bk-cap">'+ppl+' 位做 '+q+' 件（用料扣 '+q+' 份）</span>';
+      else
+        h+='　<span class="bk-ok">'+ppl+' 位各一件</span>';
     }
     sum.innerHTML=h;
   }
@@ -1866,12 +1891,20 @@ async function bkManual(editId){
         bkCourseOptions(r.ci);
       return '<div class="bk-irow">'+
         '<select data-ir="'+i+'" data-f="ci">'+opts+'</select>'+
-        '<input data-ir="'+i+'" data-f="qty" inputmode="numeric" value="'+(r.qty||0)+'" placeholder="位">'+
+        '<input data-ir="'+i+'" data-f="qty" inputmode="numeric" value="'+(r.qty||0)+'" placeholder="件">'+
         '<input data-ir="'+i+'" data-f="amt" inputmode="numeric" value="'+(r.amt||"")+'" placeholder="小計">'+
         (mItems.length>1?'<button type="button" class="bk-idel" data-del="'+i+'">✕</button>':'<span class="bk-ipad"></span>')+
         '</div>'+
-        (c?'<div class="bk-left bk-iinfo">單價 $'+(+c.price||0).toLocaleString()+
-            (c.dur?"　時長 "+esc(c.dur):"")+'</div>':'');
+        /* 計時課才出現時數欄。金額＝每小時 × 時數 × 件數 */
+        (c&&+c.hourly>0
+          ? '<div class="bk-left bk-iinfo">上幾小時：'+
+            '<input data-ir="'+i+'" data-f="hours" inputmode="numeric" style="width:64px;margin:0 6px" '+
+            'value="'+(+r.hours||BK_HOUR_MIN)+'">小時　每小時 $'+(+c.hourly).toLocaleString()+
+            '　佔 '+(+c.seats||1)+' 個位子</div>'
+          : "")+
+        (c?'<div class="bk-left bk-iinfo">單價 $'+mRowPrice(r).toLocaleString()+
+            (c.dur?"　時長 "+esc(c.dur):"")+
+            (+c.seats>0&&!(+c.hourly>0)?"　佔 "+(+c.seats)+" 個位子":"")+'</div>':'');
     }).join("");
 
     box.querySelectorAll("select[data-f=ci]").forEach(function(el){
@@ -1882,6 +1915,17 @@ async function bkManual(editId){
         r.amt=mRowPrice(r)*(+r.qty||0);
         mDraw();
       };
+    });
+    box.querySelectorAll("input[data-f=hours]").forEach(function(el){
+      el.oninput=function(){
+        var r=mItems[+el.dataset.ir];
+        r.hours=Math.max(BK_HOUR_MIN,Math.min(BK_HOUR_MAX,+el.value||BK_HOUR_MIN));
+        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0);
+        mItemsDirty=true; mRecalc();
+        var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
+        if(ae&&!r.amtManual)ae.value=r.amt||"";
+      };
+      el.onblur=function(){ mDraw() };
     });
     box.querySelectorAll("input[data-f=qty]").forEach(function(el){
       el.oninput=function(){
@@ -1924,7 +1968,10 @@ async function bkManual(editId){
     mItems.forEach(function(r){
       if(r.ci==="")return;
       var c=bkCourses[+r.ci]; if(!c)return;
-      out.push({name:c.name,spec:c.spec,qty:+r.qty||1,price:+c.price||0});
+      var row={name:c.name,spec:c.spec,qty:+r.qty||1,price:mRowPrice(r)};
+      if(+c.hourly>0)row.hours=+r.hours||BK_HOUR_MIN;
+      if(+c.seats>0)row.seats=+c.seats;
+      out.push(row);
     });
     /* 沒動過品項就別把原本的資料洗掉 */
     if(!out.length&&eb&&!mItemsDirty)return eb.items||[];
@@ -1989,8 +2036,9 @@ async function bkManual(editId){
     var outItems=mItemsOut();
     if(outItems.length>1){
       var iq=outItems.reduce(function(a,x){ return a+(+x.qty||0) },0);
-      if(iq!==ppl&&!confirm("品項的人數加起來是 "+iq+" 位，但大人＋小孩填的是 "+ppl+" 位。\n\n"+
-                            "核銷扣用料是照品項的人數算的，這樣會對不起來。\n確定要這樣存嗎？"))return;
+      /* 件數多於人數是正常的（一個人做好幾件），少於才可疑 */
+      if(iq<ppl&&!confirm("現場有 "+ppl+" 位，但品項只填了 "+iq+" 件。\n\n"+
+                          "用料是照件數扣的，少的那 "+(ppl-iq)+" 位不會扣到材料。\n確定要這樣存嗎？"))return;
     }
     var d=g("mDate").replace(/-/g,"/");
     if(!mSlots.length){ alert("請選時段"); return }
@@ -2010,11 +2058,28 @@ async function bkManual(editId){
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))stop=true;
     });
     if(stop)return;
+    /* 佔位＝同一時刻佔掉多少空間，跟件數是兩件事。
+       一個人畫一整天做三件，他在每個時段還是只佔一個位子。
+
+       有標「佔位」的課用它的數字（一組不管幾個人）；
+       剩下沒被那些課涵蓋的人，一人一位。
+         地毯1件・1人          → 3
+         地毯1件＋繪畫1件・2人  → 3 +(2-1) = 4
+         繪畫3件・1人          → 0 + 1    = 1 */
+    var seatSum=0, seatQty=0;
+    outItems.forEach(function(it){
+      if(+it.seats>0){ seatSum += +it.seats; seatQty += (+it.qty||0) }
+    });
+    var seats = seatSum + Math.max(0, ppl - seatQty);
+    if(!seats)seats=ppl;
+    var recHours=0;
+    outItems.forEach(function(it){ if(+it.hours>recHours)recHours=+it.hours });
+
     var rec={date:d,
       /* slots 是完整清單；slot／slot2 保留前兩個，
          讓還沒改的報表、行事曆、通知卡片照樣讀得到 */
       slots:useSlots, slot:useSlots[0], slot2:useSlots[1]||"",
-      people:ppl,adults:nA,kids:nK,
+      people:ppl,adults:nA,kids:nK,seats:seats,hours:recHours,
       items:outItems,
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
