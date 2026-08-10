@@ -388,9 +388,69 @@ async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.e
 async function bkLoad(){
   var all=await jget(bkf("/bookings.json"))||{};
   var d=ds(bkDate);
-  bkList=Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o })
-    .filter(function(b){ return b.date===d && b.status!=="cancelled" && b.status!=="expired" })
+  var arr=Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o })
+    .filter(function(b){ return b.status!=="cancelled" && b.status!=="expired" });
+  /* 每一天有幾組幾位。反正整包都抓回來了，順手算一算，
+     日期月曆才有東西可以顯示，不用再跑一次資料庫。 */
+  bkByDate={};
+  arr.forEach(function(b){
+    var k=String(b.date||""); if(!k)return;
+    if(!bkByDate[k])bkByDate[k]={groups:0,people:0,done:0};
+    bkByDate[k].groups++;
+    bkByDate[k].people+=(+b.people||0);
+    if(b.checkout)bkByDate[k].done++;
+  });
+  bkList=arr.filter(function(b){ return b.date===d })
     .sort(function(a,b){ return String(a.slot).localeCompare(String(b.slot)) });
+}
+var bkByDate={};
+
+/* ══ 日期月曆（2026-08-10）══════════════════════════════
+   原本只能一天一天按 ‹ ›，要看月底得按二十幾次。
+   點日期就攤開整個月，每一格顯示那天幾組幾位，直接跳過去。
+
+   數字是 bkLoad 順手算的，不另外查資料庫。 */
+function bkDatePick(){
+  var cur=new Date(bkDate.getTime());
+  function draw(){
+    var y=cur.getFullYear(), m=cur.getMonth();
+    var first=new Date(y,m,1), pad=(first.getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+    var todayK=ds(new Date()), selK=ds(bkDate);
+    var h='<div class="bk-sheet-h"><b>選日期</b>'+
+      '<button class="bk-x" id="dpX">✕</button></div>'+
+      '<div class="bk-cbar">'+
+        '<button class="bk-nav" id="dpPrev">‹</button>'+
+        '<div class="bk-ctitle">'+y+' 年 '+(m+1)+' 月</div>'+
+        '<button class="bk-nav" id="dpNext">›</button>'+
+        '<button class="bk-nav bk-tdy" id="dpToday">今天</button>'+
+      '</div><div class="bk-cgrid">';
+    ["一","二","三","四","五","六","日"].forEach(function(w){
+      h+='<div class="bk-cwd">'+w+'</div>' });
+    for(var i=0;i<pad;i++)h+='<div class="bk-mday void"></div>';
+    for(var i2=1;i2<=days;i2++){
+      var k=y+"/"+String(m+1).padStart(2,"0")+"/"+String(i2).padStart(2,"0");
+      var st=bkByDate[k];
+      var cls="bk-mday"+(k===todayK?" now":"")+(k===selK?" set":"")+(st?"":" off");
+      h+='<button class="'+cls+'" data-d="'+k+'">'+
+         '<span class="d">'+i2+'</span>'+
+         (st?'<span class="n">'+st.groups+'</span><span class="c">'+st.people+' 位</span>'
+            :'<span class="n">·</span><span class="c">—</span>')+
+         '</button>';
+    }
+    h+='</div><div class="bk-cfoot">數字是「幾組・幾位」。點任一天直接跳過去。</div>';
+    bkSheet(h);
+    document.getElementById("dpX").onclick=bkClose;
+    document.getElementById("dpPrev").onclick=function(){ cur.setMonth(cur.getMonth()-1); draw() };
+    document.getElementById("dpNext").onclick=function(){ cur.setMonth(cur.getMonth()+1); draw() };
+    document.getElementById("dpToday").onclick=function(){ cur=new Date(); draw() };
+    document.querySelectorAll(".bk-cgrid .bk-mday[data-d]").forEach(function(el){
+      el.onclick=function(){
+        var p2=el.dataset.d.split("/");
+        bkDate=new Date(+p2[0],+p2[1]-1,+p2[2]);
+        bkClose(); bkRender();
+      } });
+  }
+  draw();
 }
 async function bkLoadMembers(){
   if(bkMembers)return;
@@ -648,7 +708,8 @@ async function bkRender(){
   root.innerHTML=
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
-     '<div class="bk-date"><b>'+ds(d)+'</b><span>（'+WD[d.getDay()]+'）'+(today?" · 今天":"")+'</span></div>'+
+     '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
+       '<span>（'+WD[d.getDay()]+'）'+(today?" · 今天":"")+' ▾</span></div>'+
      '<button class="bk-nav" id="bkNext">›</button>'+
      '<button class="bk-nav bk-tdy" id="bkToday">今天</button>'+
    '</div>'+
@@ -692,6 +753,8 @@ async function bkRender(){
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
 
+  var dpEl=document.getElementById("bkDatePick");
+  if(dpEl)dpEl.onclick=bkDatePick;
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
