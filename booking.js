@@ -499,7 +499,12 @@ function bkTktUnit(m){
     var pl=bkTktPlanOf(t.name); if(!pl)return;
     if(!best||String(t.expiry||"")>String(best.expiry||"")){ best=t; bestPlan=pl }
   });
-  if(!best)return null;
+  if(!best){
+    /* 有堂數票券但完全不在對照表裡的，直接用堂數去方案設定比對 */
+    var any=null;
+    ts.forEach(function(t){ if(!any&&t&&t.kind==="session"&&/\d+\s*堂/.test(t.name||""))any=t });
+    return any?bkPlanBySessions(any.name):null;
+  }
   var buy=bkTktBuyDate(best.expiry,bestPlan.months);
   var rule=null;
   for(var i=0;i<bestPlan.rules.length;i++){
@@ -507,13 +512,53 @@ function bkTktUnit(m){
     if(!r.from){ rule=r; break }
     if(buy&&buy>=r.from){ rule=r; break }
   }
-  if(!rule)return null;
+  if(!rule){
+    /* 對照表沒這個方案 → 用堂數去方案設定找 */
+    var byS=bkPlanBySessions(best.name);
+    if(byS){ byS.buy=buy; return byS }
+    return null;
+  }
   /* 有填單堂價就直接用——42,000 ÷ 45 = 933.33，除不盡的自己指定比較準 */
   var unit=rule.unit?rule.unit:(rule.price/rule.qty);
   return { unit:Math.round(unit*(bestPlan.mult||1)),
            plan:best.name, qty:rule.qty, price:rule.price,
            buy:buy, src:bkTktPlanSrc, fromTicket:true };
 }
+/* ══ 用堂數去比對「方案設定」裡的方案 ══════════════════
+   夯客的票券叫「高階45堂」，你在方案設定建的叫「純繪畫45堂」，
+   名稱對不起來，但堂數是同一個數字。
+
+   票券名稱裡的數字就是堂數，拿它去方案設定找堂數相同的方案，
+   找到就用那個方案的售價算單堂。這樣你在方案設定維護價格，
+   舊票券自動跟著走，不用再維護第二份對照表。
+
+   只在「明細沒金額、試算表也沒填」的時候才會走到這裡。
+   同一個堂數有好幾個方案（例如改過價各留一筆）就取售價最高的——
+   寧可認列高一點被你發現去修，也不要默默少算。 */
+function bkPlanBySessions(name){
+  var m=String(name||"").match(/(\d+(?:\.\d+)?)\s*堂/);
+  if(!m)return null;
+  var want=+m[1];
+  if(!want)return null;
+  var half=/\(0?\.5\)/.test(String(name));
+  var list=[];
+  try{
+    if(typeof mbPlans==="function")list=mbPlans()||[];
+    else if(typeof S==="object"&&S&&S.plans)list=S.plans;
+  }catch(e){ return null }
+  var best=null;
+  list.forEach(function(p){
+    if(!p||p.active===false)return;
+    if((+p.sessions||0)!==want)return;
+    if(!(+p.price>0))return;
+    if(!best||+p.price>+best.price)best=p;
+  });
+  if(!best)return null;
+  return { unit:Math.round((+best.price)/want*(half?0.5:1)),
+           plan:best.name||("方案 "+want+" 堂"), qty:want, price:+best.price,
+           src:"方案設定", fromTicket:true, buy:"" };
+}
+
 /* 有票券但表上查不到價的，至少把方案名稱講出來，
    別只丟一句「查不到」讓人不知道要去補什麼。 */
 function bkTktNameOnly(m){
@@ -1308,7 +1353,9 @@ async function bkCheckout(id){
           var tn=bkTktNameOnly(payer);
           h+='<div class="bk-warn">'+
              (tn?("「"+esc(tn)+"」還沒有單價，"):"查不到這位客人的堂數方案，")+
-             '業績先用牌價 $'+(courseList||0).toLocaleString()+' 認列。</div>';
+             '業績先用牌價 $'+(courseList||0).toLocaleString()+' 認列。'+
+             '<br><span class="bk-cap">補法二選一：方案設定建一個堂數相同的方案，'+
+             '或在試算表「舊方案單價」分頁填一列。（票券單價來源：'+esc(bkTktPlanSrc)+'）</span></div>';
         } }
       /* 用堂數扣的，紅利要用方案攤下來的單堂價算，不是當天的牌價。
          牌價 1,300 跟單堂 1,000 除以 500 之後差一點，是實打實的誤差。 */
