@@ -10,6 +10,7 @@
 var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app";
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var NOTIFY   = "https://otto2-notify-production.up.railway.app";
+var LIFF_LINK = "https://liff.line.me/2010906803-FMDYktUN"; // 客人點這個連結，開一次就會自動綁定 LINE
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
 /* ══ 晚上時段（2026-08-10）══════════════════════════════
    晚上不是每天都開，週一固定、其他時候看情況加開。所以它不是
@@ -227,6 +228,25 @@ async function bkLoadCourses(){
     });
     bkCourses=out;
   }catch(e){ bkCourses=[]; }
+}
+/* 加購清單：跟客人端讀同一份「加購」工作表（課程名稱／加購名稱／加價／排序），
+   手動登記以前完全沒讀這份表，行政只能整堂課加開一列，選不到單一加購品項。 */
+var bkAddons = null; // 課程名稱 -> [{name,price,sort}]
+async function bkLoadAddons(){
+  if(bkAddons)return;
+  try{
+    var rows=await bkGviz("加購");
+    var first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
+    if(first[0]==="課程名稱")rows.shift();
+    var out={};
+    rows.forEach(function(r){
+      var cname=String(r[0]||"").trim(), aname=String(r[1]||"").trim();
+      if(!cname||!aname)return;
+      (out[cname]=out[cname]||[]).push({name:aname,price:bkNum(r[2]),sort:+r[3]||99});
+    });
+    Object.keys(out).forEach(function(k){ out[k].sort(function(a,b){return a.sort-b.sort}) });
+    bkAddons=out;
+  }catch(e){ bkAddons={}; }
 }
 var BK_HOUR_MIN=2, BK_HOUR_MAX=4;
 /* ══ 課程下拉依分類分組 ══════════════════════════════════
@@ -796,7 +816,8 @@ function bkCard(b){
   var unpaid=dp.s==="wait"&&!c;
   var depPaid=dp.s==="paid"&&!c;
   var items=(b.items||[]).map(function(i){
-    return esc(i.name)+(i.spec?"("+esc(i.spec)+")":"")+" ×"+(i.qty||1) }).join("、");
+    var ad=(i.addons||[]).map(function(a){return a.name}).join("、");
+    return esc(i.name)+(i.spec?"("+esc(i.spec)+")":"")+" ×"+(i.qty||1)+(ad?"　加購："+esc(ad):"") }).join("、");
   /* 待收就把方式一起寫出來，行政才知道要去 LINE Pay 還是銀行對帳，不用點進去看 */
   var depTag="";
   if(dp.s==="wait")
@@ -1865,9 +1886,12 @@ async function bkManual(editId){
   }
   document.getElementById("mAdult").oninput=syncPpl;
   document.getElementById("mKid").oninput=syncPpl;
+  /* 直接手動打電話（沒有走「找會員」搜尋）離開欄位時也查一次，
+     不然這個客人就算早就綁過 LINE，系統也查不到。 */
+  document.getElementById("mPhone").onchange=function(){ if(!picked)showNotify() };
 
   /* 課程 */
-  await bkLoadCourses(); await bkLoadSched(); await bkLoadTktPlans();
+  await bkLoadCourses(); await bkLoadSched(); await bkLoadTktPlans(); await bkLoadAddons();
 
   /* ══ 品項清單（2026-08-09）══════════════════════════════
      一組客人一起來，各上各的課——三個人來，一個畫流動畫、
@@ -1897,10 +1921,11 @@ async function bkManual(editId){
       mItems.push({ ci: ci>=0?String(ci):"", qty:qty, amt:price*qty,
                     hours:+it.hours||0,
                     qtyManual:true, amtManual:false,
-                    lostName: ci<0 ? (it.name||"") : "" });
+                    lostName: ci<0 ? (it.name||"") : "",
+                    addons:(it.addons||[]).map(function(a){return {name:a.name,price:+a.price||0}}) });
     });
   }
-  if(!mItems.length) mItems.push({ ci:"", qty:0, amt:0, qtyManual:false, amtManual:false, lostName:"" });
+  if(!mItems.length) mItems.push({ ci:"", qty:0, amt:0, qtyManual:false, amtManual:false, lostName:"", addons:[] });
   /* 編輯既有預約時，金額以原本存的為準，不要被單價重算蓋掉 */
   if(eb) mItems.forEach(function(r){ r.amtManual=true });
   if(eb&&mItems.length===1) mItems[0].amt=+eb.total||mItems[0].amt;
@@ -1914,6 +1939,10 @@ async function bkManual(editId){
     /* 計時課的單價＝每小時 × 時數 */
     if(+c.hourly>0)return (+c.hourly)*(+r.hours||BK_HOUR_MIN);
     return +c.price||0;
+  }
+  /* 加購是一組客人加一次（不管幾位），不隨件數倍增，跟客人端算法一致 */
+  function mAddonsTotal(r){
+    return (r.addons||[]).reduce(function(s,a){return s+(+a.price||0)},0);
   }
   function mRecalc(){
     var t=0; mItems.forEach(function(r){ t+=+r.amt||0 });
@@ -1945,7 +1974,7 @@ async function bkManual(editId){
     if(mItems.length===1&&!mItems[0].qtyManual){
       mItems[0].qty=mPplNow()||1;
       if(mItems[0].ci!==""&&!mItems[0].amtManual)
-        mItems[0].amt=mRowPrice(mItems[0])*mItems[0].qty;
+        mItems[0].amt=mRowPrice(mItems[0])*mItems[0].qty+mAddonsTotal(mItems[0]);
     }
     box.innerHTML=mItems.map(function(r,i){
       var c=r.ci===""?null:bkCourses[+r.ci];
@@ -1967,15 +1996,30 @@ async function bkManual(editId){
           : "")+
         (c?'<div class="bk-left bk-iinfo">單價 $'+mRowPrice(r).toLocaleString()+
             (c.dur?"　時長 "+esc(c.dur):"")+
-            (+c.seats>0&&!(+c.hourly>0)?"　佔 "+(+c.seats)+" 個位子":"")+'</div>':'');
+            (+c.seats>0&&!(+c.hourly>0)?"　佔 "+(+c.seats)+" 個位子":"")+'</div>':'')+
+        /* 加購：跟試算表「加購」分頁對到這門課的品項，複選，價格一次性加進小計，
+           不跟著件數乘（跟客人端 LIFF 算法一致）。畫布、公仔這類都是靠這裡選，
+           不是再開一列課程。 */
+        (c&&bkAddons&&bkAddons[c.name]&&bkAddons[c.name].length
+          ? '<div class="bk-left bk-iinfo" style="margin-top:6px">加購（可複選）：'+
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">'+
+            bkAddons[c.name].map(function(a,ai){
+              var on=(r.addons||[]).some(function(x){return x.name===a.name});
+              return '<button type="button" class="bk-way'+(on?' on':'')+
+                '" data-addon-i="'+i+'" data-addon-ai="'+ai+'" style="font-size:12.5px;padding:5px 10px">'+
+                esc(a.name)+'　+$'+a.price.toLocaleString()+'</button>';
+            }).join("")+
+            '</div></div>'
+          : '');
     }).join("");
 
     box.querySelectorAll("select[data-f=ci]").forEach(function(el){
       el.onchange=function(){
         var r=mItems[+el.dataset.ir];
         r.ci=el.value; r.lostName=""; r.amtManual=false; mItemsDirty=true;
+        r.addons=[]; /* 換課程，舊課程的加購清單對不上了 */
         if(!r.qty) r.qty=mItems.length===1?(mPplNow()||1):1;
-        r.amt=mRowPrice(r)*(+r.qty||0);
+        r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
         mDraw();
       };
     });
@@ -1983,7 +2027,7 @@ async function bkManual(editId){
       el.oninput=function(){
         var r=mItems[+el.dataset.ir];
         r.hours=Math.max(BK_HOUR_MIN,Math.min(BK_HOUR_MAX,+el.value||BK_HOUR_MIN));
-        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0);
+        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
         mItemsDirty=true; mRecalc();
         var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
         if(ae&&!r.amtManual)ae.value=r.amt||"";
@@ -1995,7 +2039,7 @@ async function bkManual(editId){
         var r=mItems[+el.dataset.ir];
         r.qty=+el.value||0; r.qtyManual=true; mItemsDirty=true;
         if(r.ci!==""&&!r.amtManual){
-          r.amt=mRowPrice(r)*r.qty;
+          r.amt=mRowPrice(r)*r.qty+mAddonsTotal(r);
           var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
           if(ae)ae.value=r.amt||"";
         }
@@ -2008,10 +2052,23 @@ async function bkManual(editId){
         r.amt=+el.value||0; r.amtManual=true; mItemsDirty=true; mRecalc();
       };
     });
+    box.querySelectorAll("[data-addon-i]").forEach(function(el){
+      el.onclick=function(){
+        var r=mItems[+el.dataset.addonI];
+        var c=bkCourses[+r.ci];
+        var a=bkAddons[c.name][+el.dataset.addonAi];
+        r.addons=r.addons||[];
+        var idx=r.addons.findIndex(function(x){return x.name===a.name});
+        if(idx>=0)r.addons.splice(idx,1); else r.addons.push({name:a.name,price:a.price});
+        mItemsDirty=true;
+        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+        mDraw();
+      };
+    });
     box.querySelectorAll("[data-del]").forEach(function(el){
       el.onclick=function(){
         mItems.splice(+el.dataset.del,1); mItemsDirty=true;
-        if(!mItems.length)mItems.push({ci:"",qty:mPplNow()||1,amt:0,qtyManual:false,amtManual:false,lostName:""});
+        if(!mItems.length)mItems.push({ci:"",qty:mPplNow()||1,amt:0,qtyManual:false,amtManual:false,lostName:"",addons:[]});
         mDraw();
       };
     });
@@ -2021,7 +2078,7 @@ async function bkManual(editId){
     mItemsDirty=true;
     /* 加第二列時，第一列的人數就得定下來，不然它還會跟著總人數跑 */
     if(mItems.length===1) mItems[0].qtyManual=true;
-    mItems.push({ci:"",qty:1,amt:0,qtyManual:true,amtManual:false,lostName:""});
+    mItems.push({ci:"",qty:1,amt:0,qtyManual:true,amtManual:false,lostName:"",addons:[]});
     mDraw();
   };
   /* 大人／小孩變動時沿用原本的 fillAmt 名稱，syncPpl 不用改 */
@@ -2034,6 +2091,7 @@ async function bkManual(editId){
       var row={name:c.name,spec:c.spec,qty:+r.qty||1,price:mRowPrice(r)};
       if(+c.hourly>0)row.hours=+r.hours||BK_HOUR_MIN;
       if(+c.seats>0)row.seats=+c.seats;
+      if(r.addons&&r.addons.length)row.addons=r.addons.map(function(a){return {name:a.name,price:a.price}});
       out.push(row);
     });
     /* 沒動過品項就別把原本的資料洗掉 */
@@ -2069,7 +2127,10 @@ async function bkManual(editId){
   };
   async function showNotify(){
     var box=document.getElementById("mNotifyBox");
-    var ph=picked?picked.phone:(eb?(eb.memberPhone||(eb.customer&&eb.customer.phone)||""):"");
+    /* 沒透過「找會員」點選、直接手動打電話的情況，以前完全不會查 LINE 綁定，
+       這裡補上：沒有 picked 也沒有 eb 的話，就拿手動填的電話去查。 */
+    var typedPhone=(document.getElementById("mPhone").value||"").trim();
+    var ph=picked?picked.phone:(eb?(eb.memberPhone||(eb.customer&&eb.customer.phone)||""):typedPhone);
     if(!ph){
       box.innerHTML=eb?'<div class="bk-left">這筆沒有綁定會員，改完不會發通知。</div>':"";
       pickedUid=null; return;
@@ -2077,8 +2138,13 @@ async function bkManual(editId){
     var m=await bkMember(mbPhone(ph));
     pickedUid=(m&&m.lineUserId)||(eb&&eb.line&&eb.line.userId)||null;
     if(!pickedUid){
-      box.innerHTML='<div class="bk-left">這位會員還沒綁定 LINE，'+
-        (eb?"改完":"登記後")+'不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
+      box.innerHTML='<div class="bk-warn">⚠ 這位會員還沒綁定 LINE，'+
+        (eb?"改完":"登記後")+'不會收到通知。現場可以請他點下面的連結開一次就會自動綁定：'+
+        '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<code style="font-size:12px;word-break:break-all">'+LIFF_LINK+'</code>'+
+        '<button type="button" class="bk-cancel" style="padding:5px 10px;font-size:12.5px" '+
+        'onclick="stCopy(\''+LIFF_LINK+'\')">複製連結</button>'+
+        '</div></div>';
       return;
     }
     /* 修改預設不勾。客人已經收過一次確認，再收一封一樣格式的容易以為又多訂了一筆，

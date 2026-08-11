@@ -1181,8 +1181,8 @@ function renderInvWeekTable() {
   var INV_GROUPS = [
     { key: 'canvas', label: '🖼 畫布', cats: ['畫布'] },
     { key: 'board', label: '🪞 木板／玻璃', cats: ['框木板'] },
-    { key: 'paint', label: '🎨 顏料', cats: ['顏料'] },
     { key: 'parts', label: '⚙️ 配件', cats: ['飾品配件'] },
+    { key: 'paint', label: '🎨 顏料', cats: ['顏料'] },
     { key: 'gel', label: '💎 膠體', cats: ['樹脂','溶劑'] },
     { key: 'other', label: '📌 其他', cats: ['紙張','筆刷','包裝','清潔','印刷','其他'] }
   ];
