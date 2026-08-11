@@ -193,8 +193,12 @@ async function bkGviz(sheet){
   var a=t.indexOf("{"), b=t.lastIndexOf("}");
   var j=JSON.parse(t.substring(a,b+1));
   if(!j.table)throw new Error("找不到工作表「"+sheet+"」");
-  return j.table.rows.map(function(r){ return r.c.map(function(c){
+  var out=j.table.rows.map(function(r){ return r.c.map(function(c){
     return c?(c.f==null?c.v:c.f):"" }) });
+  /* 標題另外掛在陣列上（不可列舉，不影響 forEach/map），
+     格式偵測（例如加購有沒有加規格欄）要靠這個判斷，不用亂猜資料形狀 */
+  try{ Object.defineProperty(out,"__head",{value:(j.table.cols||[]).map(function(c){return String((c&&(c.label||c.id))||"").trim()}),enumerable:false}) }catch(e){}
+  return out;
 }
 function bkNum(v){
   var m=String(v==null?"":v).replace(/[^\d.]/g,"");
@@ -229,24 +233,36 @@ async function bkLoadCourses(){
     bkCourses=out;
   }catch(e){ bkCourses=[]; }
 }
-/* 加購清單：跟客人端讀同一份「加購」工作表（課程名稱／加購名稱／加價／排序），
-   手動登記以前完全沒讀這份表，行政只能整堂課加開一列，選不到單一加購品項。 */
-var bkAddons = null; // 課程名稱 -> [{name,price,sort}]
+/* 加購清單：跟客人端讀同一份「加購」工作表（課程名稱／規格／加購名稱／價格／排序），
+   手動登記以前完全沒讀這份表，行政只能整堂課加開一列，選不到單一加購品項。
+   規格留空＝不分尺寸都出現；填了＝只在選到那個規格時才出現（例如雙層流動依尺寸不同價）。 */
+var bkAddons = null; // 課程名稱 -> [{name,price,sort,spec}]
 async function bkLoadAddons(){
   if(bkAddons)return;
   try{
     var rows=await bkGviz("加購");
     var first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
     if(first[0]==="課程名稱")rows.shift();
+    /* 舊格式（課程名稱／加購名稱／價格／排序）表格還沒加規格欄也不會壞——
+       照標題判斷，沒有「規格」欄就當全部尺寸通用 */
+    var hasSpec=!!(rows.__head&&rows.__head[1]==="規格");
+    var iSpec=hasSpec?1:-1, iName=hasSpec?2:1, iPrice=hasSpec?3:2, iSort=hasSpec?4:3;
     var out={};
     rows.forEach(function(r){
-      var cname=String(r[0]||"").trim(), aname=String(r[1]||"").trim();
+      var cname=String(r[0]||"").trim(), aname=String(r[iName]||"").trim();
+      var spec=iSpec>=0?String(r[iSpec]||"").trim():"";
       if(!cname||!aname)return;
-      (out[cname]=out[cname]||[]).push({name:aname,price:bkNum(r[2]),sort:+r[3]||99});
+      (out[cname]=out[cname]||[]).push({name:aname,price:bkNum(r[iPrice]),sort:+r[iSort]||99,spec:spec});
     });
     Object.keys(out).forEach(function(k){ out[k].sort(function(a,b){return a.sort-b.sort}) });
     bkAddons=out;
   }catch(e){ bkAddons={}; }
+}
+/* 同一門課不同規格，加購清單可能不一樣（小尺寸可能沒有雙層選項）。
+   渲染跟點擊都要用這支拿清單，索引才會對得起來。 */
+function bkAddonsFor(c){
+  if(!c||!bkAddons||!bkAddons[c.name])return [];
+  return bkAddons[c.name].filter(function(a){ return !a.spec||a.spec===c.spec });
 }
 var BK_HOUR_MIN=2, BK_HOUR_MAX=4;
 /* ══ 課程下拉依分類分組 ══════════════════════════════════
@@ -2000,10 +2016,10 @@ async function bkManual(editId){
         /* 加購：跟試算表「加購」分頁對到這門課的品項，複選，價格一次性加進小計，
            不跟著件數乘（跟客人端 LIFF 算法一致）。畫布、公仔這類都是靠這裡選，
            不是再開一列課程。 */
-        (c&&bkAddons&&bkAddons[c.name]&&bkAddons[c.name].length
+        (c&&bkAddonsFor(c).length
           ? '<div class="bk-left bk-iinfo" style="margin-top:6px">加購（可複選）：'+
             '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">'+
-            bkAddons[c.name].map(function(a,ai){
+            bkAddonsFor(c).map(function(a,ai){
               var on=(r.addons||[]).some(function(x){return x.name===a.name});
               return '<button type="button" class="bk-way'+(on?' on':'')+
                 '" data-addon-i="'+i+'" data-addon-ai="'+ai+'" style="font-size:12.5px;padding:5px 10px">'+
@@ -2056,7 +2072,7 @@ async function bkManual(editId){
       el.onclick=function(){
         var r=mItems[+el.dataset.addonI];
         var c=bkCourses[+r.ci];
-        var a=bkAddons[c.name][+el.dataset.addonAi];
+        var a=bkAddonsFor(c)[+el.dataset.addonAi];
         r.addons=r.addons||[];
         var idx=r.addons.findIndex(function(x){return x.name===a.name});
         if(idx>=0)r.addons.splice(idx,1); else r.addons.push({name:a.name,price:a.price});
