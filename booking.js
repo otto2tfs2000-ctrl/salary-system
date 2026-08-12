@@ -873,8 +873,9 @@ function bkCard(b){
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
       '<button class="bk-b'+(b.attend==="no"?" no":"")+'" data-at="'+b.id+'" data-v="no">未到</button>'+
-      /* 手動登記打錯很常見。核銷後就不給改了，那時金額已經寫進帳。 */
-      ((!c&&b.source==="manual")
+      /* 手動登記打錯很常見，客人自己訂的也可能訂錯要幫忙改。
+         核銷後就不給改了，那時金額已經寫進帳。 */
+      (!c
         ?'<button class="bk-b ed" data-ed="'+b.id+'">修改</button>':"")+
       /* 訂金只在還沒核銷前能改。核銷後那筆金額已經寫進扣課明細，
          這裡再動就會跟每日填寫對不起來 */
