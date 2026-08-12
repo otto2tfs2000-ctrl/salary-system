@@ -1025,7 +1025,12 @@ function bkSheet(html){
   var m=document.getElementById("bkMask");
   if(!m){ m=document.createElement("div"); m.id="bkMask"; m.className="bk-mask";
     m.innerHTML='<div class="bk-sheet" id="bkSheet"></div>'; document.body.appendChild(m);
-    m.onclick=function(e){ if(e.target===m)bkClose() }; }
+    /* 點外面關閉，要「按下」跟「放開」都真的在遮罩上才算數。
+       以前只看放開那一刻的位置，在表單裡拖曳選字、滑鼠稍微滑出邊界
+       再放開，就會被誤判成「點了外面」，整份還沒存的資料直接關掉消失。 */
+    var downOnMask=false;
+    m.onmousedown=function(e){ downOnMask=(e.target===m) };
+    m.onclick=function(e){ if(e.target===m&&downOnMask)bkClose(); downOnMask=false }; }
   document.getElementById("bkSheet").innerHTML=html;
   m.classList.add("on");
 }
