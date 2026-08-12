@@ -177,6 +177,7 @@ var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c)
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) };
 
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
+var bkSlotOpen = {}; // 今日排課裡哪些時段是展開的，key 是「日期|時段」，預設收合
 var bkIndex = {}, bkIndexReady = false;
 var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
 var CAP_PER_TEACHER = 5;          /* 每位老師可帶人數 */
@@ -780,11 +781,20 @@ async function bkRender(){
       var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
       var capS=bkCapOfSlot(dsNow,sl);
       var full=sl!=="其他"&&n>capS;
-      return '<div class="'+cls+'"><div class="bk-sh">'+sl+
+      /* 大人／小孩合計：跟 bkPplText 同一套算法，湊出這個時段的組成 */
+      var aSum=0,kSum=0,akKnown=false;
+      g.forEach(function(b){ var x=bkAK(b); if(x.a!=null||x.k!=null){akKnown=true; aSum+=(+x.a||0); kSum+=(+x.k||0)} });
+      var akText=akKnown?("（大人 "+aSum+(kSum?"・小孩 "+kSum:"")+"）"):"";
+      /* 每個時段預設收合，只看標題就知道這個時段人數夠不夠，
+         點開才看到每一組客人的細節，安排位子時滑一輪比較快 */
+      var slKey=dsNow+"|"+sl;
+      var open=!!bkSlotOpen[slKey];
+      return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
+        '<span style="display:inline-block;width:14px">'+(open?"▼":"▶")+'</span>'+sl+
         (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
         '　<span'+(full?' class="bk-shfull"':'')+'>'+
-        n+(sl==="其他"?"":" / "+capS)+' 位'+(full?"・超載":"")+'</span></div>'+
-        g.map(bkCard).join("")+'</div>';
+        n+(sl==="其他"?"":" / "+capS)+' 位'+akText+(full?"・超載":"")+'</span></div>'+
+        (open?g.map(bkCard).join(""):"")+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -801,6 +811,8 @@ async function bkRender(){
   /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
+  root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
+    bkSlotOpen[el.dataset.slk]=!bkSlotOpen[el.dataset.slk]; bkRender() } });
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
   root.querySelectorAll("[data-ed]").forEach(function(el){ el.onclick=function(){ bkManual(el.dataset.ed) } });
