@@ -699,8 +699,13 @@ function buildDedHtml(dateStr) {
     var ppl = +r.people || 0, amt = +r.total || 0;
     totalPpl += ppl; totalAmt += amt;
     var tName = r.teacher || '';
-    var bad = tName && !known[tName];
-    if (bad && unknown.indexOf(tName) < 0) unknown.push(tName);
+    /* 兩位小孩分別給不同老師教，核銷時本來就可以複選老師，
+       存成 teachers[] 陣列（tName 只是給人看的頓號字串，永遠比對不到）。
+       要照 teachers[] 逐一比對，兩個老師都查得到才不算「找不到」。 */
+    var names = (r.teachers && r.teachers.length) ? r.teachers : (tName ? [tName] : []);
+    var badNames = names.filter(function(n){ return n && !known[n] });
+    var bad = badNames.length > 0;
+    badNames.forEach(function(n){ if (unknown.indexOf(n) < 0) unknown.push(n) });
     var ak = [];
     if (r.adults) ak.push('大人' + r.adults);
     if (r.kids) ak.push('小孩' + r.kids);
@@ -748,9 +753,19 @@ function dedTotals(dateStr) {
   getTeachers(curStore.daily).forEach(function(t){ byName[t.name] = t; });
   list.forEach(function(r){
     out.revenue += (+r.total || 0);
-    var t = byName[r.teacher || ''];
-    if (!t) { out.skipped++; return; }
-    out.byTeacher[t.id] = (out.byTeacher[t.id] || 0) + (+r.people || 0);
+    /* 兩位小孩分別給不同老師教，這筆的人次要照人數平分給每個老師，
+       不能整包算給一個人，也不能因為找不到單一 teacher 字串就整筆跳過。 */
+    var names = (r.teachers && r.teachers.length) ? r.teachers : (r.teacher ? [r.teacher] : []);
+    if (!names.length) { out.skipped++; return; }
+    var per = (+r.people || 0) / names.length;
+    var matched = false;
+    names.forEach(function(n){
+      var t = byName[n];
+      if (!t) return;
+      matched = true;
+      out.byTeacher[t.id] = (out.byTeacher[t.id] || 0) + per;
+    });
+    if (!matched) out.skipped++;
   });
   return out;
 }
