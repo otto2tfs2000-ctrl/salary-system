@@ -814,7 +814,11 @@ async function bkRender(){
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     bkSlotOpen[el.dataset.slk]=!bkSlotOpen[el.dataset.slk]; bkRender() } });
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
-    bkPatch("/bookings/"+el.dataset.at+".json",{attend:el.dataset.v}).then(bkRefresh) } });
+    /* 再點一次已經亮著的那顆，變回「都沒標」，方便誤按了可以直接清掉，
+       不用被迫選另一個將就。 */
+    var cur=bkList.filter(function(x){return x.id===el.dataset.at})[0];
+    var next=(cur&&cur.attend===el.dataset.v)?null:el.dataset.v;
+    bkPatch("/bookings/"+el.dataset.at+".json",{attend:next}).then(bkRefresh) } });
   root.querySelectorAll("[data-ed]").forEach(function(el){ el.onclick=function(){ bkManual(el.dataset.ed) } });
   root.querySelectorAll("[data-dp]").forEach(function(el){ el.onclick=function(){ bkDeposit(el.dataset.dp) } });
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
