@@ -483,19 +483,19 @@ function mbAskDelete(phone){
   }
 
   h += '<div class="fg" style="margin-bottom:14px"><label>請輸入這位會員的完整電話以確認</label>' +
-       '<input id="mb-del-c" inputmode="numeric" placeholder="' + m.phone + '" autocomplete="off"></div>' +
-       '<div id="mb-del-err" style="color:var(--red);font-size:13.5px;margin-bottom:12px"></div>';
+       '<input id="mb-del-c" inputmode="numeric" placeholder="' + m.phone + '" autocomplete="off"></div>';
+  if (!clean){
+    h += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:14px;cursor:pointer">' +
+         '<input type="checkbox" id="mb-del-ack" style="width:16px;height:16px"> ' +
+         '我知道餘額和紀錄會一起消失，還是要永久刪除</label>';
+  }
+  h += '<div id="mb-del-err" style="color:var(--red);font-size:13.5px;margin-bottom:12px"></div>';
 
   h += '<div class="row" style="gap:8px">' +
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn" style="flex:1" onclick="mbDoDelete(\'' + phone + '\',0)">封存</button>' +
-       (clean ? '<button class="btn" style="flex:1;color:var(--red);border-color:#EBD3D0" onclick="mbDoDelete(\'' + phone + '\',1)">永久刪除</button>' : '') +
+       '<button class="btn" style="flex:1;color:var(--red);border-color:#EBD3D0" onclick="mbDoDelete(\'' + phone + '\',1)">永久刪除</button>' +
        '</div>';
-  if (!clean){
-    h += '<div class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.7">' +
-         '有餘額或有紀錄的會員不提供永久刪除。真的要清掉，請先把餘額歸零、' +
-         '確認紀錄結算過，再回來操作。</div>';
-  }
   mbModal(h);
   setTimeout(function(){ var el = document.getElementById('mb-del-c'); if (el) el.focus() }, 60);
 }
@@ -508,6 +508,13 @@ async function mbDoDelete(phone, hard){
   if (mbNorm(typed) !== phone){
     if (err) err.textContent = '電話號碼不符，請完整輸入 ' + phone + ' 再試一次。';
     return;
+  }
+  if (hard){
+    var ack = document.getElementById('mb-del-ack');
+    if (ack && !ack.checked){
+      if (err) err.textContent = '請先勾選上面的確認，再永久刪除。';
+      return;
+    }
   }
   if (err) err.textContent = '處理中…';
   try {
