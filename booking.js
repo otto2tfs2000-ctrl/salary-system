@@ -1252,7 +1252,7 @@ async function bkCheckout(id){
    '<div class="bk-f"><label>課程費用</label><input id="ckAmt" inputmode="numeric" value="'+(course.amt||"")+'"></div>'+
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
    '<div class="bk-f" id="ckSeBox" style="display:none"><label>這次扣幾堂</label>'+
-     '<input id="ckSe" inputmode="numeric" value=""><div class="bk-left" id="ckSeHint"></div></div>'+
+     '<input id="ckSe" inputmode="decimal" value=""><div class="bk-left" id="ckSeHint"></div></div>'+
    '<div class="bk-f"><label>加價項目（畫布、公仔等）</label><div id="ckAdd"></div>'+
      '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button><div id="ckAddWarn"></div></div>'+
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
@@ -1605,7 +1605,7 @@ async function bkCheckout(id){
     if(cp.member&&!payer){ alert("這個付款方式需要先選會員"); return }
     if(course.way==="sessions"){
       var seN=ckSeNow();
-      if(!seN){ alert("堂數扣抵至少要扣 1 堂"); return }
+      if(!seN){ alert("堂數扣抵要大於 0，可以填 0.5 這種半堂"); return }
       var q=ckItemsQty();
       if(q&&seN!==q&&!confirm("課程項目合計 "+q+" 位，但這次只扣 "+seN+" 堂。\n\n"+
         "確定嗎？（部分人用堂數、其他人付現的話這樣是對的）"))return;
