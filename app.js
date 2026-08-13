@@ -638,6 +638,13 @@ function dedDateStr(y, m, d) {
   return y + '/' + String(m).padStart(2,'0') + '/' + String(d).padStart(2,'0');
 }
 
+/* 核銷紀錄要不要算進「目前這個分店」的每日登記。
+   deductions 的 dept 是「今日排課」核銷時寫的（旗艦固定寫 4F），
+   跟業績系統 salesData 用的 dept（國圖／2F／4F）同一套判法：
+   dept 是「國圖」才算國圖，其他一律算旗艦——
+   不然切到國圖分頁，會把旗艦核銷的課全部当成國圖的人次帶進去。 */
+function dedStoreOf(dept) { return dept === '國圖' ? 'guotu' : 'flagship'; }
+
 async function loadDeductions(dateStr) {
   if (dedCache[dateStr] || dedLoading[dateStr]) return;
   dedLoading[dateStr] = true;
@@ -677,8 +684,9 @@ function dedRefresh(dateStr) {
 }
 
 function buildDedHtml(dateStr) {
-  var list = dedCache[dateStr];
-  if (!list) return '<div class="muted" style="font-size:13.5px">讀取核銷紀錄中…</div>';
+  var all = dedCache[dateStr];
+  if (!all) return '<div class="muted" style="font-size:13.5px">讀取核銷紀錄中…</div>';
+  var list = all.filter(function(r){ return dedStoreOf(r.dept) === curStore.daily });
   if (!list.length) return '<div class="muted" style="font-size:13.5px">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
 
   var teachers = getTeachers(curStore.daily);
@@ -731,8 +739,10 @@ function buildDedHtml(dateStr) {
 /* 直接算出某天核銷的合計，供畫面組裝時就把數字寫進欄位（不靠事後補填） */
 function dedTotals(dateStr) {
   var out = { byTeacher: {}, revenue: 0, skipped: 0, has: false };
-  var list = dedCache[dateStr];
-  if (!list || !list.length) return out;
+  var all = dedCache[dateStr];
+  if (!all || !all.length) return out;
+  var list = all.filter(function(r){ return dedStoreOf(r.dept) === curStore.daily });
+  if (!list.length) return out;
   out.has = true;
   var byName = {};
   getTeachers(curStore.daily).forEach(function(t){ byName[t.name] = t; });
