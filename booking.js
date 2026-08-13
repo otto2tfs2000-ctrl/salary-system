@@ -894,8 +894,11 @@ function bkCard(b){
       (!c
         ?'<button class="bk-b ed" data-ed="'+b.id+'">修改</button>':"")+
       /* 訂金只在還沒核銷前能改。核銷後那筆金額已經寫進扣課明細，
-         這裡再動就會跟每日填寫對不起來 */
-      ((!c&&(dp.s==="wait"||dp.s==="paid")&&bkCan("checkout"))
+         這裡再動就會跟每日填寫對不起來。
+         現場登記預設是「不用收」（none），但口頭約、電話約的客人
+         行政也常常會請對方先付訂金，所以 none 也要能補登，
+         不然只能寫在備註欄，錢收了卻沒進帳、核銷時也不會自動扣抵。 */
+      ((!c&&(dp.s==="wait"||dp.s==="paid"||dp.s==="none")&&bkCan("checkout"))
         ?'<button class="bk-b dp'+(dp.s==="paid"?" done":"")+'" data-dp="'+b.id+'">'+
           (dp.s==="paid"?"訂金 ✓":"收訂金")+'</button>':"")+
       /* 核銷會扣點數、作廢會退帳，沒有權限的人不顯示這兩顆 */
@@ -1059,7 +1062,7 @@ function bkClose(){ var m=document.getElementById("bkMask"); if(m)m.classList.re
 async function bkDeposit(id){
   var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
   var dp=bkDepState(b);
-  if(dp.s!=="wait"&&dp.s!=="paid")return;
+  if(dp.s!=="wait"&&dp.s!=="paid"&&dp.s!=="none")return;
   var amt=dp.amt||DEPOSIT_AMT;
   var way=dp.way||"linepay";
   var today=ds(new Date());
@@ -1073,8 +1076,11 @@ async function bkDeposit(id){
    '<div class="bk-sh2">'+b.date+'　'+esc(b.actualTime||b.slot)+'　'+
      esc(b.customer&&b.customer.name||"")+'</div>'+
    (paid?'<div class="bk-warn">這筆已經登記過了。改完會覆蓋原本的紀錄。</div>'
-        :'<div class="bk-info">客人在預約時選的是 <b>'+esc(bkWayName(dp.way))+
-          '</b>，請先確認錢真的收到了再按確認。</div>')+
+        :dp.s==="wait"
+        ?'<div class="bk-info">客人在預約時選的是 <b>'+esc(bkWayName(dp.way))+
+          '</b>，請先確認錢真的收到了再按確認。</div>'
+        :'<div class="bk-info">這筆還沒有登記訂金，口頭約或電話約的客人也可以在這裡補登，'+
+          '金額與方式請填實際收到的。</div>')+
    '<div class="bk-f"><label>訂金金額</label>'+
      '<input id="dpAmt" inputmode="numeric" value="'+amt+'"></div>'+
    '<div class="bk-f"><label>實際收款方式</label><div class="bk-ways" id="dpWays"></div></div>'+
