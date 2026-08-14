@@ -861,25 +861,37 @@ function bkSeatItemsName(b){
 }
 /* 回傳 {byId:{bookingId:area}, counts:{area:人數}}。
    g 要是同一個時段裡的預約清單，順序就是畫面上排的順序。 */
+/* 一組預約可能不只一位（例如媽媽帶兩個小孩一起訂），要佔掉的是
+   「這麼多張椅子」，不是「這一筆預約」，所以人數要照 people 算，
+   不能每筆都當成佔 1 個名額——不然兩位的預約看起來只佔一張椅子，
+   壩台明明滿了畫面卻還說有空位。 */
+function bkSeatPpl(b){
+  var x=bkAK(b);
+  return (x.a!=null||x.k!=null)?Math.max(1,(+x.a||0)+(+x.k||0)):Math.max(1,+b.people||1);
+}
 function bkSeatAssign(g){
   var counts={}; SEAT_AREAS.forEach(function(a){ counts[a.k]=0 });
   var byId={};
   /* 先算已經手動指定過的，佔掉名額 */
   g.forEach(function(b){
-    if(b.seatArea&&counts[b.seatArea]!=null){ byId[b.id]=b.seatArea; counts[b.seatArea]++ }
+    if(b.seatArea&&counts[b.seatArea]!=null){ byId[b.id]=b.seatArea; counts[b.seatArea]+=bkSeatPpl(b) }
   });
   /* 剩下的才自動建議 */
   g.forEach(function(b){
     if(byId[b.id])return;
+    var ppl=bkSeatPpl(b);
     var bands=bkAK(b).bands||"";
     var isYoungPick=bands.indexOf("5-7 歲")>=0&&/選圖/.test(bkSeatItemsName(b));
     var area;
     if(isYoungPick){ area="壩台" }
     else{
-      var open=SEAT_AREAS.filter(function(a){ return counts[a.k]<a.cap })[0];
+      /* 整組人要坐在一起，所以挑「這組人塞得下」的區，不是隨便有一張空椅子就塞——
+         不然兩位的預約可能被拆成一位壩台、一位畫架，變成拆散一組人 */
+      var open=SEAT_AREAS.filter(function(a){ return counts[a.k]+ppl<=a.cap })[0]
+        ||SEAT_AREAS.filter(function(a){ return counts[a.k]<a.cap })[0];
       area=open?open.k:"臨時桌";
     }
-    byId[b.id]=area; counts[area]=(counts[area]||0)+1;
+    byId[b.id]=area; counts[area]=(counts[area]||0)+ppl;
   });
   return {byId:byId,counts:counts};
 }
@@ -911,38 +923,59 @@ function bkSeatBoardHtml(dsNow,sl,g){
 }
 /* 拖曳用 pointer events，滑鼠、觸控、手寫筆同一套，平板手機都能拖。
    一次只綁一個全域的 move/up，拖完就拆掉，不會一直掛著空轉。 */
+/* 拖曳的 move／up 監聽掛在 document 上，不是掛在卡片本身，
+   而且只在整支程式跑起來時掛一次——bkSeatBind 每次重畫都會呼叫，
+   如果監聽器掛在裡面，每畫一次就多掛一組，越用越多、越用越怪。
+   掛在卡片上、靠 setPointerCapture 讓卡片繼續收到事件那一版試過，
+   但 setPointerCapture 在部分瀏覽器不夠可靠，一旦沒生效，手指只要
+   移出卡片原本那一小塊範圍，pointermove 就不會再送到卡片，畫面
+   看起來就是「按下去卻拖不動」。掛在 document 上就沒有這個依賴，
+   不管手指飄到哪裡都收得到。 */
+var bkSeatDrag={chip:null,id:null,startX:0,startY:0,offX:0,offY:0};
+function bkSeatReset(){
+  var chip=bkSeatDrag.chip;
+  if(chip){
+    chip.style.position=""; chip.style.left=""; chip.style.top="";
+    chip.style.zIndex=""; chip.style.width="";
+    chip.classList.remove("dragging");
+  }
+  bkSeatDrag.chip=null; bkSeatDrag.id=null;
+}
+(function bkSeatSetupOnce(){
+  document.addEventListener("pointermove",function(e){
+    var chip=bkSeatDrag.chip; if(!chip)return;
+    chip.style.left=(e.clientX-bkSeatDrag.offX)+"px"; chip.style.top=(e.clientY-bkSeatDrag.offY)+"px";
+  });
+  document.addEventListener("pointerup",function(e){
+    var chip=bkSeatDrag.chip; if(!chip)return;
+    var id=bkSeatDrag.id;
+    var moved=Math.abs(e.clientX-bkSeatDrag.startX)>6||Math.abs(e.clientY-bkSeatDrag.startY)>6;
+    bkSeatReset();
+    if(!moved)return; /* 只是點一下，不是拖，不要誤觸換區 */
+    chip.style.display="none";
+    var under=document.elementFromPoint(e.clientX,e.clientY);
+    chip.style.display="";
+    var col=under&&under.closest(".bk-seat-list");
+    if(col&&col.dataset.area){ bkSeatSet(id,col.dataset.area).then(function(){ if(typeof bkRender==="function")bkRender() }) }
+    else if(typeof bkRender==="function"){ bkRender() } /* 沒放對地方，畫面重畫回原位 */
+  });
+  document.addEventListener("pointercancel",function(){
+    if(bkSeatDrag.chip){ bkSeatReset(); if(typeof bkRender==="function")bkRender() }
+  });
+})();
 function bkSeatBind(root){
-  var dragEl=null,dragId=null,startX=0,startY=0,offX=0,offY=0;
   root.querySelectorAll(".bk-seat-chip").forEach(function(chip){
     chip.addEventListener("pointerdown",function(e){
-      if(e.button!=null&&e.button!==0)return;
-      dragEl=chip; dragId=chip.dataset.bid;
+      /* 只擋滑鼠右鍵／中鍵，觸控和手寫筆的 button 不一定是 0，不能用同一個條件擋掉 */
+      if(e.pointerType==="mouse"&&e.button!==0)return;
       var r=chip.getBoundingClientRect();
-      startX=e.clientX; startY=e.clientY; offX=e.clientX-r.left; offY=e.clientY-r.top;
-      chip.setPointerCapture(e.pointerId);
+      bkSeatDrag.chip=chip; bkSeatDrag.id=chip.dataset.bid;
+      bkSeatDrag.startX=e.clientX; bkSeatDrag.startY=e.clientY;
+      bkSeatDrag.offX=e.clientX-r.left; bkSeatDrag.offY=e.clientY-r.top;
       chip.classList.add("dragging");
       chip.style.width=r.width+"px";
-      document.body.appendChild(chip);
       chip.style.position="fixed"; chip.style.left=r.left+"px"; chip.style.top=r.top+"px"; chip.style.zIndex=999;
       e.preventDefault();
-    });
-    chip.addEventListener("pointermove",function(e){
-      if(dragEl!==chip)return;
-      chip.style.left=(e.clientX-offX)+"px"; chip.style.top=(e.clientY-offY)+"px";
-    });
-    chip.addEventListener("pointerup",function(e){
-      if(dragEl!==chip)return;
-      chip.style.position=""; chip.style.left=""; chip.style.top=""; chip.style.zIndex=""; chip.style.width="";
-      chip.classList.remove("dragging");
-      var moved=Math.abs(e.clientX-startX)>6||Math.abs(e.clientY-startY)>6;
-      dragEl=null;
-      if(!moved)return; /* 只是點一下，不是拖，不要誤觸換區 */
-      chip.style.display="none";
-      var under=document.elementFromPoint(e.clientX,e.clientY);
-      chip.style.display="";
-      var col=under&&under.closest(".bk-seat-list");
-      if(col&&col.dataset.area){ bkSeatSet(dragId,col.dataset.area).then(bkRender) }
-      else{ bkRender() } /* 沒放對地方，畫面重畫回原位 */
     });
   });
 }
