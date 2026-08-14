@@ -922,8 +922,9 @@ function bkSeatBoardHtml(dsNow,sl,g){
         '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
         (byArea[a.k]||[]).map(function(b){
           var picked=bkSeatPicked===b.id;
+          var ppl=bkSeatPpl(b);
           return '<div class="bk-seat-chip'+(picked?" picked":"")+'" data-bid="'+esc(b.id)+'">'+
-            esc(b.customer&&b.customer.name||"—")+
+            esc(b.customer&&b.customer.name||"—")+(ppl>1?'　<b class="bk-seat-ppl">'+ppl+'位</b>':'')+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
         '</div></div>';
@@ -2503,6 +2504,7 @@ css.textContent=
   "font-size:13px;font-weight:600;color:#2A2E38;cursor:pointer;user-select:none;transition:.12s}"+
 ".bk-seat-chip:hover{border-color:#C7CEDB}"+
 ".bk-seat-chip small{display:block;font-weight:400;color:#8A90A0;font-size:11.5px;margin-top:1px}"+
+".bk-seat-ppl{color:#C9453B;font-size:12px}"+
 ".bk-seat-chip.picked{border-color:var(--bkNavy,#1F2A44);background:#EDF1FA;"+
   "box-shadow:0 0 0 2px rgba(31,42,68,.15)}"+
 ".bk-seat-col{cursor:default}"+
