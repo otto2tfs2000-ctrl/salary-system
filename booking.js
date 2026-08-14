@@ -749,6 +749,7 @@ async function bkRender(){
        '<span>（'+WD[d.getDay()]+'）'+(today?" · 今天":"")+' ▾</span></div>'+
      '<button class="bk-nav" id="bkNext">›</button>'+
      '<button class="bk-nav bk-tdy" id="bkToday">今天</button>'+
+     '<button class="bk-nav bk-tdy" id="bkReload">重新讀取</button>'+
    '</div>'+
    '<div class="bk-stat">'+
      '<div class="bk-tcard"><b>'+
@@ -804,6 +805,7 @@ async function bkRender(){
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
+  document.getElementById("bkReload").onclick=function(){ bkRefresh() };
   document.getElementById("bkTMinus").onclick=function(){
     bkSetTeachers(dsNow,Math.max(0,bkTeachersOn(dsNow)-1)); bkRender() };
   document.getElementById("bkTPlus").onclick=function(){

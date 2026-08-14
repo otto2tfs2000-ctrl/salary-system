@@ -614,6 +614,7 @@ function renderDaily() {
 
   el.innerHTML = '<div class="card"><div class="card-title" style="justify-content:space-between">'+
     '<span>📅 選擇日期</span>' +
+    '<button class="btn btn-outline btn-sm" onclick="loadData()">重新讀取</button>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px">' +
     '<button onclick="shiftDay(-1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:17px;cursor:pointer;line-height:1" title="前一天">‹</button>' +
@@ -1146,6 +1147,8 @@ function renderMonthly() {
   if (!teachers.length) { el.innerHTML = '<div class="card"><div class="empty">此分店尚無老師。</div></div>'; return; }
 
   var totals = aggregateMonth(store, mKey);
+  var reloadBar = '<div class="card" style="display:flex;justify-content:flex-end;padding:10px 14px">' +
+    '<button class="btn btn-outline btn-sm" onclick="loadData()">重新讀取</button></div>';
   var tCount=0, tOutside=0, tCamp=0, tLec=0, tSales=0;
   var selM_monthly = parseInt(document.getElementById('selMonth').value);
   teachers.forEach(function(t) {
@@ -1348,7 +1351,7 @@ function renderMonthly() {
     '<th>日期</th><th>新客</th><th>舊客</th><th>教學人次</th><th>外派人次</th><th>營隊人次</th><th>講師費</th><th>業績</th><th style="color:var(--gold2)">營收</th>' +
     '</tr></thead><tbody>' + dailyRows + '</tbody></table></div></div>';
 
-  el.innerHTML = statHtml + ptHtml + summaryTable + dailyTable;
+  el.innerHTML = reloadBar + statHtml + ptHtml + summaryTable + dailyTable;
 }
 
 function toggleRow(rowId, arrId) {
