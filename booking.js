@@ -1493,11 +1493,21 @@ async function bkCheckout(id){
       var usePt=(course.way==="points"?course.amt:0)+
         addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
       var useSe=(course.way==="sessions")?ckSeNow():0;
-      if(usePt){ var left=(payer.cache&&payer.cache.points||0)-usePt;
-        h+="扣點數 <b>"+usePt.toLocaleString()+"</b>，剩 <b>"+left.toLocaleString()+"</b><br>";
+      /* 修正核銷時，payer.cache 是「上一次核銷扣完」的餘額，存檔當下
+         會先把舊的扣法加回去、再扣新的（沖銷再重扣），淨影響通常只有
+         差額。但這裡預覽算的時候如果直接拿目前餘額去減新數字，畫面
+         看起來會像是「又要扣一次」，行政會誤以為是重複扣款的 bug。
+         同一個付款人才能加回去，換人付就不能算在這個人頭上。 */
+      var oldSamePayer=old&&payer&&old.payerPhone===payer.phone;
+      var refundPt=oldSamePayer?(+old.usePoints||0):0;
+      var refundSe=oldSamePayer?(+old.useSessions||0):0;
+      if(usePt){ var left=(payer.cache&&payer.cache.points||0)+refundPt-usePt;
+        h+="扣點數 <b>"+usePt.toLocaleString()+"</b>，剩 <b>"+left.toLocaleString()+"</b>"+
+          (refundPt?'　<span class="bk-cap">（已扣回原本 '+refundPt.toLocaleString()+' 點，這是修正後的淨餘額）</span>':"")+"<br>";
         if(left<0)h+='<div class="bk-err">點數不足，還差 '+Math.abs(left).toLocaleString()+' 點</div>'; }
-      if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)-useSe;
-        h+="扣堂數 <b>"+useSe+"</b>，剩 <b>"+l2+"</b><br>";
+      if(useSe){ var l2=(payer.cache&&payer.cache.sessions||0)+refundSe-useSe;
+        h+="扣堂數 <b>"+useSe+"</b>，剩 <b>"+l2+"</b>"+
+          (refundSe?'　<span class="bk-cap">（已扣回原本 '+refundSe+' 堂，這是修正後的淨餘額）</span>':"")+"<br>";
         if(!course.amt&&courseList)
           h+='<span class="bk-cap">牌價 $'+courseList.toLocaleString()+
              ' 不另收，這堂的錢買方案時已經付過</span><br>';
