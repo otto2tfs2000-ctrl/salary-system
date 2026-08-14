@@ -528,7 +528,8 @@ function fnDetailHtml(x){
 /* 商品與方案可以直接在這一頁補一筆 */
 function fnAddBox(cat){
   var n=FN_CATNAME[cat];
-  return '<div class="fn-block"><div class="fn-bt">手動新增一筆'+n+'</div>'+
+  return '<div class="fn-block"><div class="fn-bt">手動新增一筆'+n+
+    '<button class="fn-re" id="fnReAdd">重新讀取</button></div>'+
     '<div class="fn-mf">'+
      '<div class="fn-mi"><label>日期</label><input type="date" id="fnMDate"></div>'+
      '<div class="fn-mi"><label>金額</label><input id="fnMAmt" inputmode="numeric" placeholder="0"></div>'+
@@ -634,6 +635,9 @@ function fnBind(root){
   if(nw)nw.onclick=function(){ fnDate=new Date(); fnItem=""; fnRender() };
   var re=document.getElementById("fnRe");
   if(re)re.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
+  /* 手動新增表旁邊也放一顆，新增完不用捲回最上面才能刷新列表 */
+  var reAdd=document.getElementById("fnReAdd");
+  if(reAdd)reAdd.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
 }
 window.renderFinance=fnRender;
 
