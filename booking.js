@@ -795,7 +795,7 @@ async function bkRender(){
         (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
         '　<span'+(full?' class="bk-shfull"':'')+'>'+
         n+(sl==="其他"?"":" / "+capS)+' 位'+akText+(full?"・超載":"")+'</span></div>'+
-        (open?g.map(bkCard).join(""):"")+'</div>';
+        (open?((sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+g.map(bkCard).join("")):"")+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -815,6 +815,7 @@ async function bkRender(){
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     bkSlotOpen[el.dataset.slk]=!bkSlotOpen[el.dataset.slk]; bkRender() } });
+  bkSeatBind(root);
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     /* 再點一次已經亮著的那顆，變回「都沒標」，方便誤按了可以直接清掉，
        不用被迫選另一個將就。 */
@@ -844,6 +845,106 @@ function bkPplText(b){
   if(+x.a)parts.push("大人 "+(+x.a));
   if(+x.k)parts.push("小孩 "+(+x.k)+(x.bands?"・"+x.bands:""));
   return n+" 位"+(parts.length?"（"+parts.join("・")+"）":"");
+}
+
+/* ══ 座位表（2026-08-14）══════════════════════════════════
+   每個時段各自一張，人不會跨時段撞位子。
+   規則：預設都排壩台，滿了才輪到畫架，畫架也滿了才輪到臨時桌；
+   5-7 歲小朋友上選圖，不管壩台滿不滿都優先排壩台方便照顧
+   （這只是建議值，畫面上還是能整個拖去別區）。
+   手動登記沒有存 kidBands，這條規則只會對客人自己填的預約生效。
+   指定過的位子存在 booking.seatArea，之後都以這個為準，
+   不會因為別人異動又被重新建議洗掉。 */
+var SEAT_AREAS=[{k:"壩台",cap:7},{k:"畫架",cap:4},{k:"臨時桌",cap:1}];
+function bkSeatItemsName(b){
+  return (b.items||[]).map(function(i){ return i.name||"" }).join("、");
+}
+/* 回傳 {byId:{bookingId:area}, counts:{area:人數}}。
+   g 要是同一個時段裡的預約清單，順序就是畫面上排的順序。 */
+function bkSeatAssign(g){
+  var counts={}; SEAT_AREAS.forEach(function(a){ counts[a.k]=0 });
+  var byId={};
+  /* 先算已經手動指定過的，佔掉名額 */
+  g.forEach(function(b){
+    if(b.seatArea&&counts[b.seatArea]!=null){ byId[b.id]=b.seatArea; counts[b.seatArea]++ }
+  });
+  /* 剩下的才自動建議 */
+  g.forEach(function(b){
+    if(byId[b.id])return;
+    var bands=bkAK(b).bands||"";
+    var isYoungPick=bands.indexOf("5-7 歲")>=0&&/選圖/.test(bkSeatItemsName(b));
+    var area;
+    if(isYoungPick){ area="壩台" }
+    else{
+      var open=SEAT_AREAS.filter(function(a){ return counts[a.k]<a.cap })[0];
+      area=open?open.k:"臨時桌";
+    }
+    byId[b.id]=area; counts[area]=(counts[area]||0)+1;
+  });
+  return {byId:byId,counts:counts};
+}
+async function bkSeatSet(id,area){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  b.seatArea=area;
+  try{ await bkPatch("/bookings/"+id+".json",{seatArea:area}) }
+  catch(e){ alert("座位存檔失敗，重新整理後再拖一次："+e.message) }
+}
+function bkSeatBoardHtml(dsNow,sl,g){
+  if(!g.length)return "";
+  var r=bkSeatAssign(g);
+  var byArea={}; SEAT_AREAS.forEach(function(a){ byArea[a.k]=[] });
+  g.forEach(function(b){ (byArea[r.byId[b.id]]=byArea[r.byId[b.id]]||[]).push(b) });
+  return '<div class="bk-seat" data-slk2="'+esc(dsNow+"|"+sl)+'">'+
+    SEAT_AREAS.map(function(a){
+      var n=r.counts[a.k]||0, over=n>a.cap;
+      return '<div class="bk-seat-col" data-area="'+esc(a.k)+'">'+
+        '<div class="bk-seat-h'+(over?" over":"")+'">'+esc(a.k)+'<span>'+n+'/'+a.cap+'</span></div>'+
+        '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
+        (byArea[a.k]||[]).map(function(b){
+          return '<div class="bk-seat-chip" data-bid="'+esc(b.id)+'">'+
+            esc(b.customer&&b.customer.name||"—")+
+            '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
+        }).join("")+
+        '</div></div>';
+    }).join("")+
+    '<div class="bk-seat-note">拖著卡片換區，放開就存檔。</div></div>';
+}
+/* 拖曳用 pointer events，滑鼠、觸控、手寫筆同一套，平板手機都能拖。
+   一次只綁一個全域的 move/up，拖完就拆掉，不會一直掛著空轉。 */
+function bkSeatBind(root){
+  var dragEl=null,dragId=null,startX=0,startY=0,offX=0,offY=0;
+  root.querySelectorAll(".bk-seat-chip").forEach(function(chip){
+    chip.addEventListener("pointerdown",function(e){
+      if(e.button!=null&&e.button!==0)return;
+      dragEl=chip; dragId=chip.dataset.bid;
+      var r=chip.getBoundingClientRect();
+      startX=e.clientX; startY=e.clientY; offX=e.clientX-r.left; offY=e.clientY-r.top;
+      chip.setPointerCapture(e.pointerId);
+      chip.classList.add("dragging");
+      chip.style.width=r.width+"px";
+      document.body.appendChild(chip);
+      chip.style.position="fixed"; chip.style.left=r.left+"px"; chip.style.top=r.top+"px"; chip.style.zIndex=999;
+      e.preventDefault();
+    });
+    chip.addEventListener("pointermove",function(e){
+      if(dragEl!==chip)return;
+      chip.style.left=(e.clientX-offX)+"px"; chip.style.top=(e.clientY-offY)+"px";
+    });
+    chip.addEventListener("pointerup",function(e){
+      if(dragEl!==chip)return;
+      chip.style.position=""; chip.style.left=""; chip.style.top=""; chip.style.zIndex=""; chip.style.width="";
+      chip.classList.remove("dragging");
+      var moved=Math.abs(e.clientX-startX)>6||Math.abs(e.clientY-startY)>6;
+      dragEl=null;
+      if(!moved)return; /* 只是點一下，不是拖，不要誤觸換區 */
+      chip.style.display="none";
+      var under=document.elementFromPoint(e.clientX,e.clientY);
+      chip.style.display="";
+      var col=under&&under.closest(".bk-seat-list");
+      if(col&&col.dataset.area){ bkSeatSet(dragId,col.dataset.area).then(bkRender) }
+      else{ bkRender() } /* 沒放對地方，畫面重畫回原位 */
+    });
+  });
 }
 function bkCard(b){
   var c=b.checkout, dp=bkDepState(b);
@@ -2382,6 +2483,19 @@ css.textContent=
 ".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
 /* 收了訂金但還沒核銷：藍色。掃一眼就分得出誰完全還沒收到錢 */
 ".bk-card.dep{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 #4C6FB1}"+
+".bk-seat{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap}"+
+".bk-seat-col{flex:1;min-width:110px;background:#fff;border-radius:12px;padding:9px;"+
+  "box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
+".bk-seat-h{font-size:13.5px;font-weight:700;color:#1F2A44;display:flex;justify-content:space-between;"+
+  "margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #EEF0F4}"+
+".bk-seat-h span{font-weight:500;color:#8A90A0}"+
+".bk-seat-h.over span{color:#C9453B;font-weight:700}"+
+".bk-seat-list{min-height:40px;display:flex;flex-direction:column;gap:6px}"+
+".bk-seat-chip{background:#F5F7FA;border:1px solid #E3E6EC;border-radius:9px;padding:6px 9px;"+
+  "font-size:13px;font-weight:600;color:#2A2E38;cursor:grab;touch-action:none;user-select:none}"+
+".bk-seat-chip small{display:block;font-weight:400;color:#8A90A0;font-size:11.5px;margin-top:1px}"+
+".bk-seat-chip.dragging{box-shadow:0 6px 16px rgba(16,24,40,.22);opacity:.95;cursor:grabbing}"+
+".bk-seat-note{width:100%;font-size:11.5px;color:#A8AEBC;margin-top:2px}"+
 ".bk-b.ed{background:#F2F3F6;color:#5F6577}"+
 ".bk-b.ed:hover{background:#E8EAEF}"+
 ".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
