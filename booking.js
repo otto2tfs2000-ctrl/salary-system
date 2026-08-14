@@ -901,6 +901,14 @@ async function bkSeatSet(id,area){
   try{ await bkPatch("/bookings/"+id+".json",{seatArea:area}) }
   catch(e){ alert("座位存檔失敗，重新整理後再拖一次："+e.message) }
 }
+/* 原本做拖曳（pointer events＋setPointerCapture），實測在老闆的手機上
+   按下去完全拖不動、放開也沒反應——拖曳這件事在不同手機瀏覽器上的
+   相容性本來就不穩，猜了兩輪都沒猜中是哪裡不相容，與其繼續猜，
+   改成「點兩下」：先點要搬的卡片，卡片會亮起來，再點要搬去的那一區，
+   就搬過去存檔。全部用最普通的 click 事件，手機、電腦、什麼瀏覽器
+   都是同一套行為，沒有觸控手勢辨識、沒有 pointer capture，不會有
+   「這台裝置不支援」的問題。 */
+var bkSeatPicked=null; // 目前選取、準備搬動的預約 id
 function bkSeatBoardHtml(dsNow,sl,g){
   if(!g.length)return "";
   var r=bkSeatAssign(g);
@@ -913,70 +921,37 @@ function bkSeatBoardHtml(dsNow,sl,g){
         '<div class="bk-seat-h'+(over?" over":"")+'">'+esc(a.k)+'<span>'+n+'/'+a.cap+'</span></div>'+
         '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
         (byArea[a.k]||[]).map(function(b){
-          return '<div class="bk-seat-chip" data-bid="'+esc(b.id)+'">'+
+          var picked=bkSeatPicked===b.id;
+          return '<div class="bk-seat-chip'+(picked?" picked":"")+'" data-bid="'+esc(b.id)+'">'+
             esc(b.customer&&b.customer.name||"—")+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
         '</div></div>';
     }).join("")+
-    '<div class="bk-seat-note">拖著卡片換區，放開就存檔。</div></div>';
+    '<div class="bk-seat-note">'+(bkSeatPicked
+      ?'已選取，點要搬去的區塊完成搬移，或點同一張卡片取消。'
+      :'點一下卡片，再點要搬去的區塊，就能換位子。')+'</div></div>';
 }
-/* 拖曳用 pointer events，滑鼠、觸控、手寫筆同一套，平板手機都能拖。
-   一次只綁一個全域的 move/up，拖完就拆掉，不會一直掛著空轉。 */
-/* 拖曳的 move／up 監聽掛在 document 上，不是掛在卡片本身，
-   而且只在整支程式跑起來時掛一次——bkSeatBind 每次重畫都會呼叫，
-   如果監聽器掛在裡面，每畫一次就多掛一組，越用越多、越用越怪。
-   掛在卡片上、靠 setPointerCapture 讓卡片繼續收到事件那一版試過，
-   但 setPointerCapture 在部分瀏覽器不夠可靠，一旦沒生效，手指只要
-   移出卡片原本那一小塊範圍，pointermove 就不會再送到卡片，畫面
-   看起來就是「按下去卻拖不動」。掛在 document 上就沒有這個依賴，
-   不管手指飄到哪裡都收得到。 */
-var bkSeatDrag={chip:null,id:null,startX:0,startY:0,offX:0,offY:0};
-function bkSeatReset(){
-  var chip=bkSeatDrag.chip;
-  if(chip){
-    chip.style.position=""; chip.style.left=""; chip.style.top="";
-    chip.style.zIndex=""; chip.style.width="";
-    chip.classList.remove("dragging");
-  }
-  bkSeatDrag.chip=null; bkSeatDrag.id=null;
-}
-(function bkSeatSetupOnce(){
-  document.addEventListener("pointermove",function(e){
-    var chip=bkSeatDrag.chip; if(!chip)return;
-    chip.style.left=(e.clientX-bkSeatDrag.offX)+"px"; chip.style.top=(e.clientY-bkSeatDrag.offY)+"px";
-  });
-  document.addEventListener("pointerup",function(e){
-    var chip=bkSeatDrag.chip; if(!chip)return;
-    var id=bkSeatDrag.id;
-    var moved=Math.abs(e.clientX-bkSeatDrag.startX)>6||Math.abs(e.clientY-bkSeatDrag.startY)>6;
-    bkSeatReset();
-    if(!moved)return; /* 只是點一下，不是拖，不要誤觸換區 */
-    chip.style.display="none";
-    var under=document.elementFromPoint(e.clientX,e.clientY);
-    chip.style.display="";
-    var col=under&&under.closest(".bk-seat-list");
-    if(col&&col.dataset.area){ bkSeatSet(id,col.dataset.area).then(function(){ if(typeof bkRender==="function")bkRender() }) }
-    else if(typeof bkRender==="function"){ bkRender() } /* 沒放對地方，畫面重畫回原位 */
-  });
-  document.addEventListener("pointercancel",function(){
-    if(bkSeatDrag.chip){ bkSeatReset(); if(typeof bkRender==="function")bkRender() }
-  });
-})();
+function bkSeatMove(id,area){ bkSeatPicked=null; bkSeatSet(id,area).then(bkRender) }
 function bkSeatBind(root){
   root.querySelectorAll(".bk-seat-chip").forEach(function(chip){
-    chip.addEventListener("pointerdown",function(e){
-      /* 只擋滑鼠右鍵／中鍵，觸控和手寫筆的 button 不一定是 0，不能用同一個條件擋掉 */
-      if(e.pointerType==="mouse"&&e.button!==0)return;
-      var r=chip.getBoundingClientRect();
-      bkSeatDrag.chip=chip; bkSeatDrag.id=chip.dataset.bid;
-      bkSeatDrag.startX=e.clientX; bkSeatDrag.startY=e.clientY;
-      bkSeatDrag.offX=e.clientX-r.left; bkSeatDrag.offY=e.clientY-r.top;
-      chip.classList.add("dragging");
-      chip.style.width=r.width+"px";
-      chip.style.position="fixed"; chip.style.left=r.left+"px"; chip.style.top=r.top+"px"; chip.style.zIndex=999;
-      e.preventDefault();
-    });
+    chip.onclick=function(e){
+      e.stopPropagation();
+      var id=chip.dataset.bid;
+      if(bkSeatPicked===id){ bkSeatPicked=null; bkRender(); return } /* 再點一次＝取消 */
+      if(!bkSeatPicked){ bkSeatPicked=id; bkRender(); return } /* 第一次點＝選取 */
+      /* 已經選好一張要搬的了，這次點到別張卡片＝搬去這張卡片所在的區 */
+      var col=chip.closest(".bk-seat-col");
+      if(col&&col.dataset.area)bkSeatMove(bkSeatPicked,col.dataset.area);
+      else{ bkSeatPicked=null; bkRender() }
+    };
+  });
+  root.querySelectorAll(".bk-seat-col").forEach(function(col){
+    col.onclick=function(e){
+      if(!bkSeatPicked)return;
+      if(e.target.closest(".bk-seat-chip"))return; /* 卡片自己的 onclick 已經處理過 */
+      bkSeatMove(bkSeatPicked,col.dataset.area);
+    };
   });
 }
 function bkCard(b){
@@ -2524,10 +2499,13 @@ css.textContent=
 ".bk-seat-h span{font-weight:500;color:#8A90A0}"+
 ".bk-seat-h.over span{color:#C9453B;font-weight:700}"+
 ".bk-seat-list{min-height:40px;display:flex;flex-direction:column;gap:6px}"+
-".bk-seat-chip{background:#F5F7FA;border:1px solid #E3E6EC;border-radius:9px;padding:6px 9px;"+
-  "font-size:13px;font-weight:600;color:#2A2E38;cursor:grab;touch-action:none;user-select:none}"+
+".bk-seat-chip{background:#F5F7FA;border:1.5px solid #E3E6EC;border-radius:9px;padding:6px 9px;"+
+  "font-size:13px;font-weight:600;color:#2A2E38;cursor:pointer;user-select:none;transition:.12s}"+
+".bk-seat-chip:hover{border-color:#C7CEDB}"+
 ".bk-seat-chip small{display:block;font-weight:400;color:#8A90A0;font-size:11.5px;margin-top:1px}"+
-".bk-seat-chip.dragging{box-shadow:0 6px 16px rgba(16,24,40,.22);opacity:.95;cursor:grabbing}"+
+".bk-seat-chip.picked{border-color:var(--bkNavy,#1F2A44);background:#EDF1FA;"+
+  "box-shadow:0 0 0 2px rgba(31,42,68,.15)}"+
+".bk-seat-col{cursor:default}"+
 ".bk-seat-note{width:100%;font-size:11.5px;color:#A8AEBC;margin-top:2px}"+
 ".bk-b.ed{background:#F2F3F6;color:#5F6577}"+
 ".bk-b.ed:hover{background:#E8EAEF}"+
