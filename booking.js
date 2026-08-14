@@ -855,7 +855,10 @@ function bkPplText(b){
    手動登記沒有存 kidBands，這條規則只會對客人自己填的預約生效。
    指定過的位子存在 booking.seatArea，之後都以這個為準，
    不會因為別人異動又被重新建議洗掉。 */
-var SEAT_AREAS=[{k:"壩台",cap:7},{k:"畫架",cap:4},{k:"臨時桌",cap:1}];
+/* 順位就是排滿的優先順序：壩台→畫架→教室滿了，才會用到臨時桌那 1 個位子。
+   臨時桌只有 1 位、聽起來像應急用的，放在最後一順位比較合理；
+   如果實際上你希望的排法不一樣，跟我說一聲就能調整順序。 */
+var SEAT_AREAS=[{k:"壩台",cap:7},{k:"畫架",cap:4},{k:"教室",cap:5},{k:"臨時桌",cap:1}];
 function bkSeatItemsName(b){
   return (b.items||[]).map(function(i){ return i.name||"" }).join("、");
 }
