@@ -1253,8 +1253,7 @@ function renderInvWeekTable() {
         // 本週盤點的填寫時間——填了才顯示，讓人知道這數字是什麼時候數的
         var stockAtTxt = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
 
-        // 本週用掉：系統自動核銷（銷課／扣課／加購扣的材料）的參考數字，跟下面手動填的估計值分開顯示，
-        // 不會互相取代——手動欄位是給沒有配方、系統抓不到的材料用的。
+        // 本週用掉：不用手動填，直接顯示系統自動核銷（銷課／扣課／加購扣的材料）的數字。
         var wkEndDate = new Date(weekKey + 'T00:00:00'); wkEndDate.setDate(wkEndDate.getDate() + 7);
         var autoQty = getInvAutoUsedQtyInRange(it.id, weekKey, invFmtDate(wkEndDate));
 
@@ -1265,8 +1264,8 @@ function renderInvWeekTable() {
         var imgInline = it.image ? '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" onclick="showInvImage('+it.id+')">' : '<span class="muted">—</span>';
         html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
               + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-stockat-'+it.id+'">'+stockAtTxt+'</div></td>';
-        html += '<td><input class="in-num" type="number" min="0" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
-              + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-auto-'+it.id+'">'+(autoQty>0?'系統核銷 '+(Math.round(autoQty*10)/10):'')+'</div></td>';
+        html += '<td id="inv-auto-'+it.id+'"><div style="font-size:16px;font-weight:600">'+(Math.round(autoQty*10)/10)+'</div>'
+              + '<div class="muted" style="font-size:11px;margin-top:2px">銷課／扣課／加購自動核銷</div></td>';
         html += '<td>'+it.name+'</td>';
         html += '<td style="text-align:center">'+imgInline+'</td>';
         html += '<td class="muted">'+it.unit+'</td>';
@@ -1333,15 +1332,15 @@ function autoSaveInvItem(itemId) {
   var weekKey = invCurWeek;
   var st = getInvStore();
   if (!st.weeks[weekKey]) st.weeks[weekKey] = {};
-  var usedEl = document.getElementById('inv-used-'+itemId);
   var stockEl = document.getElementById('inv-stock-'+itemId);
-  var used = usedEl && usedEl.value !== '' ? parseFloat(usedEl.value) : null;
   var stock = stockEl && stockEl.value !== '' ? parseFloat(stockEl.value) : null;
+  var existingBefore = st.weeks[weekKey][itemId];
+  var used = existingBefore && typeof existingBefore.used === 'number' ? existingBefore.used : null; // 本週用掉不再手動填，保留舊資料就好
   if (used === null && stock === null) {
     // 兩欄都清空時刪除該筆記錄
     delete st.weeks[weekKey][itemId];
   } else {
-    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(st.weeks[weekKey][itemId], stock) };
+    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(existingBefore, stock) };
   }
   save();
   var rec = st.weeks[weekKey][itemId] || {};
@@ -1376,15 +1375,15 @@ function saveInvWeek() {
   if (!st.weeks[weekKey]) st.weeks[weekKey] = {};
   var savedCount = 0;
   items.forEach(function(it) {
-    var usedEl = document.getElementById('inv-used-'+it.id);
     var stockEl = document.getElementById('inv-stock-'+it.id);
-    var used = usedEl && usedEl.value !== '' ? parseFloat(usedEl.value) : null;
     var stock = stockEl && stockEl.value !== '' ? parseFloat(stockEl.value) : null;
+    var existing = st.weeks[weekKey][it.id];
+    var used = existing && typeof existing.used === 'number' ? existing.used : null; // 本週用掉不再手動填，保留舊資料就好
     if (used === null && stock === null) return;
     st.weeks[weekKey][it.id] = {
       used: used,
       stock: stock,
-      savedAt: invKeepSavedAt(st.weeks[weekKey][it.id], stock)
+      savedAt: invKeepSavedAt(existing, stock)
     };
     savedCount++;
   });
