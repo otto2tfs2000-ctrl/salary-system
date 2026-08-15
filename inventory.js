@@ -1240,7 +1240,7 @@ function renderInvWeekTable() {
 
     if (isOpen) {
       html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
-      html += '<th style="width:130px">本週盤點實際庫存</th><th style="width:110px">本週用掉</th><th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th>本週建議訂購量</th>';
+      html += '<th style="width:130px">庫存盤點登記</th><th style="width:110px">本週用掉</th><th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th>本週建議訂購量</th>';
       html += '</tr></thead><tbody>';
 
       grpItems.forEach(function(it) {
