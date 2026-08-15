@@ -11,6 +11,10 @@ function invFmtDate(d) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 function invWeekKey(d) { return invFmtDate(invMonday(d)); }
+function invFmtDateTime(ts) {
+  var d = new Date(ts);
+  return (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
 function invWeekLabel(weekKey) {
   var mon = new Date(weekKey + 'T00:00:00');
   var sun = new Date(mon); sun.setDate(mon.getDate()+6);
@@ -442,6 +446,28 @@ function computeStockBreakdown(itemId, weekKey) {
 
 function computeCurrentStock(itemId, weekKey) {
   return computeStockBreakdown(itemId, weekKey).total;
+}
+
+// 「目前庫存」那一格的 HTML，週盤點表跟自動存檔後的即時刷新共用同一份，
+// 避免像先前那樣兩處各寫一次、即時刷新那份漏掉核銷那行。
+function invCurCellHtml(bd, rec, weekKey) {
+  if (bd.total === null) return '<span class="muted">—</span>';
+  var parts = [];
+  if (bd.base !== null) parts.push(bd.baseLabel + ' ' + bd.base);
+  if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
+  if (bd.autoUsed > 0) parts.push('<span style="color:var(--gold2)">－核銷 ' + Math.round(bd.autoUsed*10)/10 + '</span>');
+  if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
+  var html = '<div style="font-size:16px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
+           + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
+  /* 帳面 vs 實際：盤點數字填了就比對，差額標出來讓你追 */
+  if (rec && typeof rec.stock === 'number' && bd.base !== null && bd.baseWeek !== weekKey) {
+    var gap = rec.stock - bd.total;
+    if (gap !== 0) {
+      html += '<div style="font-size:12px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
+        + (gap < 0 ? '⚠ 實際少 ' + Math.abs(gap) : '實際多 ' + gap) + '</div>';
+    }
+  }
+  return html;
 }
 
 // 計算品項過去 N 週的平均消耗量。
@@ -1214,7 +1240,7 @@ function renderInvWeekTable() {
 
     if (isOpen) {
       html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
-      html += '<th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th style="width:100px">本週用掉</th><th style="width:120px">本週盤點實際庫存</th><th>本週建議訂購量</th>';
+      html += '<th style="width:130px">本週盤點實際庫存</th><th style="width:110px">本週用掉</th><th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th>本週建議訂購量</th>';
       html += '</tr></thead><tbody>';
 
       grpItems.forEach(function(it) {
@@ -1222,39 +1248,30 @@ function renderInvWeekTable() {
 
         // 目前庫存：基準盤點 －用掉 ＋進料。進貨一登記，這格立刻反映。
         var bd = computeStockBreakdown(it.id, weekKey);
-        var curCell;
-        if (bd.total === null) {
-          curCell = '<span class="muted">—</span>';
-        } else {
-          var parts = [];
-          if (bd.base !== null) parts.push(bd.baseLabel + ' ' + bd.base);
-          if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
-          if (bd.autoUsed > 0) parts.push('<span style="color:var(--gold2)">－核銷 ' + Math.round(bd.autoUsed*10)/10 + '</span>');
-          if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
-          curCell = '<div style="font-size:16px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
-                  + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
-          /* 帳面 vs 實際：盤點數字填了就比對，差額標出來讓你追 */
-          if (typeof rec.stock === 'number' && bd.base !== null && bd.baseWeek !== weekKey) {
-            var gap = rec.stock - bd.total;
-            if (gap !== 0) {
-              curCell += '<div style="font-size:12px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
-                + (gap < 0 ? '⚠ 實際少 ' + Math.abs(gap) : '實際多 ' + gap) + '</div>';
-            }
-          }
-        }
+        var curCell = invCurCellHtml(bd, rec, weekKey);
+
+        // 本週盤點的填寫時間——填了才顯示，讓人知道這數字是什麼時候數的
+        var stockAtTxt = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
+
+        // 本週用掉：系統自動核銷（銷課／扣課／加購扣的材料）的參考數字，跟下面手動填的估計值分開顯示，
+        // 不會互相取代——手動欄位是給沒有配方、系統抓不到的材料用的。
+        var wkEndDate = new Date(weekKey + 'T00:00:00'); wkEndDate.setDate(wkEndDate.getDate() + 7);
+        var autoQty = getInvAutoUsedQtyInRange(it.id, weekKey, invFmtDate(wkEndDate));
 
         var order = computeOrderQty(it.id, weekKey, it.safeStock);
         var orderHtml = buildOrderStatusHtml(order, it);
 
         html += '<tr>';
         var imgInline = it.image ? '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" onclick="showInvImage('+it.id+')">' : '<span class="muted">—</span>';
+        html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
+              + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-stockat-'+it.id+'">'+stockAtTxt+'</div></td>';
+        html += '<td><input class="in-num" type="number" min="0" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
+              + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-auto-'+it.id+'">'+(autoQty>0?'系統核銷 '+(Math.round(autoQty*10)/10):'')+'</div></td>';
         html += '<td>'+it.name+'</td>';
         html += '<td style="text-align:center">'+imgInline+'</td>';
         html += '<td class="muted">'+it.unit+'</td>';
         html += '<td class="muted">'+it.safeStock+'</td>';
         html += '<td id="inv-cur-'+it.id+'">'+curCell+'</td>';
-        html += '<td><input class="in-num" type="number" min="0" id="inv-used-'+it.id+'" value="'+(typeof rec.used==='number'?rec.used:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')"></td>';
-        html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')"></td>';
         html += '<td id="inv-status-'+it.id+'">'+orderHtml+'</td>';
         html += '</tr>';
       });
@@ -1327,6 +1344,10 @@ function autoSaveInvItem(itemId) {
     st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(st.weeks[weekKey][itemId], stock) };
   }
   save();
+  var rec = st.weeks[weekKey][itemId] || {};
+  // 同步刷新本週盤點的時間戳
+  var stockAtEl = document.getElementById('inv-stockat-'+itemId);
+  if (stockAtEl) stockAtEl.textContent = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
   // 即時更新建議訂購量
   var items = getInvItems();
   var it = items.find(function(x){ return x.id === itemId; });
@@ -1340,15 +1361,7 @@ function autoSaveInvItem(itemId) {
     var curEl = document.getElementById('inv-cur-'+itemId);
     if (curEl) {
       var b = computeStockBreakdown(itemId, weekKey);
-      if (b.total === null) { curEl.innerHTML = '<span class="muted">—</span>'; }
-      else {
-        var ps = [];
-        if (b.base !== null) ps.push(b.baseLabel + ' ' + b.base);
-        if (b.usedTotal > 0) ps.push('－用 ' + b.usedTotal);
-        if (b.restock > 0) ps.push('<span style="color:var(--green)">＋進 ' + b.restock + '</span>');
-        curEl.innerHTML = '<div style="font-size:16px;font-weight:600;color:' + (b.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + b.total + '</div>'
-                        + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + ps.join('<br>') + '</div>';
-      }
+      curEl.innerHTML = invCurCellHtml(b, rec, weekKey);
     }
   }
   // 提示已存
