@@ -1847,8 +1847,13 @@ async function bkCheckout(id){
       var invMsg="";
       try{
         if(typeof releaseInvAutoUse==="function")releaseInvAutoUse(id);
+        /* 加購裡如果已經有畫布類的品項（例如客人升級大尺寸畫布另外收費），
+           表示規格內附的那張畫布沒被用到，課程用料就不要重複扣同一類。 */
+        var skipCats=addons.map(function(a){
+          var m=a.materialId&&typeof bkMatById==="function"?bkMatById(a.materialId):null;
+          return m&&m.cat }).filter(Boolean);
         var r1=(typeof consumeInvForBooking==="function")
-          ?consumeInvForBooking(id,b.date,outItems):{ok:[],miss:[]};
+          ?consumeInvForBooking(id,b.date,outItems,null,skipCats):{ok:[],miss:[]};
         var r2=(typeof consumeInvForAddons==="function")
           ?consumeInvForAddons(id,b.date,addons):{ok:[],skip:[]};
         if(typeof save==="function")save();

@@ -280,7 +280,9 @@ function invRecipeGroups(items) {
 }
 
 // picks: { 群組key: 選中的 itemId }。沒給就用群組裡的第一個。
-function consumeInvForBooking(bookingId, dateStr, items, picks) {
+// skipCats: 這筆訂單的加購裡已經另外扣過的分類（例如客人升級大尺寸畫布，加購已經扣了那張大的），
+//   課程用料表裡屬於同一分類的項目就不要重複扣——原本規格內附的那張畫布客人根本沒用到。
+function consumeInvForBooking(bookingId, dateStr, items, picks, skipCats) {
   var res = { ok: [], miss: [] };
   if (!bookingId || !items || !items.length) return res;
   if (!S.recipes) return res;
@@ -289,6 +291,10 @@ function consumeInvForBooking(bookingId, dateStr, items, picks) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) dateKey = invFmtDate(new Date());
   releaseInvAutoUse(bookingId);            // 先撤掉舊的，避免修正核銷時重複扣
   picks = picks || {};
+  var skipSet = {};
+  (skipCats || []).forEach(function(c){ if (c) skipSet[c] = true });
+  var matById = {};
+  if (Object.keys(skipSet).length) getInvItems().forEach(function(m){ matById[String(m.id)] = m });
   var pool = {};                           // itemId -> 合併後的用量
   items.forEach(function(it) {
     var name = String(it.name || '').trim();
@@ -312,6 +318,8 @@ function consumeInvForBooking(bookingId, dateStr, items, picks) {
     r.items.forEach(function(x) {
       var g = String(x.grp || '').trim();
       if (g && chosen[g] !== String(x.id)) return;   // 這組沒選到它，不扣
+      var mat = matById[String(x.id)];
+      if (mat && skipSet[mat.cat]) return;            // 加購已經扣過同分類的東西，這裡不重複扣
       var q = (+x.qty || 0) * n;
       if (q > 0) pool[x.id] = (pool[x.id] || 0) + q;
     });
