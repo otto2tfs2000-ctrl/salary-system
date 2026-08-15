@@ -1635,6 +1635,17 @@ async function mbExtendSave(phone){
     await fetch(mbf('/members/' + phone + '/ledger/' + k + '/extends.json'), { method:'PUT',
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(log) });
     r.expiryNew = next; r.extends = log;
+    /* extends 只是掛在原本那筆賣方案紀錄底下，客人端「最近使用紀錄」
+       只認有獨立 at/type/delta/reason 的紀錄，看不到這個——
+       另外補寫一筆 delta:0 的紀錄，客人才看得到展延這件事。 */
+    var now2 = mbNow(), stamp2 = now2.replace(/[-:.TZ]/g, '').slice(0, 14);
+    var exKey = 'extend_' + stamp2;
+    var exEntry = { at: now2, by: mbWho(), type: 'expiry', delta: 0,
+      reason: (r.planName || r.reason || '方案') + '效期展延：' + cur + ' → ' + next + '（' + why + '）',
+      bookingKey: k };
+    await fetch(mbf('/members/' + phone + '/ledger/' + exKey + '.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(exEntry) });
+    m.ledger[exKey] = exEntry;
   } catch(e){
     if (err) err.textContent = '展延失敗：' + e.message;
     if (btn) { btn.disabled = false; btn.textContent = '確認展延' }
