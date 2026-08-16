@@ -29,6 +29,18 @@ function toggleInvGroup(key) {
   renderInvWeekTable();
 }
 
+// 進貨登記、庫存統計這兩張卡片預設收合，點標題前的三角形展開/收合
+function toggleInvCard(bodyId, arrowId) {
+  var body = document.getElementById(bodyId);
+  var arrow = document.getElementById(arrowId);
+  if (!body) return;
+  var open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (arrow) arrow.textContent = open ? '▼' : '▶';
+}
+function toggleInvRestockCard() { toggleInvCard('inv-restock-body', 'inv-restock-arrow'); }
+function toggleInvStatsCard() { toggleInvCard('inv-stats-body', 'inv-stats-arrow'); }
+
 function invShiftWeek(dir) {
   var d = new Date(invCurWeek + 'T00:00:00');
   d.setDate(d.getDate() + dir*7);
@@ -1240,7 +1252,7 @@ function renderInvWeekTable() {
 
     if (isOpen) {
       html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
-      html += '<th style="width:130px">庫存盤點登記</th><th style="width:110px">本週用掉</th><th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th>本週建議訂購量</th>';
+      html += '<th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th style="width:110px">本週用掉</th><th style="width:130px">庫存盤點登記</th><th>本週建議訂購量</th>';
       html += '</tr></thead><tbody>';
 
       grpItems.forEach(function(it) {
@@ -1262,15 +1274,15 @@ function renderInvWeekTable() {
 
         html += '<tr>';
         var imgInline = it.image ? '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" onclick="showInvImage('+it.id+')">' : '<span class="muted">—</span>';
-        html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
-              + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-stockat-'+it.id+'">'+stockAtTxt+'</div></td>';
-        html += '<td id="inv-auto-'+it.id+'"><div style="font-size:16px;font-weight:600">'+(Math.round(autoQty*10)/10)+'</div>'
-              + '<div class="muted" style="font-size:11px;margin-top:2px">銷課／扣課／加購自動核銷</div></td>';
         html += '<td>'+it.name+'</td>';
         html += '<td style="text-align:center">'+imgInline+'</td>';
         html += '<td class="muted">'+it.unit+'</td>';
         html += '<td class="muted">'+it.safeStock+'</td>';
         html += '<td id="inv-cur-'+it.id+'">'+curCell+'</td>';
+        html += '<td id="inv-auto-'+it.id+'"><div style="font-size:16px;font-weight:600">'+(Math.round(autoQty*10)/10)+'</div>'
+              + '<div class="muted" style="font-size:11px;margin-top:2px">銷課／扣課／加購自動核銷</div></td>';
+        html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
+              + '<div class="muted" style="font-size:11px;margin-top:2px" id="inv-stockat-'+it.id+'">'+stockAtTxt+'</div></td>';
         html += '<td id="inv-status-'+it.id+'">'+orderHtml+'</td>';
         html += '</tr>';
       });

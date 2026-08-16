@@ -262,26 +262,28 @@
 
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
-      <span>🚚 進貨登記（材料到貨當天就能記，不用等下週一盤點）</span>
+      <span style="cursor:pointer" onclick="toggleInvRestockCard()"><span id="inv-restock-arrow" style="display:inline-block;width:12px">▶</span> 🚚 進貨登記（材料到貨當天就能記，不用等下週一盤點）</span>
       <button class="btn-sm btn-outline" onclick="toggleInvRestockLog()"><span id="inv-restock-toggle-label">隱藏進貨明細</span></button>
     </div>
-    <div class="form-grid">
-      <div class="fg"><label>品項</label>
-        <select id="inv-restock-item"></select>
+    <div id="inv-restock-body" style="display:none">
+      <div class="form-grid">
+        <div class="fg"><label>品項</label>
+          <select id="inv-restock-item"></select>
+        </div>
+        <div class="fg"><label>進貨日期</label>
+          <input id="inv-restock-date" type="date">
+        </div>
+        <div class="fg"><label>進貨數量</label>
+          <input id="inv-restock-qty" type="number" min="0" step="any" placeholder="例：12" onwheel="this.blur()">
+        </div>
+        <div class="fg"><label>備註（選填）</label>
+          <input id="inv-restock-note" placeholder="例：廠商A / 訂單編號">
+        </div>
       </div>
-      <div class="fg"><label>進貨日期</label>
-        <input id="inv-restock-date" type="date">
-      </div>
-      <div class="fg"><label>進貨數量</label>
-        <input id="inv-restock-qty" type="number" min="0" step="any" placeholder="例：12" onwheel="this.blur()">
-      </div>
-      <div class="fg"><label>備註（選填）</label>
-        <input id="inv-restock-note" placeholder="例：廠商A / 訂單編號">
-      </div>
+      <button class="btn btn-gold" onclick="submitInvRestock()">+ 登記進貨</button>
+      <span id="inv-restock-hint" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
+      <div id="inv-restock-log" style="margin-top:16px"></div>
     </div>
-    <button class="btn btn-gold" onclick="submitInvRestock()">+ 登記進貨</button>
-    <span id="inv-restock-hint" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
-    <div id="inv-restock-log" style="margin-top:16px"></div>
   </div>
 
   <div class="card">
@@ -379,10 +381,12 @@
 
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
-      <span>📊 庫存統計與消耗趨勢</span>
+      <span style="cursor:pointer" onclick="toggleInvStatsCard()"><span id="inv-stats-arrow" style="display:inline-block;width:12px">▶</span> 📊 庫存統計與消耗趨勢</span>
       <button class="btn btn-outline btn-sm" onclick="dlInventoryExcel()">⬇ 匯出 Excel</button>
     </div>
-    <div id="inv-stats-area"></div>
+    <div id="inv-stats-body" style="display:none">
+      <div id="inv-stats-area"></div>
+    </div>
   </div>
 </div>
 
@@ -435,7 +439,7 @@
 <script src="auth.js?v=20260809b"></script>
 <script src="app.js?v=20260814a"></script>
 <script src="consumables.js?v=20260808a"></script>
-<script src="inventory.js?v=20260815c"></script>
+<script src="inventory.js?v=20260815d"></script>
 <script src="booking.js?v=20260814h"></script>
 <script src="member.js?v=20260815a"></script>
 <script src="recipe.js?v=20260811a"></script>
