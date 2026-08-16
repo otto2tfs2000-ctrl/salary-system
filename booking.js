@@ -441,6 +441,7 @@ async function bkLoad(){
     .sort(function(a,b){ return String(a.slot).localeCompare(String(b.slot)) });
   bkAllWeb=arr.filter(function(b){ return b.source==="web" });
   bkUpdateNewBadge();
+  bkStartLiveWatch();
 }
 
 /* ══ 客人自己用 LINE 預約的提醒紅點 ══════════════════════
@@ -451,6 +452,9 @@ async function bkLoad(){
    不用額外存 id 對照表。 */
 var bkAllWeb=[];
 var BK_SEEN_KEY="otto2_bk_lastSeenTs";
+function bkIsNewWeb(b){
+  return !!(b&&b.source==="web"&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
+}
 function bkUpdateNewBadge(){
   var badge=document.getElementById("bk-new-badge"); if(!badge)return;
   var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
@@ -463,8 +467,96 @@ function bkClearNewBadge(){
     localStorage.getItem(BK_SEEN_KEY)||"");
   localStorage.setItem(BK_SEEN_KEY,maxTs);
   bkUpdateNewBadge();
+  bkRender(); /* 讓卡片上的 NEW 標籤跟著消失 */
 }
 window.bkClearNewBadge=bkClearNewBadge;
+
+/* ══ 即時監聽：後台開著就馬上跳提醒 ══════════════════════
+   原本紅點只有在手動整理頁面時才會更新，等於還是要自己想到要看。
+   這裡改用 Firebase REST 的即時串流（帶 Accept:text/event-stream
+   的 GET 請求會變成 SSE），瀏覽器原生 EventSource 就能接，
+   不用另外載入完整的 Firebase SDK。斷線瀏覽器會自動重連，不用自己處理。
+   跟公開網址、跟現有的 bkf("/bookings.json") 是同一份資料，
+   不用額外的後端或密鑰。 */
+var bkSSE=null;
+function bkStartLiveWatch(){
+  if(bkSSE||typeof EventSource==="undefined")return;
+  try{
+    bkSSE=new EventSource(bkf("/bookings.json"));
+    bkSSE.addEventListener("put",bkHandleSSE);
+    bkSSE.addEventListener("patch",bkHandleSSE);
+  }catch(e){ console.warn("即時監聽新預約失敗：",e&&e.message); }
+}
+function bkHandleSSE(e){
+  var msg; try{ msg=JSON.parse(e.data); }catch(err){ return }
+  var path=msg.path, data=msg.data;
+  var fresh=[];
+  if(path==="/"){
+    /* 剛連上線，Firebase 會先送整包現有資料當基準 */
+    Object.keys(data||{}).forEach(function(k){ var b=data[k]; if(b){ b=Object.assign({},b,{id:k}); fresh.push(b) } });
+  }else{
+    /* 之後只會送有變動的那一小段，path 類似 "/-Nabc123"（整筆新增/覆蓋）
+       或 "/-Nabc123/checkout"（只改了子欄位）。只有整筆那一層才算「新增一筆預約」，
+       只改子欄位（例如核銷、報到）不算新預約，不用再跳一次提醒。 */
+    var parts=path.replace(/^\//,"").split("/");
+    if(parts.length===1&&parts[0]&&data&&typeof data==="object"){
+      fresh.push(Object.assign({},data,{id:parts[0]}));
+    }
+  }
+  var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
+  var freshWeb=fresh.filter(function(b){
+    return b&&b.source==="web"&&b.status!=="cancelled"&&b.status!=="expired"&&String(b.ts||"")>lastSeen; });
+  if(!freshWeb.length)return;
+  var today=ds(bkDate);
+  freshWeb.forEach(function(b){
+    if(!bkAllWeb.some(function(x){ return x.id===b.id }))bkAllWeb.push(b);
+    /* 直接把 SSE 推來的這筆併進目前看的清單，不用整頁重新讀取——
+       如果剛好碰到另一次 bkRender() 還沒讀完（bkBusy），
+       整頁重畫會被那次的忙碌鎖擋掉、悄悄漏接這筆，所以不能只靠呼叫 bkRender() 了事。 */
+    if(b.date===today&&!bkList.some(function(x){ return x.id===b.id })){
+      bkList.push(b);
+      bkList.sort(function(a,c){ return String(a.slot).localeCompare(String(c.slot)) });
+    }
+    var dk=String(b.date||"");
+    if(dk){
+      if(!bkByDate[dk])bkByDate[dk]={groups:0,people:0,done:0};
+      bkByDate[dk].groups++;
+      bkByDate[dk].people+=(+b.people||0);
+    }
+  });
+  bkUpdateNewBadge();
+  bkNotifyDesktop(freshWeb);
+  /* 如果現在正好停在「今日排課」，直接重畫一次，新卡片跟 NEW 標籤馬上跳出來，
+     不用手動按重新讀取；已經有其他 bkRender() 在跑的話就不用重複觸發，
+     等那次跑完自然就會用上面剛併好的資料畫出來。 */
+  var todayTab=document.querySelector('.tab[data-tab="today"]');
+  if(todayTab&&todayTab.classList.contains("active")&&!bkBusy)bkRender();
+}
+
+/* ══ 桌面通知 ══════════════════════════════════════════
+   要瀏覽器授權過才能跳系統通知，第一次用要點一下「開啟」按鈕
+   （不能頁面一載入就自己彈權限視窗，Chrome 會擋，體驗也不好）。
+   使用者按「✕」關掉提示的話記住起來，不會每次開後台都再問一次。 */
+var BK_NOTIF_DISMISS_KEY="otto2_bk_notifDismissed";
+function bkNotifDismissed(){ return !!localStorage.getItem(BK_NOTIF_DISMISS_KEY) }
+function bkNotifBannerHtml(){
+  if(typeof Notification==="undefined")return "";
+  if(Notification.permission!=="default"||bkNotifDismissed())return "";
+  return '<div class="bk-notifbar"><span>🔔 開啟桌面通知，有新預約後台開著就會馬上跳提醒</span>'+
+    '<button class="bk-notifbtn" id="bkNotifOn">開啟</button>'+
+    '<button class="bk-notifx" id="bkNotifX">✕</button></div>';
+}
+function bkNotifyDesktop(list){
+  if(typeof Notification==="undefined"||Notification.permission!=="granted")return;
+  try{
+    if(list.length===1){
+      var b=list[0], nm=(b.customer&&b.customer.name)||"客人";
+      new Notification("新預約："+nm,{body:(b.date||"")+"　"+(b.slot||"")+"　"+(b.people||"?")+" 位"});
+    }else{
+      new Notification("有 "+list.length+" 筆新預約",{body:"點開後台「今日排課」查看"});
+    }
+  }catch(e){}
+}
 var bkByDate={};
 
 /* ══ 日期月曆（2026-08-10）══════════════════════════════
@@ -768,6 +860,7 @@ async function bkRender(){
     return bkSlotInfo(dsNow,s).used>bkCapOfSlot(dsNow,s) });
 
   root.innerHTML=
+   bkNotifBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
      '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
@@ -825,6 +918,10 @@ async function bkRender(){
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
 
+  var nOn=document.getElementById("bkNotifOn");
+  if(nOn)nOn.onclick=function(){ Notification.requestPermission().then(function(){ bkRender() }) };
+  var nX=document.getElementById("bkNotifX");
+  if(nX)nX.onclick=function(){ localStorage.setItem(BK_NOTIF_DISMISS_KEY,"1"); bkRender() };
   var dpEl=document.getElementById("bkDatePick");
   if(dpEl)dpEl.onclick=bkDatePick;
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
@@ -1043,6 +1140,7 @@ function bkCard(b){
   }
   return '<div class="bk-card'+(c?" ok":(unpaid?" wait":(depPaid?" dep":"")))+'">'+
     '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
+      (bkIsNewWeb(b)?'<span class="bk-tag new">NEW</span>':'')+
       (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
       depTag+
       (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
@@ -2505,6 +2603,15 @@ css.textContent=
 ".bk-over{background:#FBEAE8;color:#C9453B;border-radius:12px;padding:12px 15px;"+
   "font-size:14.5px;line-height:1.6;margin-bottom:16px;font-weight:500}"+
 ".bk-add-top{margin:0 0 20px}"+
+/* 新預約標籤、桌面通知授權提示 */
+".bk-tag.new{background:#C9453B;color:#fff;font-weight:700}"+
+".bk-notifbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;"+
+  "background:#EEF3FB;color:#3A5A96;border-radius:12px;padding:11px 15px;"+
+  "font-size:13.5px;line-height:1.5;margin-bottom:16px}"+
+".bk-notifbar span{flex:1;min-width:180px}"+
+".bk-notifbtn{background:var(--bkNavy);color:#fff;border:0;border-radius:8px;"+
+  "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
+".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
 /* 班表設定月曆 */
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
