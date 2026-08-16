@@ -936,25 +936,50 @@ function bkSeatBoardHtml(dsNow,sl,g){
       ?'已選取，點要搬去的區塊完成搬移，或點同一張卡片取消。'
       :'點一下卡片，再點要搬去的區塊，就能換位子。')+'</div></div>';
 }
-function bkSeatMove(id,area){ bkSeatPicked=null; bkSeatSet(id,area).then(bkRender) }
+/* 找出這個節點所在的座位表區塊是哪個「日期｜時段」，換位子時只重畫這一小塊，
+   不用整頁重新讀資料、重新畫——之前點一下卡片畫面就整個閃一下，
+   就是因為原本呼叫的 bkRender() 會先蓋成「載入中…」再重抓一次全部資料。 */
+function bkSeatBoardKey(el){
+  var board=el.closest(".bk-seat");
+  return board?board.dataset.slk2:null;
+}
+function bkSeatRefresh(slk2){
+  if(!slk2)return bkRender(); /* 保底：真的找不到脈絡才整頁重畫 */
+  var i=slk2.indexOf("|"), dsNow=slk2.slice(0,i), sl=slk2.slice(i+1);
+  var board=document.querySelector('.bk-seat[data-slk2="'+CSS.escape(slk2)+'"]');
+  if(!board)return bkRender();
+  var g=bkList.filter(function(b){
+    return sl==="其他"
+      ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0&&b.slot!==EVE_SLOT)
+      : bkHitsSlot(b,sl) });
+  var tmp=document.createElement("div"); tmp.innerHTML=bkSeatBoardHtml(dsNow,sl,g);
+  var newBoard=tmp.firstChild;
+  board.replaceWith(newBoard);
+  bkSeatBind(newBoard);
+}
+function bkSeatMove(id,area,slk2){
+  bkSeatPicked=null;
+  bkSeatSet(id,area); /* 不等網路存檔完成，本地資料已經先改好了，畫面立刻更新 */
+  bkSeatRefresh(slk2);
+}
 function bkSeatBind(root){
   root.querySelectorAll(".bk-seat-chip").forEach(function(chip){
     chip.onclick=function(e){
       e.stopPropagation();
-      var id=chip.dataset.bid;
-      if(bkSeatPicked===id){ bkSeatPicked=null; bkRender(); return } /* 再點一次＝取消 */
-      if(!bkSeatPicked){ bkSeatPicked=id; bkRender(); return } /* 第一次點＝選取 */
+      var id=chip.dataset.bid, slk2=bkSeatBoardKey(chip);
+      if(bkSeatPicked===id){ bkSeatPicked=null; bkSeatRefresh(slk2); return } /* 再點一次＝取消 */
+      if(!bkSeatPicked){ bkSeatPicked=id; bkSeatRefresh(slk2); return } /* 第一次點＝選取 */
       /* 已經選好一張要搬的了，這次點到別張卡片＝搬去這張卡片所在的區 */
       var col=chip.closest(".bk-seat-col");
-      if(col&&col.dataset.area)bkSeatMove(bkSeatPicked,col.dataset.area);
-      else{ bkSeatPicked=null; bkRender() }
+      if(col&&col.dataset.area)bkSeatMove(bkSeatPicked,col.dataset.area,slk2);
+      else{ bkSeatPicked=null; bkSeatRefresh(slk2) }
     };
   });
   root.querySelectorAll(".bk-seat-col").forEach(function(col){
     col.onclick=function(e){
       if(!bkSeatPicked)return;
       if(e.target.closest(".bk-seat-chip"))return; /* 卡片自己的 onclick 已經處理過 */
-      bkSeatMove(bkSeatPicked,col.dataset.area);
+      bkSeatMove(bkSeatPicked,col.dataset.area,bkSeatBoardKey(col));
     };
   });
 }
