@@ -12,7 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<link rel="stylesheet" href="styles.css?v=20260808c">
+<link rel="stylesheet" href="styles.css?v=20260816a">
 </head>
 <body>
 
@@ -53,7 +53,7 @@
 <div class="side-scrim" onclick="document.body.classList.remove('side-open')"></div>
 <div class="tabs">
   <div class="side-brand">Otto2<span>ARTCLUB</span></div>
-  <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課</div>
+  <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課<span id="bk-new-badge" class="bk-new-badge" style="display:none" title="點一下標記為已讀" onclick="event.stopPropagation();switchTab('today');if(window.bkClearNewBadge)bkClearNewBadge()"></span></div>
   <div class="tab" data-tab="sched" onclick="switchTab('sched')">🗓️ 班表設定</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
@@ -440,7 +440,7 @@
 <script src="app.js?v=20260814a"></script>
 <script src="consumables.js?v=20260808a"></script>
 <script src="inventory.js?v=20260815d"></script>
-<script src="booking.js?v=20260815a"></script>
+<script src="booking.js?v=20260816a"></script>
 <script src="member.js?v=20260815a"></script>
 <script src="recipe.js?v=20260811a"></script>
 <script src="init.js?v=20260805p"></script>

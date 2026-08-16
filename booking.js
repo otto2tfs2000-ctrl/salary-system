@@ -439,7 +439,32 @@ async function bkLoad(){
   });
   bkList=arr.filter(function(b){ return b.date===d })
     .sort(function(a,b){ return String(a.slot).localeCompare(String(b.slot)) });
+  bkAllWeb=arr.filter(function(b){ return b.source==="web" });
+  bkUpdateNewBadge();
 }
+
+/* ══ 客人自己用 LINE 預約的提醒紅點 ══════════════════════
+   老闆不想收 LINE 個人／群組推播，改成後台這裡直接顯示：
+   距離上次點開「已讀」，客人自己送出的新預約（source==="web"，
+   手動登記的 source==="manual" 不算，那些是自己打的，不用提醒自己）
+   有幾筆。用 ts（送出時間的 ISO 字串）比字典序就能判斷先後，
+   不用額外存 id 對照表。 */
+var bkAllWeb=[];
+var BK_SEEN_KEY="otto2_bk_lastSeenTs";
+function bkUpdateNewBadge(){
+  var badge=document.getElementById("bk-new-badge"); if(!badge)return;
+  var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
+  var n=bkAllWeb.filter(function(b){ return String(b.ts||"")>lastSeen }).length;
+  if(n>0){ badge.textContent=n>99?"99+":n; badge.style.display="inline-block" }
+  else badge.style.display="none";
+}
+function bkClearNewBadge(){
+  var maxTs=bkAllWeb.reduce(function(m,b){ return String(b.ts||"")>m?String(b.ts):m },
+    localStorage.getItem(BK_SEEN_KEY)||"");
+  localStorage.setItem(BK_SEEN_KEY,maxTs);
+  bkUpdateNewBadge();
+}
+window.bkClearNewBadge=bkClearNewBadge;
 var bkByDate={};
 
 /* ══ 日期月曆（2026-08-10）══════════════════════════════
