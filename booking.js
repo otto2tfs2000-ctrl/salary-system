@@ -110,7 +110,7 @@ function bkDepState(b){
   if(w==="points")return {s:"points"};
   var amt=(+d.amount>0)?+d.amount:DEPOSIT_AMT;
   if(d.status==="paid")
-    return {s:"paid",way:bkDepWay(d.paidWay)||w,amt:amt,date:d.paidDate||"",by:d.by||""};
+    return {s:"paid",way:bkDepWay(d.paidWay)||w,amt:amt,date:d.paidDate||"",by:d.by||"",last5:d.last5||""};
   return {s:"wait",way:w,amt:amt};
 }
 /* 已收多少訂金可以在核銷時扣抵。預扣點數那條不算，它走點數流程 */
@@ -1118,6 +1118,7 @@ function bkCard(b){
     depTag='<span class="bk-tag w">待收 $'+dp.amt.toLocaleString()+'・'+esc(bkWayName(dp.way))+'</span>';
   else if(dp.s==="paid")
     depTag='<span class="bk-tag d">訂金 $'+dp.amt.toLocaleString()+'・'+esc(bkWayName(dp.way))+
+      (dp.last5?'・末'+esc(dp.last5):'')+
       (dp.date?'　'+esc(dp.date.slice(5)):'')+'</span>';
   else if(dp.s==="points")
     depTag='<span class="bk-tag s">訂金・儲值金預扣</span>';
@@ -1328,11 +1329,15 @@ async function bkDeposit(id){
   if(dp.s!=="wait"&&dp.s!=="paid"&&dp.s!=="none")return;
   var amt=dp.amt||DEPOSIT_AMT;
   var way=dp.way||"linepay";
+  var last5=dp.last5||"";
   var today=ds(new Date());
   var date=dp.date||today;
   var paid=dp.s==="paid";
   /* 只列真的會收到錢的方式，點數／堂數不是訂金 */
   var ways=PAYWAYS.filter(function(p){ return !p.member });
+  /* LINE Pay、匯款這兩種要另外填末五碼，才有辦法跟明細對帳；
+     現金、刷卡、文化幣當面收就知道是誰，不用再填 */
+  function needsLast5(w){ return w==="linepay"||w==="transfer" }
 
   bkSheet(
    '<h3>'+(paid?"訂金紀錄":"登記訂金")+'</h3>'+
@@ -1347,6 +1352,9 @@ async function bkDeposit(id){
    '<div class="bk-f"><label>訂金金額</label>'+
      '<input id="dpAmt" inputmode="numeric" value="'+amt+'"></div>'+
    '<div class="bk-f"><label>實際收款方式</label><div class="bk-ways" id="dpWays"></div></div>'+
+   '<div class="bk-f" id="dpLast5Wrap" style="display:none"><label id="dpLast5Label">末五碼</label>'+
+     '<input id="dpLast5" inputmode="numeric" maxlength="5" placeholder="例如 12345" value="'+esc(last5)+'">'+
+     '<div class="bk-left" style="margin-top:5px">方便之後對帳用，沒有的話可以先空著。</div></div>'+
    '<div class="bk-f"><label>收款日期</label>'+
      '<input id="dpDate" type="date" value="'+date.replace(/\//g,"-")+'">'+
      '<div class="bk-left" style="margin-top:5px">客人哪天付的就填哪天，不是今天登記就填今天。</div></div>'+
@@ -1362,6 +1370,11 @@ async function bkDeposit(id){
       return '<div class="bk-way'+(way===p.k?" on":"")+'" data-w="'+p.k+'">'+p.n+'</div>' }).join("");
     document.querySelectorAll("#dpWays [data-w]").forEach(function(el){
       el.onclick=function(){ way=el.dataset.w; drawWays() } });
+    var wrap=document.getElementById("dpLast5Wrap");
+    if(needsLast5(way)){
+      wrap.style.display="block";
+      document.getElementById("dpLast5Label").textContent=bkWayName(way)+" 末五碼";
+    }else wrap.style.display="none";
   }
   drawWays();
 
@@ -1384,6 +1397,7 @@ async function bkDeposit(id){
   document.getElementById("dpOK").onclick=async function(){
     var a=Math.round(+document.getElementById("dpAmt").value||0);
     var d=document.getElementById("dpDate").value;
+    var l5=needsLast5(way)?String(document.getElementById("dpLast5").value||"").trim():"";
     if(!(a>0)){ alert("訂金金額要大於 0"); return }
     if(!d){ alert("請填收款日期"); return }
     if(!way){ alert("請選收款方式"); return }
@@ -1399,7 +1413,7 @@ async function bkDeposit(id){
       var log={date:dstr,bookingId:id,dept:"4F",kind:"deposit",
         customer:(b.customer&&b.customer.name)||"",
         phone:(b.customer&&b.customer.phone)||b.memberPhone||"",
-        amount:a,way:way,wayName:bkWayName(way),
+        amount:a,way:way,wayName:bkWayName(way),last5:l5,
         classDate:b.date,slot:b.actualTime||b.slot||"",
         by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"",at:now,voided:false};
       if(logId){
@@ -1411,7 +1425,7 @@ async function bkDeposit(id){
         logId=r&&r.name||"";
       }
       await bkPatch("/bookings/"+id+"/deposit.json",{
-        status:"paid",amount:a,paidWay:way,paidDate:dstr,paidAt:now,
+        status:"paid",amount:a,paidWay:way,paidDate:dstr,paidAt:now,last5:l5,
         by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"",logId:logId});
       bkClose(); bkRefresh();
     }catch(e){
