@@ -402,12 +402,13 @@ async function bkSchedWrite(dateStr,val){
   }catch(e){ alert("班表儲存失敗，請檢查網路連線") }
 }
 /* 那個時段還剩幾位 */
-function bkSlotInfo(dateStr,slot){
+function bkSlotInfo(dateStr,slot,excludeId){
   var cap=bkCapOfSlot(dateStr,slot);
   var rows=bkList.filter(function(b){
     return b.date===dateStr&&
       bkHitsSlot(b,slot)&&
-      b.status!=="cancelled"&&b.status!=="expired";
+      b.status!=="cancelled"&&b.status!=="expired"&&
+      b.id!==excludeId;
   });
   var used=rows.reduce(function(s,b){ return s+(+b.people||0) },0);
   return {cap:cap,used:used,left:cap-used,groups:rows.length,
@@ -2189,7 +2190,7 @@ async function bkManual(editId){
     mSlots.forEach(function(sl){
       var base=bkBase(sl)||sl;
       if(seen[base])return; seen[base]=1;
-      var s=bkSlotInfo(d,base);
+      var s=bkSlotInfo(d,base,editId);
       /* 實際人數永遠擺第一位。老師現場可能已自行超收，
          行政若只記得表定數字會再加上去，容易一路加到爆。 */
       var line='<div style="margin-top:4px"><b>'+esc(base)+'</b>　'+
@@ -2514,7 +2515,7 @@ async function bkManual(editId){
       if(stop)return;
       var sBase=bkBase(sl); if(!sBase||warned[sBase])return;
       warned[sBase]=1;
-      var si=bkSlotInfo(d,sBase);
+      var si=bkSlotInfo(d,sBase,editId);
       if(si.cap>0&&si.left<ppl&&
          !confirm(sBase+" 目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))stop=true;
