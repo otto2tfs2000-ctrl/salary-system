@@ -1068,16 +1068,16 @@ function bkPplText(b){
 
 /* ══ 座位表（2026-08-14）══════════════════════════════════
    每個時段各自一張，人不會跨時段撞位子。
-   規則：預設都排壩台，滿了才輪到畫架，畫架也滿了才輪到臨時桌；
-   5-7 歲小朋友上選圖，不管壩台滿不滿都優先排壩台方便照顧
+   規則：預設都排吧台，滿了才輪到畫架，畫架也滿了才輪到臨時桌；
+   5-7 歲小朋友上選圖，不管吧台滿不滿都優先排吧台方便照顧
    （這只是建議值，畫面上還是能整個拖去別區）。
    手動登記沒有存 kidBands，這條規則只會對客人自己填的預約生效。
    指定過的位子存在 booking.seatArea，之後都以這個為準，
    不會因為別人異動又被重新建議洗掉。 */
-/* 順位就是排滿的優先順序：壩台→畫架→教室滿了，才會用到臨時桌那 1 個位子。
+/* 順位就是排滿的優先順序：吧台→畫架→教室滿了，才會用到臨時桌那 1 個位子。
    臨時桌只有 1 位、聽起來像應急用的，放在最後一順位比較合理；
    如果實際上你希望的排法不一樣，跟我說一聲就能調整順序。 */
-var SEAT_AREAS=[{k:"壩台",cap:7},{k:"畫架",cap:4},{k:"教室",cap:5},{k:"臨時桌",cap:1}];
+var SEAT_AREAS=[{k:"吧台",cap:7},{k:"畫架",cap:4},{k:"教室",cap:5},{k:"臨時桌",cap:1}];
 function bkSeatItemsName(b){
   return (b.items||[]).map(function(i){ return i.name||"" }).join("、");
 }
@@ -1086,7 +1086,7 @@ function bkSeatItemsName(b){
 /* 一組預約可能不只一位（例如媽媽帶兩個小孩一起訂），要佔掉的是
    「這麼多張椅子」，不是「這一筆預約」，所以人數要照 people 算，
    不能每筆都當成佔 1 個名額——不然兩位的預約看起來只佔一張椅子，
-   壩台明明滿了畫面卻還說有空位。 */
+   吧台明明滿了畫面卻還說有空位。 */
 function bkSeatPpl(b){
   var x=bkAK(b);
   return (x.a!=null||x.k!=null)?Math.max(1,(+x.a||0)+(+x.k||0)):Math.max(1,+b.people||1);
@@ -1105,10 +1105,10 @@ function bkSeatAssign(g){
     var bands=bkAK(b).bands||"";
     var isYoungPick=bands.indexOf("5-7 歲")>=0&&/選圖/.test(bkSeatItemsName(b));
     var area;
-    if(isYoungPick){ area="壩台" }
+    if(isYoungPick){ area="吧台" }
     else{
       /* 整組人要坐在一起，所以挑「這組人塞得下」的區，不是隨便有一張空椅子就塞——
-         不然兩位的預約可能被拆成一位壩台、一位畫架，變成拆散一組人 */
+         不然兩位的預約可能被拆成一位吧台、一位畫架，變成拆散一組人 */
       var open=SEAT_AREAS.filter(function(a){ return counts[a.k]+ppl<=a.cap })[0]
         ||SEAT_AREAS.filter(function(a){ return counts[a.k]<a.cap })[0];
       area=open?open.k:"臨時桌";
