@@ -537,6 +537,21 @@ function bkHandleSSE(e){
       fresh.push(Object.assign({},data,{id:parts[0]}));
     }
   }
+  /* 客人自己取消（/liff/cancelBooking 寫的 cancelledBy:"customer"）跟「新預約」
+     是不同的事件，不能塞進下面 freshWeb 那條——那條只認整包完整預約物件、
+     而且要 source==="web" 且 ts 比上次看到的新，客人取消時 patch 進來的
+     data 通常只有 status/cancelledAt/cancelledBy 這幾個欄位，沒有 source/ts，
+     會被那條的條件擋掉，行政永遠不會知道客人自己把預約取消了。 */
+  if(data&&typeof data==="object"&&data.cancelledBy==="customer"){
+    var cancelId=path.replace(/^\//,"").split("/")[0]||"";
+    var known=bkList.filter(function(x){ return x.id===cancelId })[0];
+    var nm=(known&&known.customer&&known.customer.name)||"客人";
+    var when=known?(known.date+"　"+(known.actualTime||known.slot)):"";
+    bkList=bkList.filter(function(x){ return x.id!==cancelId });
+    bkNotifyCancelDesktop(nm,when);
+    var todayTab2=document.querySelector('.tab[data-tab="today"]');
+    if(todayTab2&&todayTab2.classList.contains("active")&&!bkBusy)bkRender();
+  }
   var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
   var freshWeb=fresh.filter(function(b){
     return b&&b.source==="web"&&b.status!=="cancelled"&&b.status!=="expired"&&String(b.ts||"")>lastSeen; });
@@ -589,6 +604,13 @@ function bkNotifyDesktop(list){
     }else{
       new Notification("有 "+list.length+" 筆新預約",{body:"點開後台「今日排課」查看"});
     }
+  }catch(e){}
+}
+/* 客人自己取消預約，行政不能完全不知道，不然材料人力還是照舊準備 */
+function bkNotifyCancelDesktop(name,when){
+  if(typeof Notification==="undefined"||Notification.permission!=="granted")return;
+  try{
+    new Notification("客人自己取消了預約："+name,{body:when||"點開今日排課確認"});
   }catch(e){}
 }
 var bkByDate={};
