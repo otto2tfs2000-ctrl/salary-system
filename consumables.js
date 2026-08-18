@@ -372,24 +372,6 @@ function setPaidStatus(id, val) {
   renderConsumables();
 }
 
-// 行政一週對帳一次：選一段日期範圍，把裡面所有「未撥款」的一次改成「已撥款」，
-// 不用一筆一筆點下拉選單。只動這個月份/店別目前查看中的那份資料。
-function batchMarkPaid() {
-  var from = document.getElementById('cm-batch-from').value;
-  var to = document.getElementById('cm-batch-to').value;
-  if (!from || !to) { alert('請選起訖日期'); return; }
-  if (from > to) { alert('起始日期不能比結束日期晚'); return; }
-  var k = getCMKey();
-  var items = (S.consumables && S.consumables[k]) || [];
-  var targets = items.filter(function(x){ return x.date >= from && x.date <= to && x.paid === false; });
-  if (!targets.length) { alert('這個範圍內找不到「未撥款」的項目（可能已經標過了，或這個月份/店別沒有資料）'); return; }
-  if (!confirm(from + ' ～ ' + to + ' 這段期間，共 ' + targets.length + ' 筆「未撥款」的項目。\n確定要一次標記成「已撥款」嗎？')) return;
-  targets.forEach(function(x){ x.paid = true; });
-  save();
-  renderConsumables();
-  alert('已標記 ' + targets.length + ' 筆為已撥款');
-}
-
 function delConsumable(id) {
   var k = getCMKey();
   if (!S.consumables || !S.consumables[k]) return;
