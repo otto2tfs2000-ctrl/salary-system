@@ -372,6 +372,24 @@ function setPaidStatus(id, val) {
   renderConsumables();
 }
 
+// 行政一週對帳一次：選一段日期範圍，把裡面所有「未撥款」的一次改成「已撥款」，
+// 不用一筆一筆點下拉選單。只動這個月份/店別目前查看中的那份資料。
+function batchMarkPaid() {
+  var from = document.getElementById('cm-batch-from').value;
+  var to = document.getElementById('cm-batch-to').value;
+  if (!from || !to) { alert('請選起訖日期'); return; }
+  if (from > to) { alert('起始日期不能比結束日期晚'); return; }
+  var k = getCMKey();
+  var items = (S.consumables && S.consumables[k]) || [];
+  var targets = items.filter(function(x){ return x.date >= from && x.date <= to && x.paid === false; });
+  if (!targets.length) { alert('這個範圍內找不到「未撥款」的項目（可能已經標過了，或這個月份/店別沒有資料）'); return; }
+  if (!confirm(from + ' ～ ' + to + ' 這段期間，共 ' + targets.length + ' 筆「未撥款」的項目。\n確定要一次標記成「已撥款」嗎？')) return;
+  targets.forEach(function(x){ x.paid = true; });
+  save();
+  renderConsumables();
+  alert('已標記 ' + targets.length + ' 筆為已撥款');
+}
+
 function delConsumable(id) {
   var k = getCMKey();
   if (!S.consumables || !S.consumables[k]) return;
@@ -532,8 +550,18 @@ function renderConsumables() {
     return;
   }
 
+  // 「只顯示未撥款」只影響這張明細表跟匯出，上面的統計卡片still算整個月，
+  // 不然勾了之後「本月總支出」突然變小，行政會以為資料不見了。
+  var unpaidOnlyEl = document.getElementById('cm-unpaid-only');
+  var unpaidOnly = !!(unpaidOnlyEl && unpaidOnlyEl.checked);
+  var listItems = unpaidOnly ? items.filter(function(x){ return x.paid === false; }) : items;
+  if (unpaidOnly && listItems.length === 0) {
+    listEl.innerHTML = '<div class="empty">這個月份已經沒有「未撥款」的項目了，都處理完了。</div>';
+    return;
+  }
+
   // 依日期排序（新→舊）
-  var sorted = items.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || b.id-a.id; });
+  var sorted = listItems.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || b.id-a.id; });
 
   var rows = sorted.map(function(x){
     var icon = CM_CAT_ICONS[x.cat]||'📌';
@@ -990,8 +1018,13 @@ function dlConsumableExcel() {
   var openBal = getCMOpeningBalance(mKey, store);
   var openBalStr = (openBal !== null) ? openBal.toLocaleString() : '';
 
-  var sorted = items.slice().sort(function(a,b){ return a.date.localeCompare(b.date) || a.id-b.id; });
-  var totalExpense = items.reduce(function(s,x){ return s+x.amount; }, 0);
+  // 匯出跟畫面上的「只顯示未撥款」勾選狀態一致：勾了就只匯出還沒處理的，
+  // 已經撥款過的那批不會又被匯出一次。
+  var unpaidOnlyEl = document.getElementById('cm-unpaid-only');
+  var unpaidOnly = !!(unpaidOnlyEl && unpaidOnlyEl.checked);
+  var exportItems = unpaidOnly ? items.filter(function(x){ return x.paid === false; }) : items;
+  var sorted = exportItems.slice().sort(function(a,b){ return a.date.localeCompare(b.date) || a.id-b.id; });
+  var totalExpense = exportItems.reduce(function(s,x){ return s+x.amount; }, 0);
 
   // 把幣別換算 / 多明細 / 備註 / 購買管道 / 撥款狀態等資訊，整合進「品明細項」描述，避免資料遺失
   function buildDesc(x) {
