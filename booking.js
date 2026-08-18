@@ -634,6 +634,51 @@ function bkIsMember(b){
   var k=bkNorm(b.customer&&b.customer.phone);
   return !!(k&&bkIndex[k]);
 }
+/* 這筆預約真正對得到會員資料庫的電話：優先用手動登記時already配對好的
+   memberPhone，沒有的話就正規化客人自己填的電話去比對索引，
+   兩邊都沒有就傳回客人填的原始電話（讓 bkMember 自己去查，查不到就查不到）。 */
+function bkResolvedPhone(b){
+  if(b.memberPhone)return b.memberPhone;
+  var k=bkNorm(b.customer&&b.customer.phone);
+  if(k&&bkIndex[k])return bkIndex[k];
+  return (b.customer&&b.customer.phone)||"";
+}
+/* 點客人姓名看目前餘額，不用切去會員分頁或等核銷完才看得到 */
+async function bkShowBalance(phone,name){
+  if(!phone){ alert("這筆沒有留可對應的電話，查不到會員資料。"); return }
+  bkSheet('<h3 style="margin:0 0 2px">查詢中…</h3>');
+  var m=await bkMember(phone);
+  if(!m){
+    bkSheet('<h3 style="margin:0 0 2px">'+esc(name||"")+'</h3>'+
+      '<div class="bk-info">'+esc(phone)+'　查無會員資料，可能還沒建檔。</div>'+
+      '<div class="bk-act"><button class="bk-cancel" id="bkBalX">關閉</button></div>');
+    document.getElementById("bkBalX").onclick=bkClose;
+    return;
+  }
+  var c=m.cache||{};
+  bkSheet('<h3 style="margin:0 0 2px">'+esc(m.name||name||"")+'</h3>'+
+    '<div class="bk-sh2">'+esc(phone)+'</div>'+
+    '<div class="bk-stat" style="margin:14px 0">'+
+      '<div><b>'+(+c.points||0).toLocaleString()+'</b><span>點數</span></div>'+
+      '<div><b>'+(+c.sessions||0)+'</b><span>堂數</span></div>'+
+      '<div><b>'+(+c.bonus||0).toLocaleString()+'</b><span>紅利</span></div>'+
+    '</div>'+
+    '<div class="bk-act">'+
+      (bkCan("sellPlan")?'<button class="bk-save" id="bkBalSell">賣方案</button>':'')+
+      '<button class="bk-cancel" id="bkBalX">關閉</button></div>');
+  document.getElementById("bkBalX").onclick=bkClose;
+  var sellBtn=document.getElementById("bkBalSell");
+  if(sellBtn)sellBtn.onclick=async function(){ await bkSellPlanFor(phone) };
+}
+/* 銷課旁邊的「賣方案」快捷鈕，直接借用會員分頁那套介面，
+   member.js 沒有另外包 IIFE，這裡可以直接呼叫 mbSell。 */
+async function bkSellPlanFor(phone){
+  if(!phone){ alert("這筆沒有留可對應的電話，沒辦法賣方案，請先在「修改」裡幫客人補電話。"); return }
+  if(typeof mbLoad==="function")await mbLoad();
+  if(typeof mbSell!=="function"){ alert("會員模組還沒載入，請重新整理頁面再試一次。"); return }
+  bkClose();
+  mbSell(phone);
+}
 function bkSearch(q){
   if(!bkMembers||!q||q.trim().length<2)return[];
   var s=q.trim(), d=s.replace(/\D/g,"");
@@ -950,6 +995,14 @@ async function bkRender(){
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
   root.querySelectorAll("[data-vd]").forEach(function(el){ el.onclick=function(){ bkVoid(el.dataset.vd) } });
   root.querySelectorAll("[data-cx]").forEach(function(el){ el.onclick=function(){ bkCancel(el.dataset.cx) } });
+  root.querySelectorAll("[data-sp]").forEach(function(el){ el.onclick=function(){
+    var b=bkList.filter(function(x){return x.id===el.dataset.sp})[0]; if(!b)return;
+    bkSellPlanFor(bkResolvedPhone(b));
+  } });
+  root.querySelectorAll(".bk-nm").forEach(function(el){ el.onclick=function(){
+    var b=bkList.filter(function(x){return x.id===el.dataset.bid})[0]; if(!b)return;
+    bkShowBalance(bkResolvedPhone(b),(b.customer&&b.customer.name)||"");
+  } });
 }
 window.bkRender=bkRender;
 
@@ -1141,7 +1194,8 @@ function bkCard(b){
       (c.bonus?'　·　紅利 +'+c.bonus:'')+'</div></div>';
   }
   return '<div class="bk-card'+(c?" ok":(unpaid?" wait":(depPaid?" dep":"")))+'">'+
-    '<div class="bk-who"><b>'+esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
+    '<div class="bk-who"><b class="bk-nm" data-bid="'+b.id+'" title="點一下看目前餘額">'+
+      esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
       (bkIsNewWeb(b)?'<span class="bk-tag new">NEW</span>':'')+
       (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
       depTag+
@@ -1168,6 +1222,8 @@ function bkCard(b){
           (dp.s==="paid"?"訂金 ✓":"收訂金")+'</button>':"")+
       /* 核銷會扣點數、作廢會退帳，沒有權限的人不顯示這兩顆 */
       (bkCan("checkout")?'<button class="bk-b ck" data-ck="'+b.id+'">'+(c?"修正核銷":"核銷")+'</button>':"")+
+      /* 核銷前後都可能想順手賣方案（核銷前先加點折抵、核銷後續約），不綁核銷狀態 */
+      (bkCan("sellPlan")?'<button class="bk-b sp" data-sp="'+b.id+'">賣方案</button>':"")+
       (c&&bkCan("void")?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
@@ -2694,7 +2750,11 @@ css.textContent=
 ".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
 ".bk-b.dp:hover{background:#F8EBD3}"+
 ".bk-b.dp.done{background:var(--bkOkBg);color:var(--bkOk);font-weight:500}"+
+".bk-b.sp{background:#FBF3E3;color:var(--bkGold);font-weight:600}"+
+".bk-b.sp:hover{background:#F5E9CC}"+
 ".bk-who b{font-size:17px;color:var(--bkInk);font-weight:600}"+
+".bk-who b.bk-nm{cursor:pointer}"+
+".bk-who b.bk-nm:hover{text-decoration:underline}"+
 ".bk-tag{display:inline-block;font-size:12.5px;padding:2.5px 9px;border-radius:99px;"+
   "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
