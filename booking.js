@@ -2271,6 +2271,22 @@ async function bkManual(editId){
   /* 時段：可複選。有人一畫就是一整天，三個時段都要佔。 */
   var mSlots=eb?bkSlotsOf(eb):[];
   var extraSlots=mSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 });
+  /* 編輯時如果真的改了日期或時段，「通知客人」預設不勾就太危險了——
+     客人會像這次一樣，直到前一天提醒才第一次看到改過的時間，
+     搞不清楚哪個才對。改動當下自動幫忙勾起來，備註、金額這種
+     不影響時間的修改則不動，維持原本「不用每次都發通知」的設計。 */
+  function mScheduleChanged(){
+    if(!eb)return false;
+    var d=(document.getElementById("mDate").value||"").replace(/-/g,"/");
+    if(d&&d!==eb.date)return true;
+    var orig=bkSortSlots(bkSlotsOf(eb)).join(",");
+    var now=bkSortSlots(mSlots).join(",");
+    return orig!==now;
+  }
+  function syncNotifyDefault(){
+    var cb=document.getElementById("mNotify");
+    if(cb&&mScheduleChanged())cb.checked=true;
+  }
   function drawSlots(){
     var box=document.getElementById("mSlots"); if(!box)return;
     var all=SLOTS_MANUAL.concat(extraSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 }));
@@ -2283,7 +2299,7 @@ async function bkManual(editId){
         var sl=el.dataset.sl, i=mSlots.indexOf(sl);
         if(i>=0)mSlots.splice(i,1); else mSlots.push(sl);
         mSlots=bkSortSlots(mSlots);
-        drawSlots(); showLeft();
+        drawSlots(); showLeft(); syncNotifyDefault();
       } });
     box.querySelector("[data-slother]").onclick=function(){
       var b=document.getElementById("mSlotOtherBox");
@@ -2298,7 +2314,7 @@ async function bkManual(editId){
       extraSlots.push(v); }
     this.value="";
     document.getElementById("mSlotOtherBox").style.display="none";
-    drawSlots(); showLeft();
+    drawSlots(); showLeft(); syncNotifyDefault();
   };
   drawSlots();
   function showLeft(){
@@ -2335,7 +2351,7 @@ async function bkManual(editId){
   document.getElementById("mDate").onchange=async function(){
     /* 換日期要重抓那天的預約才算得準 */
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
-    await bkLoad(); bkDate=keep; showLeft();
+    await bkLoad(); bkDate=keep; showLeft(); syncNotifyDefault();
   };
   function syncPpl(){
     var a=+document.getElementById("mAdult").value||0;
@@ -2683,6 +2699,15 @@ async function bkManual(editId){
         delete rec.status; delete rec.ts;
         rec.editedAt=new Date().toISOString();
         rec.editedBy=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
+        /* 客人自己在網頁上約的那筆，原本存了 actualTime（實際上課時間，
+           跟 slot 分開存是為了處理提早到館這種情況）。行政在這裡真的改了
+           日期或時段，如果沒有順便清掉舊的 actualTime，它會一直卡著改之前
+           的時間——確認通知跟前一天提醒兩邊讀時段都是 actualTime||slot 優先，
+           畫面就會一直顯示改之前的舊時間，跟這次改的新時段對不起來，
+           客人會搞不清楚哪個才是真的。日期或時段真的變了才清，
+           只是改備註、金額這種不影響時間的，不動 actualTime。 */
+        if(d!==eb.date||useSlots.join(",")!==bkSortSlots(bkSlotsOf(eb)).join(","))
+          rec.actualTime=null;
         await bkPatch("/bookings/"+editId+".json",rec);
       }else
       await fetch(bkf("/bookings.json"),{method:"POST",
