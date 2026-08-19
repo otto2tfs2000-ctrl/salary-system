@@ -880,6 +880,22 @@ async function addInvItem(btn) {
   }
 }
 
+/* 改表格裡既有欄位（成本／售價／安全庫存量…）是改完離開欄位就用 save()
+   背景防抖自動存，不需要按這顆鈕。這顆是給改了一整批之後想「確認真的
+   存進雲端了」的人按的：跳過防抖、立即存、用 alert 給明確結果，避免
+   改了一堆卻不知道是不是還停留在背景等待寫入。 */
+async function saveInvItemsNow(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; }
+  var ok = await saveNow();
+  if (btn) { btn.disabled = false; btn.textContent = '☁️ 立即儲存並確認'; }
+  if (ok) {
+    alert('✅ 已確認存進雲端。');
+  } else {
+    alert('⚠️ 雲端同步失敗，目前的修改只留在這台電腦裡！\n'+
+          '請確認網路連線後再按一次「立即儲存並確認」。');
+  }
+}
+
 // 拖拉排序完成後呼叫：傳入拖放後「完整、依序排列」的 id 陣列，
 // 重新分配連續的 order 值（0,1,2...），整張表當一條序列、不受分類限制。
 function reorderInvItems(orderedIds) {
