@@ -315,19 +315,29 @@ function applyCanvasTwoWeekForecast() {
 async function doSave() {
   setSync('saving','儲存中...');
   localStorage.setItem('otto2_v7', JSON.stringify(S));
-  if (!fbDb2) { setSync('err','Firebase 未初始化'); return; }
+  if (!fbDb2) { setSync('err','Firebase 未初始化'); return false; }
   try {
     await fbDb2.ref('salaryData').set(S);
     setSync('ok','已儲存');
+    return true;
   } catch(e) {
     console.error('doSave error:', e);
     setSync('err','儲存失敗（本機備份）');
+    return false;
   }
 }
 
 function save() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(doSave, 800);
+}
+
+/* 給「填完等不到明確結果就怕沒存到」的操作用：跳過 800ms 的背景防抖，
+   立刻存、等真正的結果（true=雲端同步成功，false=只留在本機）。
+   角落那顆小小的同步狀態字很容易錯過，呼叫端應該自己用回傳值把結果講清楚。 */
+function saveNow() {
+  if (saveTimer) clearTimeout(saveTimer);
+  return doSave();
 }
 
 // ── Month ──────────────────────────────────────────────

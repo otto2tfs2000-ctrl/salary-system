@@ -372,7 +372,7 @@
       <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="一個多少錢" onwheel="this.blur()"></div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-gold" onclick="addInvItem()">+ 新增品項</button>
+      <button class="btn btn-gold" onclick="addInvItem(this)">+ 新增品項</button>
       <button class="btn btn-outline" onclick="batchImportItems()">📥 匯入預設品項清單</button>
       <button class="btn btn-outline" onclick="copyFlagshipItemsToGuotu()">📋 從旗艦店複製品項清單到國圖店</button>
       <div style="flex:1"></div>
@@ -440,9 +440,9 @@
 </div>
 
 <script src="auth.js?v=20260809b"></script>
-<script src="app.js?v=20260814a"></script>
+<script src="app.js?v=20260819a"></script>
 <script src="consumables.js?v=20260817b"></script>
-<script src="inventory.js?v=20260815d"></script>
+<script src="inventory.js?v=20260819a"></script>
 <script src="booking.js?v=20260819b"></script>
 <script src="member.js?v=20260815a"></script>
 <script src="recipe.js?v=20260811a"></script>

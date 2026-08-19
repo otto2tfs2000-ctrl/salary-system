@@ -23,7 +23,10 @@ function invWeekLabel(weekKey) {
 }
 
 let invCurWeek = invWeekKey(new Date());
-var invGroupClosed = {}; // 分類收合狀態
+/* 分類收合狀態。以前預設全部展開，要一個個手動點三角形收起來很麻煩，
+   改成預設全部收合，需要看哪一類再點開。鍵值要跟 renderInvWeekTable
+   裡 INV_GROUPS 的 key 對上。 */
+var invGroupClosed = { canvas:true, board:true, parts:true, paint:true, gel:true, other:true };
 function toggleInvGroup(key) {
   invGroupClosed[key] = !invGroupClosed[key];
   renderInvWeekTable();
@@ -827,7 +830,7 @@ function showInvImage(itemId) {
   document.body.appendChild(overlay);
 }
 
-function addInvItem() {
+async function addInvItem(btn) {
   var cat = document.getElementById('inv-new-cat').value;
   var name = document.getElementById('inv-new-name').value.trim();
   var unit = document.getElementById('inv-new-unit').value.trim() || '個';
@@ -859,12 +862,22 @@ function addInvItem() {
   }
   st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe,
                   cost: cost, price: null, order: newOrder });
-  save();
+  /* 老闆反應過填完按「新增品項」，畫面看起來沒存到——原本只呼叫 save()，
+     那是背景防抖，800ms 後才真的寫 Firebase，失敗的話只有角落一行小字提示，
+     很容易錯過，看起來就像「明明填了卻不見」。這裡改成新增當下就立即存、
+     等真正結果出來才放行，成功/失敗都用 alert 講清楚，不會再誤以為存好了。 */
+  if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; }
+  var ok = await saveNow();
+  if (btn) { btn.disabled = false; btn.textContent = '+ 新增品項'; }
   document.getElementById('inv-new-name').value = '';
   document.getElementById('inv-new-safe').value = '';
   if (costEl) costEl.value = '';
   renderInvItemList();
   renderInventory();
+  if (!ok) {
+    alert('「'+name+'」已經新增，但雲端同步失敗，目前只留在這台電腦裡！\n'+
+          '請確認網路連線後重新整理頁面，再檢查這個品項還在不在，避免資料遺失。');
+  }
 }
 
 // 拖拉排序完成後呼叫：傳入拖放後「完整、依序排列」的 id 陣列，
@@ -986,6 +999,14 @@ function invHandleDrop(e, targetId) {
 var touchDragEl = null, touchDragId = null, touchClone = null, touchStartY = 0;
 function initTouchDrag(container) {
   if (!container) return;
+  /* container 現在是分類清單外層那個固定不變的 <div id="inv-item-list">，
+     每次 renderInvItemList() 只換裡面的 innerHTML，容器本身不會重建——
+     以前傳進來的是每次 render 都重新生成的 tbody，監聽器會隨舊 tbody 一起
+     被丟掉，不用擔心累加；換成固定容器後同一顆容器每次 render 都會被叫到，
+     不加這個開關監聽器會越掛越多次。監聽器裡都是即時查 DOM（querySelectorAll
+     找目前畫面上的列），掛一次就永遠抓得到最新內容，不需要重掛。 */
+  if (container.dataset.touchDragInit) return;
+  container.dataset.touchDragInit = '1';
   container.addEventListener('touchstart', function(e) {
     var tr = e.target.closest('tr[draggable]');
     if (!tr) return;
@@ -1056,54 +1077,92 @@ function findSmartInsertPosition(newName, newCat, sortedItems) {
   return bestIdx;
 }
 
+/* 品項清單分類收合狀態，鍵是分類名稱（INV_CATS 裡的值）。
+   預設全部收合，跟本週盤點那邊一樣，不用一個個手動點三角形關掉。 */
+var invItemGroupClosed = {};
+function toggleInvItemGroup(cat) {
+  invItemGroupClosed[cat] = invItemGroupClosed[cat] === false ? true : false;
+  renderInvItemList();
+}
+
 function renderInvItemList() {
   var el = document.getElementById('inv-item-list');
   var items = getInvItems();
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
   var sorted = sortInvItems(items);
-  var html = '<div class="muted" style="margin-bottom:8px;font-size:13.5px">🖐 直接按住每一列左側的「⠿」拖曳，可任意調整順序（不限分類）</div>';
-  html += '<table><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody id="inv-item-tbody">';
+
+  // 依分類分組顯示，組內順序沿用原本拖曳排出來的順序；
+  // 換分類是用列上的「類別」下拉選單，拖曳只在同一組內調整順序。
+  var byCat = {};
   sorted.forEach(function(it) {
-    html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
-      'ondragstart="invHandleDragStart(event,'+it.id+')" '+
-      'ondragend="invHandleDragEnd(event)" '+
-      'ondragover="invHandleDragOver(event)" '+
-      'ondrop="invHandleDrop(event,'+it.id+')" '+
-      'style="cursor:grab">';
-    html += '<td style="text-align:center;color:var(--text2);font-size:17px;user-select:none">⠿</td>';
-    var catSel = '<select style="background:var(--bg3);border:1px solid var(--border);color:var(--gold2);padding:3px 6px;border-radius:5px;font-size:13.5px;cursor:pointer;outline:none;font-family:inherit" onchange="updateInvItemField('+it.id+',\'cat\',this.value)">';
-    INV_CATS.forEach(function(c){
-      catSel += '<option value="'+c+'"'+(it.cat===c?' selected':'')+'>'+(INV_CAT_ICONS[c]||'📌')+' '+c+'</option>';
-    });
-    catSel += '</select>';
-    html += '<td>'+catSel+'</td>';
-    html += '<td><input class="in-num" style="width:100%;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
-    // 圖片欄
-    var imgHtml = '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">';
-    if (it.image) {
-      imgHtml += '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onclick="event.preventDefault();showInvImage('+it.id+')">';
-      imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
-      imgHtml += '</label>';
-      imgHtml += ' <button class="btn-sm" style="font-size:12px;padding:2px 6px;background:transparent;border:1px solid rgba(224,85,85,0.3);color:var(--red)" onclick="removeInvImage('+it.id+')">✕</button>';
-    } else {
-      imgHtml += '<span style="font-size:18px">📷</span>';
-      imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
-      imgHtml += '</label>';
-    }
-    html += '<td>'+imgHtml+'</td>';
-    html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
-    html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)" title="這個品項一個單位多少錢，用來算課程成本與毛利"></td>';
-    html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
-    html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
-    html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
-    html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
-    html += '</tr>';
+    var c = it.cat || '其他';
+    (byCat[c] = byCat[c] || []).push(it);
   });
-  html += '</tbody></table>';
+  var catOrder = INV_CATS.slice();
+  Object.keys(byCat).forEach(function(c){ if (catOrder.indexOf(c) === -1) catOrder.push(c); });
+
+  var html = '<div class="muted" style="margin-bottom:8px;font-size:13.5px">🖐 按住每一列左側的「⠿」拖曳，可調整同分類內的順序；換分類請用「類別」下拉選單</div>';
+
+  catOrder.forEach(function(cat) {
+    var catItems = byCat[cat];
+    if (!catItems || !catItems.length) return;
+    var isOpen = invItemGroupClosed[cat] === false;
+    var arrow = isOpen ? '▼' : '▶';
+
+    html += '<div style="margin-bottom:10px">';
+    html += '<div onclick="toggleInvItemGroup(\''+cat+'\')" style="cursor:pointer;padding:9px 14px;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:8px;display:flex;align-items:center;gap:10px;user-select:none">';
+    html += '<span style="font-size:14.5px;color:var(--gold2)">'+arrow+'</span>';
+    html += '<span style="font-size:15.5px;font-weight:600;color:var(--gold)">'+(INV_CAT_ICONS[cat]||'📌')+' '+cat+'</span>';
+    html += '<span style="font-size:13px;color:var(--text3);margin-left:4px">('+catItems.length+' 項)</span>';
+    html += '</div>';
+
+    if (isOpen) {
+      html += '<table style="margin-top:4px"><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody>';
+      catItems.forEach(function(it) {
+        html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
+          'ondragstart="invHandleDragStart(event,'+it.id+')" '+
+          'ondragend="invHandleDragEnd(event)" '+
+          'ondragover="invHandleDragOver(event)" '+
+          'ondrop="invHandleDrop(event,'+it.id+')" '+
+          'style="cursor:grab">';
+        html += '<td style="text-align:center;color:var(--text2);font-size:17px;user-select:none">⠿</td>';
+        var catSel = '<select style="background:var(--bg3);border:1px solid var(--border);color:var(--gold2);padding:3px 6px;border-radius:5px;font-size:13.5px;cursor:pointer;outline:none;font-family:inherit" onchange="updateInvItemField('+it.id+',\'cat\',this.value)">';
+        INV_CATS.forEach(function(c){
+          catSel += '<option value="'+c+'"'+(it.cat===c?' selected':'')+'>'+(INV_CAT_ICONS[c]||'📌')+' '+c+'</option>';
+        });
+        catSel += '</select>';
+        html += '<td>'+catSel+'</td>';
+        html += '<td><input class="in-num" style="width:100%;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
+        // 圖片欄
+        var imgHtml = '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">';
+        if (it.image) {
+          imgHtml += '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onclick="event.preventDefault();showInvImage('+it.id+')">';
+          imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
+          imgHtml += '</label>';
+          imgHtml += ' <button class="btn-sm" style="font-size:12px;padding:2px 6px;background:transparent;border:1px solid rgba(224,85,85,0.3);color:var(--red)" onclick="removeInvImage('+it.id+')">✕</button>';
+        } else {
+          imgHtml += '<span style="font-size:18px">📷</span>';
+          imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
+          imgHtml += '</label>';
+        }
+        html += '<td>'+imgHtml+'</td>';
+        html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
+        html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)" title="這個品項一個單位多少錢，用來算課程成本與毛利"></td>';
+        html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
+        html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
+        html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
+        html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  });
+
   el.innerHTML = html;
-  // 初始化觸控拖移
-  var itemTbody = document.getElementById('inv-item-tbody');
-  if (itemTbody) initTouchDrag(itemTbody);
+  // 初始化觸控拖移：整個清單容器一起掛，拖曳判斷本來就是靠 data-inv-id 查表，
+  // 不吃 DOM 結構，分成多個 tbody 也一樣能動。
+  initTouchDrag(document.getElementById('inv-item-list'));
 }
 
 // ── 建議訂購量 ──────────────────────────────────────────
