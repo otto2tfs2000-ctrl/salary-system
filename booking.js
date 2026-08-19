@@ -2710,7 +2710,24 @@ async function bkManual(editId){
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
       status:"new",source:"manual",ts:new Date().toISOString()};
-    if(picked)rec.memberPhone=picked.phone;
+    /* 現場登記常常是全新客人，不是每次都會從「找會員」點選既有會員。
+       picked 是 null 的時候以前完全不會處理會員檔案——預約存進去了，
+       但 /members/{phone} 從頭到尾沒建過，這個人等於不存在於會員系統，
+       之後不管是客人自己用 LIFF 查點數/預約、還是行政再次搜尋，都會撲空。
+       這裡用手動填的電話去查一次索引：查得到就接到既有會員身上，
+       查不到、且電話格式看起來是合法手機號碼，就順手建一筆新會員。
+       格式看起來不對（例如漏一碼）寧可不建，避免又製造一筆髒資料。 */
+    var newMemberPhone=null;
+    if(picked){
+      rec.memberPhone=picked.phone;
+    }else{
+      var typedKey=bkNorm(g("mPhone"));
+      if(/^09\d{8}$/.test(typedKey)){
+        var existingKey=await bkFindPhone(typedKey);
+        if(existingKey)rec.memberPhone=existingKey;
+        else{ rec.memberPhone=typedKey; newMemberPhone=typedKey }
+      }
+    }
     var wantNotify=document.getElementById("mNotify");
     if(pickedUid)rec.line={userId:pickedUid};
     var btn=this; btn.disabled=true; btn.textContent=eb?"儲存中…":"登記中…";
@@ -2756,6 +2773,23 @@ async function bkManual(editId){
           alert("預約已經登記成功，但姓名補寫回會員檔案失敗（"+nameErr.message+"）。\n"+
                 "這位會員（電話 "+picked.phone+"）之後可能搜不到姓名，"+
                 "請到「會員」分頁手動補上姓名：「"+g("mName")+"」。");
+        }
+      }
+      /* 全新客人（沒有從「找會員」點選）：補建一筆會員檔案，
+         欄位照抄 member.js 的 mbNewMember／mbSaveMember，
+         這樣客人自己用 LIFF 查點數/預約、行政下次搜尋才找得到人。 */
+      if(newMemberPhone&&g("mName")){
+        try{
+          var newRec={phone:newMemberPhone,name:g("mName"),note:"",
+            createdAt:new Date().toISOString(),cache:{points:0,sessions:0,bonus:0}};
+          var mkRes=await bkPatch("/members/"+newMemberPhone+".json",newRec);
+          if(!mkRes.ok)throw new Error("HTTP "+mkRes.status);
+          bkIndex[bkNorm(newMemberPhone)]=newMemberPhone;
+          if(bkMembers)bkMembers.push({phone:newMemberPhone,name:g("mName"),points:0,sessions:0,bonus:0});
+        }catch(mkErr){
+          alert("預約已經登記成功，但幫這位新客人建會員檔案失敗（"+mkErr.message+"）。\n"+
+                "這位客人（電話 "+newMemberPhone+"、姓名「"+g("mName")+"」）之後可能查不到自己的預約，"+
+                "請到「會員」分頁用「＋新增會員」手動補建一筆。");
         }
       }
       bkClose();
