@@ -2742,8 +2742,22 @@ async function bkManual(editId){
             deposit:{method:"other",name:"由小編為你登記",amount:0}
           }))}).catch(function(){});
       }
-      if(picked&&!picked.name&&g("mName"))
-        bkPatch("/members/"+picked.phone+".json",{name:g("mName")}).catch(function(){});
+      /* 這裡失敗不能直接丟給外層 catch——預約本身已經存成功了，
+         不該讓行政以為整筆登記失敗。失敗只代表會員檔案沒補上姓名，
+         要單獨警告，不然又會變成沒人知道的靜默失敗（跟以前 salaryData
+         沒寫進 Firebase 同一種坑）。成功的話順便更新本機快取的
+         picked.name，同一次頁面內馬上再搜這個人就找得到姓名。 */
+      if(picked&&!picked.name&&g("mName")){
+        try{
+          var nameRes=await bkPatch("/members/"+picked.phone+".json",{name:g("mName")});
+          if(!nameRes.ok)throw new Error("HTTP "+nameRes.status);
+          picked.name=g("mName");
+        }catch(nameErr){
+          alert("預約已經登記成功，但姓名補寫回會員檔案失敗（"+nameErr.message+"）。\n"+
+                "這位會員（電話 "+picked.phone+"）之後可能搜不到姓名，"+
+                "請到「會員」分頁手動補上姓名：「"+g("mName")+"」。");
+        }
+      }
       bkClose();
       bkDate=new Date(d.replace(/\//g,"-")+"T00:00:00");
       bkRefresh();
