@@ -662,8 +662,13 @@ function bkDatePick(){
   }
   draw();
 }
+/* 之前有 if(bkMembers)return，一整個分頁只抓一次、之後全部吃快取。
+   問題是：姓名搜尋（bkSearch）只查這份快取，電話查會員（bkMember）卻是
+   每次都直接打伺服器。行政開著同一頁很久，中途才新建檔的會員，
+   用姓名搜尋會查不到（快取裡沒有這個人），改用電話查卻查得到、
+   名字也顯示得出來——兩條路徑一個吃快取一個不吃，才會對不起來。
+   這裡改成每次呼叫都重新抓，讓姓名搜尋跟電話查詢看到的是同一份最新名單。 */
 async function bkLoadMembers(){
-  if(bkMembers)return;
   /* 改成跟 Railway 要，理由同 member.js（2026-08-09） */
   var j=await staffMembers(false)||{};
   bkMembers=Object.keys(j).map(function(p){ var m=j[p]||{}; var c=m.cache||{};
@@ -1099,7 +1104,7 @@ function bkPplText(b){
 /* 順位就是排滿的優先順序：吧台→畫架→教室滿了，才會用到臨時桌那 1 個位子。
    臨時桌只有 1 位、聽起來像應急用的，放在最後一順位比較合理；
    如果實際上你希望的排法不一樣，跟我說一聲就能調整順序。 */
-var SEAT_AREAS=[{k:"吧台",cap:7},{k:"畫架",cap:4},{k:"教室",cap:5},{k:"臨時桌",cap:1}];
+var SEAT_AREAS=[{k:"吧台",cap:7},{k:"畫架",cap:5},{k:"教室",cap:5},{k:"臨時桌",cap:1}];
 function bkSeatItemsName(b){
   return (b.items||[]).map(function(i){ return i.name||"" }).join("、");
 }
