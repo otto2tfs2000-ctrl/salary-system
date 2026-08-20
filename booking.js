@@ -1118,16 +1118,30 @@ function bkSeatPpl(b){
   var x=bkAK(b);
   return (x.a!=null||x.k!=null)?Math.max(1,(+x.a||0)+(+x.k||0)):Math.max(1,+b.people||1);
 }
+/* placements: {bookingId:[{area,n}, ...]}。平常一筆預約只會有一個 {area,n}，
+   n＝整組人數；只有手動拆過位（seatSplit）的預約才會有 2 筆以上，
+   同一張卡片會分別出現在好幾個區塊裡，各自只顯示那個區塊分到的人數。 */
 function bkSeatAssign(g){
   var counts={}; SEAT_AREAS.forEach(function(a){ counts[a.k]=0 });
-  var byId={};
-  /* 先算已經手動指定過的，佔掉名額 */
+  var placements={};
+  /* 先算已經手動指定過的（含拆位），佔掉名額 */
   g.forEach(function(b){
-    if(b.seatArea&&counts[b.seatArea]!=null){ byId[b.id]=b.seatArea; counts[b.seatArea]+=bkSeatPpl(b) }
+    if(b.seatSplit){
+      var arr=[];
+      SEAT_AREAS.forEach(function(a){
+        var n=+b.seatSplit[a.k]||0;
+        if(n>0){ arr.push({area:a.k,n:n}); counts[a.k]+=n }
+      });
+      if(arr.length){ placements[b.id]=arr; return }
+    }
+    if(b.seatArea&&counts[b.seatArea]!=null){
+      var ppl0=bkSeatPpl(b);
+      placements[b.id]=[{area:b.seatArea,n:ppl0}]; counts[b.seatArea]+=ppl0;
+    }
   });
   /* 剩下的才自動建議 */
   g.forEach(function(b){
-    if(byId[b.id])return;
+    if(placements[b.id])return;
     var ppl=bkSeatPpl(b);
     var bands=bkAK(b).bands||"";
     var isYoungPick=bands.indexOf("5-7 歲")>=0&&/選圖/.test(bkSeatItemsName(b));
@@ -1135,20 +1149,82 @@ function bkSeatAssign(g){
     if(isYoungPick){ area="吧台" }
     else{
       /* 整組人要坐在一起，所以挑「這組人塞得下」的區，不是隨便有一張空椅子就塞——
-         不然兩位的預約可能被拆成一位吧台、一位畫架，變成拆散一組人 */
+         不然兩位的預約可能被拆成一位吧台、一位畫架，變成拆散一組人。
+         真的需要拆開坐，用卡片上的✂️手動拆位，不是靠自動建議去拆。 */
       var open=SEAT_AREAS.filter(function(a){ return counts[a.k]+ppl<=a.cap })[0]
         ||SEAT_AREAS.filter(function(a){ return counts[a.k]<a.cap })[0];
       area=open?open.k:"臨時桌";
     }
-    byId[b.id]=area; counts[area]=(counts[area]||0)+ppl;
+    placements[b.id]=[{area:area,n:ppl}]; counts[area]=(counts[area]||0)+ppl;
   });
-  return {byId:byId,counts:counts};
+  return {placements:placements,counts:counts};
 }
 async function bkSeatSet(id,area){
   var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
   b.seatArea=area;
-  try{ await bkPatch("/bookings/"+id+".json",{seatArea:area}) }
+  delete b.seatSplit; /* 用一般搬移（不是拆位）指定整組去某一區，之前拆過的就取消 */
+  try{ await bkPatch("/bookings/"+id+".json",{seatArea:area,seatSplit:null}) }
   catch(e){ alert("座位存檔失敗，重新整理後再拖一次："+e.message) }
+}
+/* 把同一組人拆到不同區。split：{區名:人數}，總和要等於這組總人數。
+   總和不符、或只剩一區有人（等於沒拆），呼叫端要自己擋掉，這裡只負責存檔。 */
+async function bkSeatSplitSave(id,split){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  var areas=Object.keys(split);
+  if(areas.length<2){
+    b.seatArea=areas[0]||b.seatArea; delete b.seatSplit;
+    try{ await bkPatch("/bookings/"+id+".json",{seatArea:b.seatArea,seatSplit:null}) }
+    catch(e){ alert("座位存檔失敗，重新整理後再試："+e.message) }
+    return;
+  }
+  b.seatSplit=split;
+  try{ await bkPatch("/bookings/"+id+".json",{seatSplit:split}) }
+  catch(e){ alert("座位存檔失敗，重新整理後再試："+e.message) }
+}
+async function bkSeatSplitClear(id){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  delete b.seatSplit;
+  try{ await bkPatch("/bookings/"+id+".json",{seatSplit:null}) }
+  catch(e){ alert("座位存檔失敗，重新整理後再試："+e.message) }
+}
+function bkSeatSplitOpen(id,slk2){
+  var b=bkList.filter(function(x){return x.id===id})[0]; if(!b)return;
+  var total=bkSeatPpl(b);
+  var cur=b.seatSplit||null;
+  var rowsHtml=SEAT_AREAS.map(function(a){
+    var v=cur?(+cur[a.k]||0):(b.seatArea===a.k?total:0);
+    return '<div class="bk-split-row"><span>'+esc(a.k)+'</span>'+
+      '<input class="bk-split-n" data-area="'+esc(a.k)+'" type="number" min="0" inputmode="numeric" value="'+v+'"></div>';
+  }).join("");
+  bkSheet('<h3 style="margin:0 0 10px">拆分座位　'+esc(b.customer&&b.customer.name||"")+'</h3>'+
+    '<div class="muted" style="margin-bottom:6px;font-size:13px">這組共 '+total+' 位，把人數分配到不同區，總和要等於 '+total+'</div>'+
+    rowsHtml+
+    '<div id="bkSplitSum" style="margin-top:8px;font-size:13px"></div>'+
+    '<div class="bk-act">'+
+      (cur?'<button class="bk-cancel" id="bkSplitClear">取消拆位</button>':'<button class="bk-cancel" id="bkSplitX">取消</button>')+
+      '<button class="bk-save" id="bkSplitSave">儲存</button></div>');
+  function sumNow(){
+    var s=0; document.querySelectorAll(".bk-split-n").forEach(function(el){ s+=(+el.value||0) });
+    var el=document.getElementById("bkSplitSum");
+    el.textContent="目前總和："+s+" / "+total;
+    el.style.color=(s===total)?"#3d9b6a":"#d64545";
+    return s;
+  }
+  sumNow();
+  document.querySelectorAll(".bk-split-n").forEach(function(el){ el.oninput=sumNow });
+  var xBtn=document.getElementById("bkSplitX"); if(xBtn)xBtn.onclick=bkClose;
+  var clearBtn=document.getElementById("bkSplitClear");
+  if(clearBtn)clearBtn.onclick=async function(){ await bkSeatSplitClear(id); bkClose(); bkSeatRefresh(slk2) };
+  document.getElementById("bkSplitSave").onclick=async function(){
+    var s=sumNow();
+    if(s!==total){ alert("總和要等於 "+total+" 人，目前是 "+s+"，請調整後再存。"); return }
+    var split={};
+    document.querySelectorAll(".bk-split-n").forEach(function(el){
+      var n=+el.value||0; if(n>0)split[el.dataset.area]=n;
+    });
+    await bkSeatSplitSave(id,split);
+    bkClose(); bkSeatRefresh(slk2);
+  };
 }
 /* 原本做拖曳（pointer events＋setPointerCapture），實測在老闆的手機上
    按下去完全拖不動、放開也沒反應——拖曳這件事在不同手機瀏覽器上的
@@ -1162,25 +1238,32 @@ function bkSeatBoardHtml(dsNow,sl,g){
   if(!g.length)return "";
   var r=bkSeatAssign(g);
   var byArea={}; SEAT_AREAS.forEach(function(a){ byArea[a.k]=[] });
-  g.forEach(function(b){ (byArea[r.byId[b.id]]=byArea[r.byId[b.id]]||[]).push(b) });
+  /* 拆過位的預約會有 2 筆以上 placement，同一張卡片因此會分別出現在
+     好幾個區塊裡，各自只顯示那個區塊分到的人數（不是整組人數）。 */
+  g.forEach(function(b){
+    (r.placements[b.id]||[]).forEach(function(p){ byArea[p.area].push({b:b,n:p.n}) });
+  });
   return '<div class="bk-seat" data-slk2="'+esc(dsNow+"|"+sl)+'">'+
     SEAT_AREAS.map(function(a){
       var n=r.counts[a.k]||0, over=n>a.cap;
       return '<div class="bk-seat-col" data-area="'+esc(a.k)+'">'+
         '<div class="bk-seat-h'+(over?" over":"")+'">'+esc(a.k)+'<span>'+n+'/'+a.cap+'</span></div>'+
         '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
-        (byArea[a.k]||[]).map(function(b){
+        (byArea[a.k]||[]).map(function(x){
+          var b=x.b, ppl=x.n;
+          var totalPpl=bkSeatPpl(b);
+          var isSplit=totalPpl!==ppl||b.seatSplit;
           var picked=bkSeatPicked===b.id;
-          var ppl=bkSeatPpl(b);
-          return '<div class="bk-seat-chip'+(picked?" picked":"")+'" data-bid="'+esc(b.id)+'">'+
-            esc(b.customer&&b.customer.name||"—")+(ppl>1?'　<b class="bk-seat-ppl">'+ppl+'位</b>':'')+
+          return '<div class="bk-seat-chip'+(picked?" picked":"")+(isSplit?" split":"")+'" data-bid="'+esc(b.id)+'">'+
+            '<span class="bk-seat-split" data-bid="'+esc(b.id)+'" title="拆分座位">✂️</span>'+
+            esc(b.customer&&b.customer.name||"—")+'　<b class="bk-seat-ppl">'+ppl+(isSplit?'/'+totalPpl:'')+'位</b>'+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
         '</div></div>';
     }).join("")+
     '<div class="bk-seat-note">'+(bkSeatPicked
-      ?'已選取，點要搬去的區塊完成搬移，或點同一張卡片取消。'
-      :'點一下卡片，再點要搬去的區塊，就能換位子。')+'</div></div>';
+      ?'已選取，點要搬去的區塊完成搬移（會取消拆位），或點同一張卡片取消。'
+      :'點一下卡片，再點要搬去的區塊，就能整組換位子；點卡片上的✂️可以把同一組人拆到不同區坐。')+'</div></div>';
 }
 /* 找出這個節點所在的座位表區塊是哪個「日期｜時段」，換位子時只重畫這一小塊，
    不用整頁重新讀資料、重新畫——之前點一下卡片畫面就整個閃一下，
@@ -1209,9 +1292,16 @@ function bkSeatMove(id,area,slk2){
   bkSeatRefresh(slk2);
 }
 function bkSeatBind(root){
+  root.querySelectorAll(".bk-seat-split").forEach(function(icon){
+    icon.onclick=function(e){
+      e.stopPropagation();
+      bkSeatSplitOpen(icon.dataset.bid,bkSeatBoardKey(icon));
+    };
+  });
   root.querySelectorAll(".bk-seat-chip").forEach(function(chip){
     chip.onclick=function(e){
       e.stopPropagation();
+      if(e.target.closest(".bk-seat-split"))return; /* ✂️ 自己的 onclick 已經處理過 */
       var id=chip.dataset.bid, slk2=bkSeatBoardKey(chip);
       if(bkSeatPicked===id){ bkSeatPicked=null; bkSeatRefresh(slk2); return } /* 再點一次＝取消 */
       if(!bkSeatPicked){ bkSeatPicked=id; bkSeatRefresh(slk2); return } /* 第一次點＝選取 */
@@ -2911,6 +3001,12 @@ css.textContent=
   "box-shadow:0 0 0 2px rgba(31,42,68,.15)}"+
 ".bk-seat-col{cursor:default}"+
 ".bk-seat-note{width:100%;font-size:11.5px;color:#A8AEBC;margin-top:2px}"+
+".bk-seat-chip.split{border-style:dashed}"+
+".bk-seat-split{float:right;cursor:pointer;opacity:.55;font-size:12px}"+
+".bk-seat-split:hover{opacity:1}"+
+".bk-split-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #EEF0F4}"+
+".bk-split-row span{font-size:14px;color:#2A2E38}"+
+".bk-split-n{width:70px;padding:7px;border:1px solid #E3E6EC;border-radius:8px;font-size:14px;text-align:center}"+
 ".bk-b.ed{background:#F2F3F6;color:#5F6577}"+
 ".bk-b.ed:hover{background:#E8EAEF}"+
 ".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
