@@ -463,25 +463,38 @@ function computeCurrentStock(itemId, weekKey) {
   return computeStockBreakdown(itemId, weekKey).total;
 }
 
+// 「目前庫存」色塊的配色：紅＝低於安全庫存、橘＝進入注意線、綠＝充足、灰＝從未盤點過。
+// 跟「本週建議訂購量」欄位共用同一條注意線（getInvCautionLine），兩處判斷才會一致。
+function invStockColor(total, safeStock) {
+  if (total === null) return { bg: 'rgba(160,156,150,.1)', border: 'var(--border)', text: 'var(--text2)' };
+  var cautionLine = getInvCautionLine(safeStock);
+  if (total <= safeStock) return { bg: 'rgba(214,69,69,.12)', border: 'rgba(214,69,69,.35)', text: 'var(--red)' };
+  if (total <= cautionLine) return { bg: 'rgba(224,158,77,.15)', border: 'rgba(224,158,77,.4)', text: '#e09e4d' };
+  return { bg: 'rgba(61,155,106,.12)', border: 'rgba(61,155,106,.3)', text: '#2f7a52' };
+}
+
 // 「目前庫存」那一格的 HTML，週盤點表跟自動存檔後的即時刷新共用同一份，
 // 避免像先前那樣兩處各寫一次、即時刷新那份漏掉核銷那行。
-function invCurCellHtml(bd, rec, weekKey) {
-  if (bd.total === null) return '<span class="muted">—</span>';
+// 改成色塊顯示（2026-08-20）：搬到最前面一欄，一眼就能掃過去看哪些偏紅，不用先讀完品名才看到數字。
+function invCurCellHtml(bd, rec, weekKey, safeStock) {
+  var c = invStockColor(bd.total, safeStock);
   var parts = [];
   if (bd.base !== null) parts.push(bd.baseLabel + ' ' + bd.base);
   if (bd.usedTotal > 0) parts.push('－用 ' + bd.usedTotal);
   if (bd.autoUsed > 0) parts.push('<span style="color:var(--gold2)">－核銷 ' + Math.round(bd.autoUsed*10)/10 + '</span>');
   if (bd.restock > 0) parts.push('<span style="color:var(--green)">＋進 ' + bd.restock + '</span>');
-  var html = '<div style="font-size:16px;font-weight:600;color:' + (bd.restock > 0 ? 'var(--green)' : 'var(--text)') + '">' + bd.total + '</div>'
-           + '<div class="muted" style="font-size:12px;line-height:1.45;margin-top:2px">' + parts.join('<br>') + '</div>';
+  var html = '<div style="background:' + c.bg + ';border:1px solid ' + c.border + ';border-radius:8px;padding:7px 10px;min-width:76px">'
+           + '<div style="font-size:20px;font-weight:700;color:' + c.text + '">' + (bd.total === null ? '—' : bd.total) + '</div>';
+  if (parts.length) html += '<div class="muted" style="font-size:11px;line-height:1.4;margin-top:2px">' + parts.join('<br>') + '</div>';
   /* 帳面 vs 實際：盤點數字填了就比對，差額標出來讓你追 */
   if (rec && typeof rec.stock === 'number' && bd.base !== null && bd.baseWeek !== weekKey) {
     var gap = rec.stock - bd.total;
     if (gap !== 0) {
-      html += '<div style="font-size:12px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
+      html += '<div style="font-size:11px;margin-top:3px;color:' + (gap < 0 ? 'var(--red)' : 'var(--green)') + '">'
         + (gap < 0 ? '⚠ 實際少 ' + Math.abs(gap) : '實際多 ' + gap) + '</div>';
     }
   }
+  html += '</div>';
   return html;
 }
 
@@ -1327,7 +1340,7 @@ function renderInvWeekTable() {
 
     if (isOpen) {
       html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
-      html += '<th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">目前庫存</th><th style="width:110px">本週用掉</th><th style="width:130px">庫存盤點登記</th><th>本週建議訂購量</th>';
+      html += '<th style="width:110px">目前庫存</th><th style="width:18%">品項</th><th style="width:44px">圖片</th><th style="width:50px">單位</th><th style="width:70px">安全庫存</th><th style="width:110px">本週用掉</th><th style="width:130px">庫存盤點登記</th><th>本週建議訂購量</th>';
       html += '</tr></thead><tbody>';
 
       grpItems.forEach(function(it) {
@@ -1335,7 +1348,7 @@ function renderInvWeekTable() {
 
         // 目前庫存：基準盤點 －用掉 ＋進料。進貨一登記，這格立刻反映。
         var bd = computeStockBreakdown(it.id, weekKey);
-        var curCell = invCurCellHtml(bd, rec, weekKey);
+        var curCell = invCurCellHtml(bd, rec, weekKey, it.safeStock);
 
         // 本週盤點的填寫時間——填了才顯示，讓人知道這數字是什麼時候數的
         var stockAtTxt = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
@@ -1349,11 +1362,11 @@ function renderInvWeekTable() {
 
         html += '<tr>';
         var imgInline = it.image ? '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" onclick="showInvImage('+it.id+')">' : '<span class="muted">—</span>';
+        html += '<td id="inv-cur-'+it.id+'">'+curCell+'</td>';
         html += '<td>'+it.name+'</td>';
         html += '<td style="text-align:center">'+imgInline+'</td>';
         html += '<td class="muted">'+it.unit+'</td>';
         html += '<td class="muted">'+it.safeStock+'</td>';
-        html += '<td id="inv-cur-'+it.id+'">'+curCell+'</td>';
         html += '<td id="inv-auto-'+it.id+'"><div style="font-size:16px;font-weight:600">'+(Math.round(autoQty*10)/10)+'</div>'
               + '<div class="muted" style="font-size:11px;margin-top:2px">銷課／扣課／加購自動核銷</div></td>';
         html += '<td><input class="in-num" type="number" min="0" id="inv-stock-'+it.id+'" value="'+(typeof rec.stock==='number'?rec.stock:'')+'" onwheel="this.blur()" onchange="autoSaveInvItem('+it.id+')">'
@@ -1447,7 +1460,7 @@ function autoSaveInvItem(itemId) {
     var curEl = document.getElementById('inv-cur-'+itemId);
     if (curEl) {
       var b = computeStockBreakdown(itemId, weekKey);
-      curEl.innerHTML = invCurCellHtml(b, rec, weekKey);
+      curEl.innerHTML = invCurCellHtml(b, rec, weekKey, it.safeStock);
     }
   }
   // 提示已存
