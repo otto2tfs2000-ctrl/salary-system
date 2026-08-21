@@ -158,11 +158,24 @@ const MODE_NAME  = { full:'完整計算', over:'超過門檻', half:'個人÷2',
 const ROLE_NAME  = { teacher:'老師', admin:'行政', sales:'業務' };
 
 // ── Sync ──────────────────────────────────────────────
+// otto2_v7_pending：本機是否有「編輯過、但雲端還沒確認存到」的資料。
+// 每次呼叫 save() 就立刻標成 '1'（不用等 800ms 防抖跑完），doSave() 真的存
+// 成功才清成 '0'。loadData() 開頁時會先看這個旗標，決定要不要相信剛讀回來的
+// 雲端資料——不然「雲端讀成功、但內容其實是存檔失敗前的舊版」這種情況，
+// 會把本機還沒同步上去的最新編輯整批蓋掉，卻完全不會跳錯誤，非常難查。
 function setSync(status, text) {
   document.getElementById('sync-dot').className = 'dot ' + status;
   const el = document.getElementById('sync-text');
   el.textContent = text;
   el.style.color = status==='ok'?'var(--green)':status==='saving'?'var(--gold)':status==='err'?'var(--red)':'var(--text3)';
+  const banner = document.getElementById('sync-warn-banner');
+  if (!banner) return;
+  if (status==='err') {
+    banner.style.display = 'block';
+    banner.textContent = '⚠ ' + text + '——這台裝置的變更目前只存在本機，還沒確認同步到雲端，請勿關閉分頁，稍後會自動重試。';
+  } else if (status==='ok') {
+    banner.style.display = 'none';
+  }
 }
 
 async function loadData() {
@@ -171,15 +184,25 @@ async function loadData() {
     setTimeout(loadData, 200);
     return;
   }
+  const pending = localStorage.getItem('otto2_v7_pending') === '1';
   try {
     setSync('saving','連線中...');
     const snap = await fbDb2.ref('salaryData').once('value');
     const data = snap.val();
-    if (data && typeof data === 'object') {
-      S = Object.assign({ teachers:[], daily:{}, salaryBase:{}, cmBalance:{} }, data);
+    if (pending) {
+      // 上次這台裝置存檔沒有確認成功過，雲端這份可能是存檔失敗前的舊版本。
+      // 寧可先用本機備份繼續、馬上重新嘗試存一次，也不要無聲無息蓋掉還沒上雲端的編輯。
+      console.warn('[Otto2] 偵測到上次可能有未同步的變更，改用本機備份並重新嘗試同步');
+      try { const d = localStorage.getItem('otto2_v7'); if (d) S = JSON.parse(d); } catch(e2) {}
+      setSync('err','偵測到未同步的變更，改用本機備份');
+      saveNow();
+    } else {
+      if (data && typeof data === 'object') {
+        S = Object.assign({ teachers:[], daily:{}, salaryBase:{}, cmBalance:{} }, data);
+      }
+      localStorage.setItem('otto2_v7', JSON.stringify(S));
+      setSync('ok','已同步');
     }
-    localStorage.setItem('otto2_v7', JSON.stringify(S));
-    setSync('ok','已同步');
     injectMayData();
     migrateFlagshipConsumablesToFloor4();
     applyCanvasTwoWeekForecast();
@@ -314,20 +337,28 @@ function applyCanvasTwoWeekForecast() {
 
 async function doSave() {
   setSync('saving','儲存中...');
+  // 進站的 saveNow() 有可能跳過 save()、直接叫這支，所以旗標也在這裡補標一次，
+  // 不能只靠 save() 標——不然直接呼叫 saveNow() 那幾個地方會漏標。
+  localStorage.setItem('otto2_v7_pending','1');
   localStorage.setItem('otto2_v7', JSON.stringify(S));
   if (!fbDb2) { setSync('err','Firebase 未初始化'); return false; }
   try {
     await fbDb2.ref('salaryData').set(S);
+    localStorage.setItem('otto2_v7_pending','0'); // 這一輪的編輯確認存到雲端了，才清旗標
     setSync('ok','已儲存');
     return true;
   } catch(e) {
     console.error('doSave error:', e);
-    setSync('err','儲存失敗（本機備份）');
+    setSync('err','儲存失敗（本機備份）'); // 旗標留著 '1'，下次開頁 loadData() 才不會被舊雲端資料蓋過去
     return false;
   }
 }
 
 function save() {
+  // 立刻標「有未確認同步的變更」、立刻備份到本機，不等 800ms 防抖跑完——
+  // 不然使用者編輯完馬上關分頁，這段空窗期發生的事，本機備份跟旗標都會漏記。
+  localStorage.setItem('otto2_v7_pending','1');
+  localStorage.setItem('otto2_v7', JSON.stringify(S));
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(doSave, 800);
 }

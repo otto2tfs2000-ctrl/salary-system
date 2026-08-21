@@ -306,15 +306,20 @@ async function bkLoadSched(force){
     });
   }catch(e){}
   /* 2) Firebase /schedule 蓋過去（預約後台按 ＋／− 存的就是這裡）
-        值可能是數字（舊）或 {t,ev}（含晚上），兩種都原封不動收下，
-        要用的時候再交給 bkSchedVal 正規化。 */
+        值可能是數字（舊）或 {t,tPM,ev}（上午/下午分開＋含晚上），三種都原封不動收下，
+        要用的時候再交給 bkSchedVal 正規化。
+        2026-08-21 修正：這裡曾經漏轉 tPM，物件格式重建時只留了 t/ev，
+        害每次重新整理，下午老師數都會被讀回跟上午一樣，等於改了也沒用——
+        Firebase 裡其實一直是對的，只是這裡讀出來的時候被砍掉了。 */
   try{
     var j=await (await fetch(bkf("/schedule.json"))).json();
     if(j)for(var k in j){
       var v2=j[k];
       if(v2===null||v2===undefined||v2==="")continue;
       m[String(k).replace(/-/g,"/")]=
-        (typeof v2==="object")?{t:Math.max(0,+v2.t||0),ev:Math.max(0,+v2.ev||0)}
+        (typeof v2==="object")?{t:Math.max(0,+v2.t||0),
+          tPM:(v2.tPM==null?Math.max(0,+v2.t||0):Math.max(0,+v2.tPM||0)),
+          ev:Math.max(0,+v2.ev||0)}
                               :Math.max(0,+v2||0);
     }
   }catch(e){}
