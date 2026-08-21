@@ -1081,7 +1081,7 @@ window.bkRender=bkRender;
 /* 未來備料預警的精簡版，放在今日排課最上面每次開頁都看得到（不用特地跑去庫存盤點分頁）。
    實際的加總/比對邏輯在 inventory.js 的 computeUpcomingShortages，這裡只負責顯示摘要，
    不重複算一次——不然公式改了要記得兩邊一起改，之前容量公式就在三個檔案重複實作吃過虧。 */
-var BK_SHORTAGE_DAYS=4;
+var BK_SHORTAGE_DAYS=7;
 async function bkRenderShortageBanner(){
   var box=document.getElementById("bkShortageBanner"); if(!box)return;
   if(typeof computeUpcomingShortages!=="function")return; /* inventory.js 還沒載入/沒有材料配方功能 */

@@ -2146,7 +2146,7 @@ function renderInvAlerts() {
 // 的預約」會需要多少材料，跟目前庫存比對，不會寫 autoUsed、不會 save()。
 // 配方的品項 id 是照旗艦店材料表建的（recipe.js 寫死 RC_STORE='flagship'），
 // 所以這裡固定抓旗艦店庫存，不看目前 UI 選的是哪家店，避免國圖店 id 對不起來。
-var SHORTAGE_FC_DAYS = 4;
+var SHORTAGE_FC_DAYS = 7;
 var SHORTAGE_FC_BK_URL = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app";
 async function computeUpcomingShortages(days) {
   days = days || SHORTAGE_FC_DAYS;
