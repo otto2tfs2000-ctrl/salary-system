@@ -2140,6 +2140,120 @@ function renderInvAlerts() {
   el.innerHTML = html;
 }
 
+// ── 未來材料短缺預警 ──────────────────────────────────────
+// 跟核銷時扣庫存（booking.js 的 consumeInvForBooking）共用同一份材料配方
+// S.recipes，差別是這裡完全唯讀：只加總「未來 N 天已經約進來、還沒取消
+// 的預約」會需要多少材料，跟目前庫存比對，不會寫 autoUsed、不會 save()。
+// 配方的品項 id 是照旗艦店材料表建的（recipe.js 寫死 RC_STORE='flagship'），
+// 所以這裡固定抓旗艦店庫存，不看目前 UI 選的是哪家店，避免國圖店 id 對不起來。
+var SHORTAGE_FC_DAYS = 4;
+var SHORTAGE_FC_BK_URL = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app";
+async function computeUpcomingShortages(days) {
+  days = days || SHORTAGE_FC_DAYS;
+  var fmt = function(d){ var p=function(n){return String(n).padStart(2,"0")};
+    return d.getFullYear()+"/"+p(d.getMonth()+1)+"/"+p(d.getDate()) };
+  var start = new Date(); start.setHours(0,0,0,0);
+  var dates = [], dateSet = {};
+  for (var i=0;i<days;i++){ var d=new Date(start); d.setDate(d.getDate()+i);
+    var f=fmt(d); dates.push(f); dateSet[f]=true; }
+
+  var all;
+  try {
+    var res = await fetch(SHORTAGE_FC_BK_URL+"/bookings.json");
+    all = await res.json();
+  } catch(e){ return { error: e.message||"讀取預約失敗", dates:dates, shortages:[], bookingCount:0, missCourses:[] }; }
+  all = all || {};
+
+  var bookings = Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o })
+    .filter(function(b){ return dateSet[b.date] && b.status!=="cancelled" && b.status!=="expired"; });
+
+  var recipes = S.recipes || {};
+  var pool = {}; // materialId -> {qty, bookingIds:{}}
+  var missCourses = {};
+  bookings.forEach(function(b){
+    (b.items||[]).forEach(function(it){
+      if (!it || !it.name) return;
+      var name=String(it.name).trim(), spec=String(it.spec||"").trim();
+      var ck = name+(spec?"|"+spec:"");
+      var r = recipes[ck]||recipes[name];
+      if (!r || !r.items || !r.items.length){ missCourses[ck]=true; return; }
+      var n = +it.qty||1, seenGrp = {};
+      r.items.forEach(function(row){
+        if (row.grp){ if (seenGrp[row.grp]) return; seenGrp[row.grp]=true; }
+        if (!pool[row.id]) pool[row.id] = { qty:0, bookingIds:{} };
+        pool[row.id].qty += (+row.qty||0)*n;
+        pool[row.id].bookingIds[b.id]=true;
+      });
+    });
+  });
+
+  var st = getInvStoreByName("flagship");
+  var byId = {}; (st.items||[]).forEach(function(m){ byId[m.id]=m });
+  var round1 = function(n){ return Math.round(n*10)/10 };
+  var shortages = [];
+  Object.keys(pool).forEach(function(id){
+    var m = byId[id]; if (!m) return;
+    var need = pool[id].qty;
+    var cur = computeCurrentStock(id, invCurWeek);
+    if (cur==null) return; /* 從沒盤點過，沒有基準可以比，不列入 */
+    var short = need-cur;
+    if (short>0) shortages.push({ id:id, name:m.name, unit:m.unit, cat:m.cat,
+      need:round1(need), current:round1(cur), short:round1(short),
+      bookingCount:Object.keys(pool[id].bookingIds).length });
+  });
+  shortages.sort(function(a,b){ return b.short-a.short });
+  return { dates:dates, bookingCount:bookings.length, shortages:shortages, missCourses:Object.keys(missCourses) };
+}
+window.computeUpcomingShortages = computeUpcomingShortages;
+
+async function renderInvShortageForecast() {
+  var el = document.getElementById("inv-shortage-forecast");
+  if (!el) return;
+  el.innerHTML = '<div class="card"><div class="card-title">📦 未來備料預警</div>'+
+    '<div style="font-size:13.5px;color:var(--text3)">讀取未來預約中…</div></div>';
+  var r = await computeUpcomingShortages(SHORTAGE_FC_DAYS);
+  el = document.getElementById("inv-shortage-forecast"); if (!el) return; /* 等待期間可能切頁了 */
+  var rangeTxt = r.dates && r.dates.length ? r.dates[0].slice(5)+"～"+r.dates[r.dates.length-1].slice(5) : "";
+  if (r.error){
+    el.innerHTML = '<div class="card" style="border-color:rgba(224,85,85,0.3)">'+
+      '<div class="card-title" style="color:var(--red)">📦 未來備料預警</div>'+
+      '<div style="font-size:13.5px;color:var(--text2)">讀取未來 '+SHORTAGE_FC_DAYS+' 天預約失敗：'+r.error+'</div></div>';
+    return;
+  }
+  if (!r.shortages.length){
+    el.innerHTML = '<div class="card"><div class="card-title">📦 未來備料預警（'+rangeTxt+'，共 '+r.bookingCount+' 組預約）</div>'+
+      '<div style="font-size:13.5px;color:var(--text3)">目前庫存足夠應付未來 '+SHORTAGE_FC_DAYS+' 天已經約進來的課程，沒有材料短缺。</div></div>';
+    return;
+  }
+  function byCat(a,b){
+    var ca=INV_CATS.indexOf(a.cat); if (ca===-1) ca=999;
+    var cb=INV_CATS.indexOf(b.cat); if (cb===-1) cb=999;
+    return ca-cb;
+  }
+  r.shortages.sort(byCat);
+  var html = '<div class="card" style="border-color:rgba(224,85,85,0.3)">';
+  html += '<div class="card-title" style="color:var(--red)">📦 未來備料預警（'+rangeTxt+'，共 '+r.bookingCount+' 組預約）</div>';
+  html += '<div style="font-size:14.5px;color:var(--text2);margin-bottom:8px">照未來 '+SHORTAGE_FC_DAYS+' 天已約進來的課程加總，這些材料不夠用：</div>';
+  var lastCat = null;
+  r.shortages.forEach(function(x){
+    if (x.cat!==lastCat){
+      if (lastCat!==null) html += '</div>';
+      lastCat = x.cat;
+      html += '<div style="margin:10px 0 6px;font-size:13.5px;color:var(--text3)">'+(INV_CAT_ICONS[lastCat]||'📌')+' '+(lastCat||'未分類')+'</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    }
+    html += '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">'+
+      x.name+'：需要 '+x.need+' '+x.unit+'，現有 '+x.current+' '+x.unit+' → 還差 '+x.short+' '+x.unit+
+      '（'+x.bookingCount+' 組預約用到）</span>';
+  });
+  if (lastCat!==null) html += '</div>';
+  if (r.missCourses.length){
+    html += '<div style="margin-top:12px;font-size:12.5px;color:var(--text3)">這些課程/規格還沒設定材料配方，沒有算進去：'+r.missCourses.join('、')+'</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
 function renderInvStats() {
   var items = getInvItems();
   var weekKey = invCurWeek;
@@ -2223,6 +2337,7 @@ function renderInvStats() {
 function renderInventory() {
   renderInvSummaryBar();
   renderInvAlerts();
+  renderInvShortageForecast();
   renderInvRestockItemSelect();
   renderInvWeekTable();
   renderInvStats();

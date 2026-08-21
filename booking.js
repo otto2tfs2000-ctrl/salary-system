@@ -976,6 +976,7 @@ async function bkRender(){
      '<button class="bk-nav bk-tdy" id="bkToday">今天</button>'+
      '<button class="bk-nav bk-tdy" id="bkReload">重新讀取</button>'+
    '</div>'+
+   '<div id="bkShortageBanner"></div>'+
    '<div class="bk-stat">'+
      '<div class="bk-tcard"><b>'+
        '<button class="bk-tbtn" id="bkTMinusAM">−</button>'+
@@ -1073,8 +1074,27 @@ async function bkRender(){
     var b=bkList.filter(function(x){return x.id===el.dataset.bid})[0]; if(!b)return;
     bkShowBalance(bkResolvedPhone(b),(b.customer&&b.customer.name)||"");
   } });
+  bkRenderShortageBanner();
 }
 window.bkRender=bkRender;
+
+/* 未來備料預警的精簡版，放在今日排課最上面每次開頁都看得到（不用特地跑去庫存盤點分頁）。
+   實際的加總/比對邏輯在 inventory.js 的 computeUpcomingShortages，這裡只負責顯示摘要，
+   不重複算一次——不然公式改了要記得兩邊一起改，之前容量公式就在三個檔案重複實作吃過虧。 */
+var BK_SHORTAGE_DAYS=4;
+async function bkRenderShortageBanner(){
+  var box=document.getElementById("bkShortageBanner"); if(!box)return;
+  if(typeof computeUpcomingShortages!=="function")return; /* inventory.js 還沒載入/沒有材料配方功能 */
+  var r=await computeUpcomingShortages(BK_SHORTAGE_DAYS);
+  box=document.getElementById("bkShortageBanner"); if(!box)return; /* 等待期間可能已經切頁或換日期 */
+  if(!r||r.error||!r.shortages||!r.shortages.length){ box.innerHTML=""; return; }
+  var names=r.shortages.slice(0,4).map(function(x){return x.name+"差"+x.short+x.unit}).join("、");
+  var more=r.shortages.length>4?" 等 "+r.shortages.length+" 項":"";
+  box.innerHTML='<div class="bk-over" style="cursor:pointer" id="bkShortageGo">'+
+    '📦 未來 '+BK_SHORTAGE_DAYS+' 天備料可能不夠：'+names+more+'，點這裡看詳細 →</div>';
+  var go=document.getElementById("bkShortageGo");
+  if(go)go.onclick=function(){ if(typeof switchTab==="function")switchTab("inventory") };
+}
 
 /* 人數組成：2 位（大人 1・小孩 1）；沒填過就只顯示總數 */
 function bkAK(b){
@@ -2049,14 +2069,15 @@ async function bkCheckout(id){
              '<br><span class="bk-cap">補法二選一：方案設定建一個堂數相同的方案，'+
              '或在試算表「舊方案單價」分頁填一列。（票券單價來源：'+esc(bkTktPlanSrc)+'）</span></div>';
         } }
-      /* 用堂數扣的，紅利要用方案攤下來的單堂價算，不是當天的牌價。
-         牌價 1,300 跟單堂 1,000 除以 500 之後差一點，是實打實的誤差。 */
-      var bBase=(course.way==="sessions")
-        ?(su?su.unit*useSe:(courseList||0)):course.amt;
-      bonus=bonusOf(bBase);
-      h+="紅利回饋 <b>+"+bonus+"</b> 點（"+
-         ((course.way==="sessions"&&su)?"認列 ":"課程 ")+
-         bBase.toLocaleString()+" ÷ 500，加價不計）";
+      /* 堂數扣抵是用會員自己的堂數卡上課，不是這次花新的錢，不算紅利。
+         紅利只在真的收到錢（現金／點數／LINE Pay 等）時才給。 */
+      if(course.way==="sessions"){
+        bonus=0;
+        h+="堂數扣抵不累積紅利";
+      }else{
+        bonus=bonusOf(course.amt);
+        h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+course.amt.toLocaleString()+" ÷ 500，加價不計）";
+      }
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
   }
@@ -2185,8 +2206,9 @@ async function bkCheckout(id){
       var courseRev=useSe
         ?(sUnit?sUnit.unit*useSe:(courseList||course.amt))
         :course.amt;
-      /* 紅利基準跟畫面上顯示的那個要一致，不然客人看到的跟實際入帳的會不一樣 */
-      var bonus=bonusOf(useSe?(sUnit?sUnit.unit*useSe:(courseList||0)):course.amt);
+      /* 堂數扣抵不算紅利（用堂數卡上課，沒有新收錢），跟畫面預覽算法要一致，
+         不然客人看到的跟實際入帳的會不一樣 */
+      var bonus=useSe?0:bonusOf(course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
