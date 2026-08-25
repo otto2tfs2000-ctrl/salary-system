@@ -2177,6 +2177,27 @@ async function bkCheckout(id){
       if(!addons[i].amt){ alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"); return }
       if(ap&&ap.member&&!payer){ alert("加價項目不能用點數，這筆沒有綁會員"); return }
     }
+    /* 創作繪畫／選圖繪畫這類「會員價」故意不建課程用料表（畫布尺寸要看會員當場選，
+       靠這裡的「加價項目」手動選才會扣庫存），核銷時完全沒選畫布很容易忘記，
+       庫存就會悄悄對不起來。這裡只提醒、不強制，取消也還是可以繼續核銷。 */
+    if(typeof invNeedsCanvasReminder==="function"){
+      var needCanvasFor=[];
+      ckItemsOut().forEach(function(it){
+        if(!invNeedsCanvasReminder(it.name,it.spec))return;
+        var label=it.name+(it.spec?"（"+it.spec+"）":"");
+        if(needCanvasFor.indexOf(label)<0)needCanvasFor.push(label);
+      });
+      if(needCanvasFor.length){
+        var hasCanvasAddon=addons.some(function(a){
+          if(!a.materialId)return false;
+          var m=typeof bkMatById==="function"?bkMatById(a.materialId):null;
+          return m&&m.cat==="畫布";
+        });
+        if(!hasCanvasAddon&&!confirm(
+          "「"+needCanvasFor.join("、")+"」這類課程通常要在「加價項目」選畫布，但目前沒有選。\n\n"+
+          "沒選的話這次不會扣到畫布庫存，盤點會對不起來。確定沒用到畫布、要直接核銷嗎？"))return;
+      }
+    }
     var courseDue=Math.max(0,course.amt-depAmt);
     var usePt=(course.way==="points"?courseDue:0)+
       addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);

@@ -298,6 +298,30 @@ function invRecipeGroups(items) {
   return out.filter(function(g){ return g.opts.length > 1 });
 }
 
+// 有些課程（例如創作繪畫／選圖繪畫的「會員價」「單次原價」）故意不建課程用料表，
+// 因為畫布尺寸要看會員當場選什麼，設計上是靠核銷時「加價項目」手動選材料才扣庫存，
+// 不是靠固定配方（配方會固定扣某個尺寸，跟會員實際用的尺寸對不上）。
+// 這支只負責判斷「這個規格算不算需要提醒」，不負責扣庫存、不強制一定要選。
+function recipeHasCanvasItem(r) {
+  if (!r || !r.items) return false;
+  return r.items.some(function(x) {
+    var m = getInvItems().find(function(y){ return String(y.id) === String(x.id) });
+    return m && m.cat === '畫布';
+  });
+}
+function invNeedsCanvasReminder(name, spec) {
+  if (!S.recipes || !name) return false;
+  var ck = name + (spec ? '|' + spec : '');
+  // 這個規格自己就配了畫布材料，代表核銷時會自動扣，不用提醒
+  if (recipeHasCanvasItem(S.recipes[ck]) || recipeHasCanvasItem(S.recipes[name])) return false;
+  // 同一門課的「其他」規格如果配了畫布材料，代表這門課本來就跟畫布有關，
+  // 只是目前這個規格沒有固定配方——這種才需要提醒行政記得手動選
+  return Object.keys(S.recipes).some(function(k) {
+    if (k !== name && k.indexOf(name + '|') !== 0) return false;
+    return recipeHasCanvasItem(S.recipes[k]);
+  });
+}
+
 // picks: { 群組key: 選中的 itemId }。沒給就用群組裡的第一個。
 // skipCats: 這筆訂單的加購裡已經另外扣過的分類（例如客人升級大尺寸畫布，加購已經扣了那張大的），
 //   課程用料表裡屬於同一分類的項目就不要重複扣——原本規格內附的那張畫布客人根本沒用到。
