@@ -206,6 +206,7 @@ async function loadData() {
     injectMayData();
     migrateFlagshipConsumablesToFloor4();
     applyCanvasTwoWeekForecast();
+    migratePlanSalesDateKeys();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -333,6 +334,30 @@ function applyCanvasTwoWeekForecast() {
 
   S.inventory.__canvas_forecast_ver = INV_CANVAS_FORECAST_VER;
   if (changed) save();
+}
+
+// ── 一次性修復：舊版 mbToday() 曾用 "/" 存 planSales 的日期 key ────────────
+// Firebase key 不能包含 "/"，帶了這種 key 的裝置每次存檔都會失敗
+// （紅字「儲存失敗（本機備份）」），這裡把壞掉的 key 轉成 "-" 就能修好。
+var PLANSALES_KEY_MIGRATE_VER = 'plansales_slash_to_dash_v1';
+function migratePlanSalesDateKeys() {
+  if (S.__plansalesKeyMigrateVer === PLANSALES_KEY_MIGRATE_VER) return;
+  var fixed = 0;
+  if (S.planSales) {
+    Object.keys(S.planSales).forEach(function(key){
+      if (key.indexOf('/') === -1) return;
+      var newKey = key.replace(/\//g, '-');
+      var existing = S.planSales[newKey] || [];
+      S.planSales[newKey] = existing.concat(S.planSales[key]);
+      delete S.planSales[key];
+      fixed++;
+    });
+  }
+  S.__plansalesKeyMigrateVer = PLANSALES_KEY_MIGRATE_VER;
+  if (fixed > 0) {
+    console.log('[Otto2] planSales 日期 key 格式修正（"/"→"-"），共 ' + fixed + ' 個日期');
+  }
+  save();
 }
 
 async function doSave() {

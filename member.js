@@ -22,8 +22,10 @@ function mbNow(){ return new Date().toISOString() }
 /* 賣方案一按就是幾萬塊入帳，沒權限的人不顯示這顆 */
 function mbCan(k){ return (typeof can === "function") ? can(k) : true }
 function mbToday(){
+  // 這個值會直接當 S.planSales 的物件 key 存進 Firebase，Firebase key 不能有 "/"，
+  // 一定要用 "-"（之前用過 "/" 導致特定裝置存檔一路失敗，見 salaryData 儲存失敗排查記錄）
   var d = new Date();
-  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
 /* ── 方案定義（存在主系統，跟薪資同一份資料）────────────── */
