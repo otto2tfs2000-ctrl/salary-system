@@ -395,6 +395,11 @@ function bkSortSlots(list){
 }
 /* 某個時段的容量。晚上走晚上的老師數，10-12 走上午，14-16／16-18 走下午。
    slot 可能是手動登記那種加開時段（例如 09:30-11:30），先用 bkBase 對回表定時段。 */
+function bkRawCapOfSlot(d,slot){
+  if(slot===EVE_SLOT)return bkRawEveCap(d);
+  var base=bkBase(slot)||slot;
+  return base==="10:00-12:00"?bkRawCapOf(d):bkRawCapOfPM(d);
+}
 function bkCapOfSlot(d,slot){
   if(slot===EVE_SLOT)return bkEveCap(d);
   var base=bkBase(slot)||slot;
@@ -494,8 +499,13 @@ function bkCapOpen(dsNow,sl){
   var rawCap=kind==="capEve"?bkRawEveCap(dsNow):(kind==="capAM"?bkRawCapOf(dsNow):bkRawCapOfPM(dsNow));
   bkSheet('<h3 style="margin:0 0 4px">'+esc(sl)+'　手動限人數</h3>'+
     '<div class="bk-hint" style="padding:0 2px 14px">老師排班算出來可收 '+rawCap+' 位。'+
-    (curCap!=null?'目前手動限到 <b>'+curCap+'</b> 位。':'目前沒有額外限制。')+
-    '<br>設定後這個時段的客人線上預約名額會馬上跟著變少，老師排班不受影響，'+
+    (curCap!=null
+      ?(curCap<rawCap
+        ?'目前手動限到 <b>'+curCap+'</b> 位，比排班上限少，正在生效中。'
+        :'目前存的數字是 '+curCap+'，跟排班上限一樣多，等於沒有實際限制。')
+      :'目前沒有額外限制。')+
+    '<br>要打的數字要比 '+rawCap+' 小才會真的擋住新預約，例如已經約了幾位就先打幾位。'+
+    '設定後這個時段的客人線上預約名額會馬上跟著變少，老師排班不受影響，'+
     '純粹是「這個時段先不要再排更多人進來」。</div>'+
     '<div class="bk-f"><label>手動上限（留空＝不限制，照老師排班的 '+rawCap+' 位）</label>'+
       '<input id="bkCapVal" inputmode="numeric" placeholder="例如 3" value="'+(curCap!=null?curCap:"")+'"></div>'+
@@ -1124,7 +1134,9 @@ async function bkRender(){
       var slKey=dsNow+"|"+sl;
       var open=!!bkSlotOpen[slKey];
       var svNow=sl!=="其他"?bkSchedVal(dsNow):null;
-      var capIsSet=svNow&&svNow[bkCapKind(sl)]!=null;
+      /* 存過手動上限不代表真的有限制到——設的數字如果跟老師排班算出來的
+         上限一樣大，其實完全沒有生效，不該顯示🔒讓人誤會「已經鎖住了」 */
+      var capIsSet=sl!=="其他"&&svNow&&svNow[bkCapKind(sl)]!=null&&svNow[bkCapKind(sl)]<bkRawCapOfSlot(dsNow,sl);
       return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
         '<span style="display:inline-block;width:14px">'+(open?"▼":"▶")+'</span>'+sl+
         (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
