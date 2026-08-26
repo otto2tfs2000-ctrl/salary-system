@@ -334,8 +334,11 @@ function bkSchedVal(d){
   if(v==null)return null;
   if(typeof v==="object")return {t:Math.max(0,+v.t||0),
     tPM:(v.tPM==null?Math.max(0,+v.t||0):Math.max(0,+v.tPM||0)),
-    ev:Math.max(0,+v.ev||0)};
-  return {t:Math.max(0,+v||0),tPM:Math.max(0,+v||0),ev:0};
+    ev:Math.max(0,+v.ev||0),
+    capAM:v.capAM!=null?Math.max(0,+v.capAM||0):null,
+    capPM:v.capPM!=null?Math.max(0,+v.capPM||0):null,
+    capEve:v.capEve!=null?Math.max(0,+v.capEve||0):null};
+  return {t:Math.max(0,+v||0),tPM:Math.max(0,+v||0),ev:0,capAM:null,capPM:null,capEve:null};
 }
 /* 沒特別指定的日子，看星期幾 */
 function bkBaseOn(d){
@@ -353,9 +356,17 @@ function bkTeachersOnPM(d){ /* 下午（14:00-16:00、16:00-18:00） */
 }
 /* 晚上有幾位老師。沒排就是 0，代表那天晚上不開。 */
 function bkEveOn(d){ var v=bkSchedVal(d); return v?v.ev:0 }
-function bkCapOf(d){ return Math.min(bkTeachersOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
-function bkCapOfPM(d){ return Math.min(bkTeachersOnPM(d)*CAP_PER_TEACHER,SEAT_CAP) }
-function bkEveCap(d){ return Math.min(bkEveOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+/* 老師排班算出來的「理論上限」，不受手動降上限影響——設定手動上限的畫面
+   要顯示這個當參考基準，不然大熊看到的會是降過的數字，搞不清楚老師排班本身收幾位 */
+function bkRawCapOf(d){ return Math.min(bkTeachersOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+function bkRawCapOfPM(d){ return Math.min(bkTeachersOnPM(d)*CAP_PER_TEACHER,SEAT_CAP) }
+function bkRawEveCap(d){ return Math.min(bkEveOn(d)*CAP_PER_TEACHER,SEAT_CAP) }
+/* 實際生效的上限＝老師排班上限，跟大熊手動設的上限，取比較小的那個。
+   手動上限是用來處理「位子還夠，但這時段已經有比較需要顧的學員，先別再排更多人」
+   的情況，跟老師排班是兩件獨立的事——不會互相蓋掉對方。 */
+function bkCapOf(d){ var v=bkSchedVal(d),b=bkRawCapOf(d); return (v&&v.capAM!=null)?Math.min(b,v.capAM):b }
+function bkCapOfPM(d){ var v=bkSchedVal(d),b=bkRawCapOfPM(d); return (v&&v.capPM!=null)?Math.min(b,v.capPM):b }
+function bkEveCap(d){ var v=bkSchedVal(d),b=bkRawEveCap(d); return (v&&v.capEve!=null)?Math.min(b,v.capEve):b }
 /* 這一天實際存在的時段。晚上有排才會多一格，白天三格維持原本一律顯示
    （容量是 0 就顯示「休」，不是把格子整個藏起來）。 */
 function bkSlotsOn(d){ return bkEveOn(d)>0?SLOTS.concat([EVE_SLOT]):SLOTS.slice() }
@@ -392,24 +403,32 @@ function bkCapOfSlot(d,slot){
 /* 三個數字（上午／下午／晚上）packing成要存進 Firebase 的格式：
    上午下午一樣、晚上沒開，就存成單一數字（維持舊格式，資料乾淨）；
    其他情況才用物件存三個欄位分開。 */
-function bkSchedPack(tAM,tPM,ev){
+function bkSchedPack(tAM,tPM,ev,capAM,capPM,capEve){
   tAM=Math.max(0,+tAM||0); tPM=Math.max(0,+tPM||0); ev=Math.max(0,+ev||0);
-  return (tAM===tPM&&ev===0)?tAM:{t:tAM,tPM:tPM,ev:ev};
+  var hasCap=capAM!=null||capPM!=null||capEve!=null;
+  if(tAM===tPM&&ev===0&&!hasCap)return tAM;
+  var o={t:tAM,tPM:tPM,ev:ev};
+  if(capAM!=null)o.capAM=capAM;
+  if(capPM!=null)o.capPM=capPM;
+  if(capEve!=null)o.capEve=capEve;
+  return o;
 }
 /* 改上午老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
 async function bkSetTeachers(dateStr,val){
   if(!bkSched)bkSched={};
   if(val===null){ delete bkSched[dateStr] }
   else{
-    bkSched[dateStr]=bkSchedPack(val,bkTeachersOnPM(dateStr),bkEveOn(dateStr));
+    var cur0=bkSchedVal(dateStr)||{};
+    bkSched[dateStr]=bkSchedPack(val,bkTeachersOnPM(dateStr),bkEveOn(dateStr),cur0.capAM,cur0.capPM,cur0.capEve);
   }
   await bkSchedWrite(dateStr,val===null?null:bkSched[dateStr]);
 }
 /* 改下午老師數，上午跟晚上不動 */
 async function bkSetTeachersPM(dateStr,val){
   if(!bkSched)bkSched={};
-  var packed=bkSchedPack(bkTeachersOn(dateStr),val,bkEveOn(dateStr));
-  /* 三個都跟星期預設一樣 → 整筆刪掉，格子回到「未指定」 */
+  var cur1=bkSchedVal(dateStr)||{};
+  var packed=bkSchedPack(bkTeachersOn(dateStr),val,bkEveOn(dateStr),cur1.capAM,cur1.capPM,cur1.capEve);
+  /* 三個都跟星期預設一樣、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
     await bkSchedWrite(dateStr,null);
@@ -421,8 +440,9 @@ async function bkSetTeachersPM(dateStr,val){
 /* 只改晚上，上午下午不動 */
 async function bkSetEve(dateStr,ev){
   if(!bkSched)bkSched={};
-  var packed=bkSchedPack(bkTeachersOn(dateStr),bkTeachersOnPM(dateStr),ev);
-  /* 晚上關掉、上午下午又都是星期預設值 → 整筆刪掉，格子回到「未指定」 */
+  var cur2=bkSchedVal(dateStr)||{};
+  var packed=bkSchedPack(bkTeachersOn(dateStr),bkTeachersOnPM(dateStr),ev,cur2.capAM,cur2.capPM,cur2.capEve);
+  /* 晚上關掉、上午下午又都是星期預設值、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
     await bkSchedWrite(dateStr,null);
@@ -438,6 +458,56 @@ async function bkSchedWrite(dateStr,val){
     else await fetch(path,{method:"PUT",
       headers:{"Content-Type":"application/json"},body:JSON.stringify(val)});
   }catch(e){ alert("班表儲存失敗，請檢查網路連線") }
+}
+/* 這個時段（10:00-12:00／14:00-16:00、16:00-18:00／晚上）對到 bkSchedVal
+   裡哪一個手動上限欄位。跟 bkCapOfSlot 判斷「走上午還下午」的規則一致。 */
+function bkCapKind(slot){
+  if(slot===EVE_SLOT)return "capEve";
+  var base=bkBase(slot)||slot;
+  return base==="10:00-12:00"?"capAM":"capPM";
+}
+/* 手動限某個時段最多收幾位，跟老師排班算出來的上限互相取較小值。
+   用來處理「位子還夠，但這個時段已經有比較需要顧的學員，先別再排更多人進來」，
+   跟老師人數是兩件獨立的事，不會互相蓋掉。這份資料跟客人線上預約共用同一個
+   /schedule 節點，改了之後客人那邊看到的名額會馬上跟著變少。
+   val 傳 null ＝清除這個時段的手動上限，恢復照老師排班算。 */
+async function bkSetCap(dateStr,slot,val){
+  if(!bkSched)bkSched={};
+  var cur=bkSchedVal(dateStr)||{t:bkBaseOn(dateStr),tPM:bkBaseOn(dateStr),ev:0,capAM:null,capPM:null,capEve:null};
+  var kind=bkCapKind(slot);
+  var capAM=kind==="capAM"?val:cur.capAM;
+  var capPM=kind==="capPM"?val:cur.capPM;
+  var capEve=kind==="capEve"?val:cur.capEve;
+  var packed=bkSchedPack(cur.t,cur.tPM,cur.ev,capAM,capPM,capEve);
+  if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
+    delete bkSched[dateStr];
+    await bkSchedWrite(dateStr,null);
+    return;
+  }
+  bkSched[dateStr]=packed;
+  await bkSchedWrite(dateStr,packed);
+}
+function bkCapOpen(dsNow,sl){
+  var kind=bkCapKind(sl);
+  var cur=bkSchedVal(dsNow);
+  var curCap=cur?cur[kind]:null;
+  var rawCap=kind==="capEve"?bkRawEveCap(dsNow):(kind==="capAM"?bkRawCapOf(dsNow):bkRawCapOfPM(dsNow));
+  bkSheet('<h3 style="margin:0 0 4px">'+esc(sl)+'　手動限人數</h3>'+
+    '<div class="bk-hint" style="padding:0 2px 14px">老師排班算出來可收 '+rawCap+' 位。'+
+    (curCap!=null?'目前手動限到 <b>'+curCap+'</b> 位。':'目前沒有額外限制。')+
+    '<br>設定後這個時段的客人線上預約名額會馬上跟著變少，老師排班不受影響，'+
+    '純粹是「這個時段先不要再排更多人進來」。</div>'+
+    '<div class="bk-f"><label>手動上限（留空＝不限制，照老師排班的 '+rawCap+' 位）</label>'+
+      '<input id="bkCapVal" inputmode="numeric" placeholder="例如 3" value="'+(curCap!=null?curCap:"")+'"></div>'+
+    '<div class="bk-act"><button class="bk-cancel" id="bkCapX">取消</button>'+
+      '<button class="bk-save" id="bkCapOK">儲存</button></div>');
+  document.getElementById("bkCapX").onclick=bkClose;
+  document.getElementById("bkCapOK").onclick=async function(){
+    var raw=document.getElementById("bkCapVal").value.trim();
+    var val=raw===""?null:Math.max(0,+raw||0);
+    await bkSetCap(dsNow,sl,val);
+    bkClose(); bkRender();
+  };
 }
 /* 那個時段還剩幾位 */
 function bkSlotInfo(dateStr,slot,excludeId){
@@ -1053,11 +1123,15 @@ async function bkRender(){
          點開才看到每一組客人的細節，安排位子時滑一輪比較快 */
       var slKey=dsNow+"|"+sl;
       var open=!!bkSlotOpen[slKey];
+      var svNow=sl!=="其他"?bkSchedVal(dsNow):null;
+      var capIsSet=svNow&&svNow[bkCapKind(sl)]!=null;
       return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
         '<span style="display:inline-block;width:14px">'+(open?"▼":"▶")+'</span>'+sl+
         (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
         '　<span'+(full?' class="bk-shfull"':'')+'>'+
-        n+(sl==="其他"?"":" / "+capS)+' 位'+akText+(full?"・超載":"")+'</span></div>'+
+        n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":"")+'</span>'+
+        (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
+        '</div>'+
         (open?((sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+g.map(bkCard).join("")):"")+'</div>';
     }).join("");
    })()+
@@ -1086,6 +1160,11 @@ async function bkRender(){
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     bkSlotOpen[el.dataset.slk]=!bkSlotOpen[el.dataset.slk]; bkRender() } });
+  root.querySelectorAll("[data-capbtn]").forEach(function(el){ el.onclick=function(e){
+    e.stopPropagation(); /* 不要連帶觸發外層時段展開/收合 */
+    var slk=el.dataset.capbtn, i=slk.indexOf("|");
+    bkCapOpen(slk.slice(0,i),slk.slice(i+1));
+  } });
   bkSeatBind(root);
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
     /* 再點一次已經亮著的那顆，變回「都沒標」，方便誤按了可以直接清掉，
@@ -3028,6 +3107,9 @@ css.textContent=
   "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
 ".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
+".bk-capbtn{float:right;font-size:12.5px;font-weight:500;color:#8A90A0;"+
+  "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
+".bk-capbtn:hover{color:#5F6577;border-color:#C7CEDB}"+
 /* 班表設定月曆 */
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
 ".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
