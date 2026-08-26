@@ -572,7 +572,7 @@ async function bkLoad(){
 var bkAllWeb=[];
 var BK_SEEN_KEY="otto2_bk_lastSeenTs";
 function bkIsNewWeb(b){
-  return !!(b&&b.source==="web"&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
+  return !!(b&&(b.source==="web"||b.source==="ai-chat")&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
 }
 function bkUpdateNewBadge(){
   var badge=document.getElementById("bk-new-badge"); if(!badge)return;
@@ -1538,7 +1538,8 @@ function bkCard(b){
       depTag+
       (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
         ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
-      (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+'</div>'+
+      (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+
+      (b.source==="ai-chat"?'<span class="bk-tag ai">AI待確認</span>':'')+'</div>'+
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
     doneHtml+
@@ -3118,6 +3119,7 @@ css.textContent=
 ".bk-add-top{margin:0 0 20px}"+
 /* 新預約標籤、桌面通知授權提示 */
 ".bk-tag.new{background:#C9453B;color:#fff;font-weight:700}"+
+".bk-tag.ai{background:#F1EBFB;color:#6B4EA6;font-weight:700}"+
 ".bk-notifbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;"+
   "background:#EEF3FB;color:#3A5A96;border-radius:12px;padding:11px 15px;"+
   "font-size:13.5px;line-height:1.5;margin-bottom:16px}"+
