@@ -19,6 +19,27 @@ function mbNorm(p){
   return d;
 }
 function mbNow(){ return new Date().toISOString() }
+/* 這位會員最近一次「賣方案」發點數是什麼時候、誰發的——用來防止行政休假、
+   老闆代發之後，隔天行政沒看到標記又發一次，變成重複發點數。
+   sell_ 開頭的 ledger key 是 mbSellSave 一次售出寫的（可能拆成好幾筆，
+   基本點數/回饋/堂數各一筆），同一次售出的 at/by 都一樣，抓最新一筆就好。 */
+function mbLastSell(m){
+  if (!m || !m.ledger) return null;
+  var best = null;
+  Object.keys(m.ledger).forEach(function(k){
+    if (k.indexOf('sell_') !== 0) return;
+    var r = m.ledger[k];
+    if (!best || String(r.at || '') > String(best.at || '')) best = r;
+  });
+  return best;
+}
+function mbHoursSince(at){
+  if (!at) return Infinity;
+  return (Date.now() - new Date(at).getTime()) / 3600000;
+}
+function mbFmtAt(at){
+  return String(at || '').slice(0, 16).replace('T', ' ');
+}
 /* 賣方案一按就是幾萬塊入帳，沒權限的人不顯示這顆 */
 function mbCan(k){ return (typeof can === "function") ? can(k) : true }
 function mbToday(){
@@ -386,7 +407,15 @@ function mbDetail(phone){
 
   var TYPE = { points: '點數', sessions: '堂數', bonus: '紅利', voucher: '折價金' };
   var h = '<h3 style="margin:0 0 2px">' + mbEsc(m.name || '（未填姓名）') + '</h3>' +
-    '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') + '</div>';
+    '<div class="muted" style="font-size:13.5px;margin-bottom:2px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') + '</div>';
+  var lastSellD = mbLastSell(m);
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:14px">' +
+    (m.createdAt ? '入會 ' + mbFmtAt(m.createdAt) : '') +
+    (lastSellD ? (m.createdAt ? '　・　' : '') +
+      (mbHoursSince(lastSellD.at) <= 36
+        ? '<span style="color:var(--red);font-weight:700">⚠ ' + Math.round(mbHoursSince(lastSellD.at)) + ' 小時前發過點數</span>'
+        : '上次發放 ' + mbFmtAt(lastSellD.at)) + '・' + mbEsc(lastSellD.by || '') : '') +
+    '</div>';
 
   h += '<div class="card" style="margin-bottom:14px"><div class="row" style="gap:20px;flex-wrap:wrap">' +
     '<div><div class="muted" style="font-size:13.5px">可用點數</div><div style="font-size:20px;color:var(--gold2)">' + sum.points.toLocaleString() + '</div></div>' +
@@ -607,6 +636,19 @@ function mbSell(phone){
   var h = '<h3 style="margin:0 0 2px">賣方案</h3>' +
     '<div class="muted" style="font-size:13.5px;margin-bottom:14px">' + mbEsc(m.name || '（未填姓名）') + '　' + m.phone +
     '　目前 <strong style="color:var(--gold2)">' + m.points.toLocaleString() + '</strong> 點・' + m.sessions + ' 堂</div>';
+
+  var lastSell = mbLastSell(m);
+  if (lastSell) {
+    var hrs = mbHoursSince(lastSell.at);
+    if (hrs <= 36) {
+      h += '<div class="info-box" style="border-color:var(--red);margin-bottom:14px;line-height:1.7">' +
+        '⚠ <b>' + Math.round(hrs) + ' 小時前才發過點數</b>，' + mbFmtAt(lastSell.at) + '・' + mbEsc(lastSell.by || '') +
+        '　（' + mbEsc(lastSell.planName || '') + '）<br>確定不是重複發放，再繼續。</div>';
+    } else {
+      h += '<div class="muted" style="font-size:12.5px;margin-bottom:14px">上次發放：' +
+        mbFmtAt(lastSell.at) + '・' + mbEsc(lastSell.by || '') + '</div>';
+    }
+  }
 
   if (!plans.length) {
     h += '<div class="info-box" style="border-color:var(--red)">還沒有建立任何方案。請先切到「方案設定」把方案建好，賣的時候才不用手打金額。</div>' +

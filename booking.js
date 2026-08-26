@@ -721,8 +721,22 @@ async function bkShowBalance(phone,name){
     return;
   }
   var c=m.cache||{};
+  /* 防止行政休假時老闆代發點數、隔天行政沒看到標記又重發一次：
+     一點進名字就把入會時間、上次發放點數時間攤在最上面，36小時內發過的用紅字警示。 */
+  var lastSell=(typeof mbLastSell==="function")?mbLastSell(m):null;
+  var noteLine="";
+  if(m.createdAt)noteLine+="入會 "+mbFmtAt(m.createdAt);
+  if(lastSell){
+    var hrs=mbHoursSince(lastSell.at);
+    noteLine+=(noteLine?"　・　":"")+
+      (hrs<=36
+        ?'<span style="color:var(--red);font-weight:700">⚠ '+Math.round(hrs)+' 小時前發過點數</span>'
+        :"上次發放 "+mbFmtAt(lastSell.at))+
+      "・"+esc(lastSell.by||"");
+  }
   bkSheet('<h3 style="margin:0 0 2px">'+esc(m.name||name||"")+'</h3>'+
     '<div class="bk-sh2">'+esc(phone)+'</div>'+
+    (noteLine?'<div class="muted" style="font-size:12.5px;margin-top:2px">'+noteLine+'</div>':'')+
     '<div class="bk-stat" style="margin:14px 0">'+
       '<div><b>'+(+c.points||0).toLocaleString()+'</b><span>點數</span></div>'+
       '<div><b>'+(+c.sessions||0)+'</b><span>堂數</span></div>'+
