@@ -1286,6 +1286,11 @@ function bkSeatSplitOpen(id,slk2){
    都是同一套行為，沒有觸控手勢辨識、沒有 pointer capture，不會有
    「這台裝置不支援」的問題。 */
 var bkSeatPicked=null; // 目前選取、準備搬動的預約 id
+/* 座位表明細展開狀態，key 是 日期|時段。預設收合（false）：只看得到每區的
+   人數（吧台 3/7 這種），不會被每張卡片的姓名、課程細節塞滿畫面。
+   只是要掃一眼哪一區還有空位時很好用，需要看是誰、要不要拖位子的時候，
+   點小三角形展開就好，收合期間拖位子的功能也先不能用（反正看不到卡片）。 */
+var bkSeatDetailOpen={};
 function bkSeatBoardHtml(dsNow,sl,g){
   if(!g.length)return "";
   var r=bkSeatAssign(g);
@@ -1295,11 +1300,18 @@ function bkSeatBoardHtml(dsNow,sl,g){
   g.forEach(function(b){
     (r.placements[b.id]||[]).forEach(function(p){ byArea[p.area].push({b:b,n:p.n}) });
   });
-  return '<div class="bk-seat" data-slk2="'+esc(dsNow+"|"+sl)+'">'+
+  var key=dsNow+"|"+sl;
+  var detailOpen=!!bkSeatDetailOpen[key];
+  return '<div class="bk-seat" data-slk2="'+esc(key)+'">'+
+    '<div class="bk-seat-toggle" data-seat-toggle="'+esc(key)+'">'+
+      '<span style="display:inline-block;width:12px">'+(detailOpen?"▼":"▶")+'</span>'+
+      (detailOpen?"收合明細":"展開明細（誰坐哪、拖位子）")+
+    '</div>'+
     SEAT_AREAS.map(function(a){
       var n=r.counts[a.k]||0, over=n>a.cap;
       return '<div class="bk-seat-col" data-area="'+esc(a.k)+'">'+
         '<div class="bk-seat-h'+(over?" over":"")+'">'+esc(a.k)+'<span>'+n+'/'+a.cap+'</span></div>'+
+        (detailOpen?
         '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
         (byArea[a.k]||[]).map(function(x){
           var b=x.b, ppl=x.n;
@@ -1308,14 +1320,18 @@ function bkSeatBoardHtml(dsNow,sl,g){
           var picked=bkSeatPicked===b.id;
           return '<div class="bk-seat-chip'+(picked?" picked":"")+(isSplit?" split":"")+'" data-bid="'+esc(b.id)+'">'+
             '<span class="bk-seat-split" data-bid="'+esc(b.id)+'" title="拆分座位">✂️</span>'+
-            esc(b.customer&&b.customer.name||"—")+'　<b class="bk-seat-ppl">'+ppl+(isSplit?'/'+totalPpl:'')+'位</b>'+
+            esc(b.customer&&b.customer.name||"—")+
+            (b.customer&&b.customer.childName?'（'+esc(b.customer.childName)+'）':'')+
+            '　<b class="bk-seat-ppl">'+ppl+(isSplit?'/'+totalPpl:'')+'位</b>'+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
-        '</div></div>';
+        '</div>':'')+
+        '</div>';
     }).join("")+
-    '<div class="bk-seat-note">'+(bkSeatPicked
+    (detailOpen?'<div class="bk-seat-note">'+(bkSeatPicked
       ?'已選取，點要搬去的區塊完成搬移（會取消拆位），或點同一張卡片取消。'
-      :'點一下卡片，再點要搬去的區塊，就能整組換位子；點卡片上的✂️可以把同一組人拆到不同區坐。')+'</div></div>';
+      :'點一下卡片，再點要搬去的區塊，就能整組換位子；點卡片上的✂️可以把同一組人拆到不同區坐。')+'</div>':'')+
+    '</div>';
 }
 /* 找出這個節點所在的座位表區塊是哪個「日期｜時段」，換位子時只重畫這一小塊，
    不用整頁重新讀資料、重新畫——之前點一下卡片畫面就整個閃一下，
@@ -1344,6 +1360,15 @@ function bkSeatMove(id,area,slk2){
   bkSeatRefresh(slk2);
 }
 function bkSeatBind(root){
+  root.querySelectorAll("[data-seat-toggle]").forEach(function(el){
+    el.onclick=function(e){
+      e.stopPropagation();
+      var key=el.dataset.seatToggle;
+      bkSeatDetailOpen[key]=!bkSeatDetailOpen[key];
+      bkSeatPicked=null; /* 收合/展開時順便清掉選取狀態，避免收合後留著一個看不到的選取卡片 */
+      bkSeatRefresh(key);
+    };
+  });
   root.querySelectorAll(".bk-seat-split").forEach(function(icon){
     icon.onclick=function(e){
       e.stopPropagation();
@@ -1407,7 +1432,9 @@ function bkCard(b){
   }
   return '<div class="bk-card'+(c?" ok":(unpaid?" wait":(depPaid?" dep":"")))+'">'+
     '<div class="bk-who"><b class="bk-nm" data-bid="'+b.id+'" title="點一下看目前餘額">'+
-      esc(b.customer&&b.customer.name||"—")+'</b> '+bkPplText(b)+
+      esc(b.customer&&b.customer.name||"—")+'</b>'+
+      (b.customer&&b.customer.childName?'<span class="bk-childname">・小朋友 '+esc(b.customer.childName)+'</span>':'')+
+      ' '+bkPplText(b)+
       (bkIsNewWeb(b)?'<span class="bk-tag new">NEW</span>':'')+
       (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
       depTag+
@@ -2431,6 +2458,9 @@ async function bkManual(editId){
        esc(eb&&eb.customer&&eb.customer.name||"")+'"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
        esc(eb&&eb.customer&&eb.customer.phone||"")+'"></div></div>'+
+   '<div class="bk-f" id="mChildNameBox" style="display:'+((eb?(+eb.kids||0):0)>0?"":"none")+'">'+
+     '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
+       esc(eb&&eb.customer&&eb.customer.childName||"")+'"></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
        esc(eb&&eb.customer&&eb.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
@@ -2528,6 +2558,10 @@ async function bkManual(editId){
     var a=+document.getElementById("mAdult").value||0;
     var k=+document.getElementById("mKid").value||0;
     document.getElementById("mPeople").value=(a+k)||0;
+    /* 沒有小孩就不用問小朋友姓名，隱藏起來畫面比較乾淨；
+       欄位本身還留在畫面上（只是藏起來），存檔讀值不會撲空。 */
+    var box=document.getElementById("mChildNameBox");
+    if(box)box.style.display=k>0?"":"none";
     showLeft(); fillAmt();
   }
   document.getElementById("mAdult").oninput=syncPpl;
@@ -2857,7 +2891,7 @@ async function bkManual(editId){
       people:ppl,adults:nA,kids:nK,seats:seats,hours:recHours,
       items:outItems,
       total:amt,
-      customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote")},
+      customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote"),childName:g("mChildName")},
       status:"new",source:"manual",ts:new Date().toISOString()};
     /* 現場登記常常是全新客人，不是每次都會從「找會員」點選既有會員。
        picked 是 null 的時候以前完全不會處理會員檔案——預約存進去了，
@@ -3038,7 +3072,10 @@ css.textContent=
 ".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
 /* 收了訂金但還沒核銷：藍色。掃一眼就分得出誰完全還沒收到錢 */
 ".bk-card.dep{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 #4C6FB1}"+
-".bk-seat{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap}"+
+".bk-seat{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap;position:relative}"+
+".bk-seat-toggle{width:100%;font-size:12.5px;color:#8A90A0;cursor:pointer;user-select:none;"+
+  "display:flex;align-items:center;gap:4px;padding:2px 0 4px}"+
+".bk-seat-toggle:hover{color:#5F6577}"+
 ".bk-seat-col{flex:1;min-width:110px;background:#fff;border-radius:12px;padding:9px;"+
   "box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
 ".bk-seat-h{font-size:13.5px;font-weight:700;color:#1F2A44;display:flex;justify-content:space-between;"+
@@ -3071,6 +3108,7 @@ css.textContent=
 ".bk-who b{font-size:17px;color:var(--bkInk);font-weight:600}"+
 ".bk-who b.bk-nm{cursor:pointer}"+
 ".bk-who b.bk-nm:hover{text-decoration:underline}"+
+".bk-childname{font-size:13.5px;color:var(--bkMute);font-weight:500;margin-left:2px}"+
 ".bk-tag{display:inline-block;font-size:12.5px;padding:2.5px 9px;border-radius:99px;"+
   "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
