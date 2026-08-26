@@ -1132,7 +1132,11 @@ async function bkRender(){
         n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":"")+'</span>'+
         (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
         '</div>'+
-        (open?((sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+g.map(bkCard).join("")):"")+'</div>';
+        /* 座位區域方塊（吧台/畫架/教室/臨時桌）只要時段本身展開就一直看得到，
+           下面整串學員登記卡片（含所有按鈕）才用三角形另外收合，
+           掃一眼位子還夠不夠不用被一堆卡片內容擋住畫面 */
+        (open?((sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
+          (sl==="其他"||bkSeatDetailOpen[slKey]?g.map(bkCard).join(""):"")):"")+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -1384,7 +1388,7 @@ function bkSeatBoardHtml(dsNow,sl,g){
   return '<div class="bk-seat" data-slk2="'+esc(key)+'">'+
     '<div class="bk-seat-toggle" data-seat-toggle="'+esc(key)+'">'+
       '<span style="display:inline-block;width:12px">'+(detailOpen?"▼":"▶")+'</span>'+
-      (detailOpen?"收合明細":"展開明細（誰坐哪、拖位子）")+
+      (detailOpen?"收合學員預約詳細資料":"展開學員預約詳細資料（誰坐哪、拖位子）")+
     '</div>'+
     SEAT_AREAS.map(function(a){
       var n=r.counts[a.k]||0, over=n>a.cap;
@@ -1445,7 +1449,10 @@ function bkSeatBind(root){
       var key=el.dataset.seatToggle;
       bkSeatDetailOpen[key]=!bkSeatDetailOpen[key];
       bkSeatPicked=null; /* 收合/展開時順便清掉選取狀態，避免收合後留著一個看不到的選取卡片 */
-      bkSeatRefresh(key);
+      /* 這個開關現在還連帶控制座位表下面那整串學員登記卡片要不要顯示，
+         卡片在座位表的 DOM 外面，只重畫座位表那一小塊(bkSeatRefresh)不會動到，
+         這裡要整頁重畫才能讓卡片跟著收合/展開 */
+      bkRender();
     };
   });
   root.querySelectorAll(".bk-seat-split").forEach(function(icon){
