@@ -736,13 +736,26 @@ async function bkShowBalance(phone,name){
   if(sellBtn)sellBtn.onclick=async function(){ await bkSellPlanFor(phone) };
 }
 /* 銷課旁邊的「賣方案」快捷鈕，直接借用會員分頁那套介面，
-   member.js 沒有另外包 IIFE，這裡可以直接呼叫 mbSell。 */
-async function bkSellPlanFor(phone){
+   member.js 沒有另外包 IIFE，這裡可以直接呼叫 mbSell。
+   注意：mbSell 只認 mbList 裡已經存在的會員，找不到就直接 return、完全沒反應——
+   新客（預約卡片上有 NEW 標籤）通常還沒建過會員檔，按這顆鈕會像沒反應一樣，
+   容易被誤會成系統壞掉。這裡改成找不到會員就先用預約單上的姓名電話幫他建一筆，
+   跟手動走「新增會員」再賣方案的結果完全一樣，只是省掉多開一個表單重打一次電話姓名。 */
+async function bkSellPlanFor(phone,name){
   if(!phone){ alert("這筆沒有留可對應的電話，沒辦法賣方案，請先在「修改」裡幫客人補電話。"); return }
   if(typeof mbLoad==="function")await mbLoad();
   if(typeof mbSell!=="function"){ alert("會員模組還沒載入，請重新整理頁面再試一次。"); return }
+  var p=mbNorm(phone);
+  if(!mbList.some(function(m){return m.phone===p})){
+    var rec={phone:p,name:name||"",note:"",createdAt:mbNow(),cache:{points:0,sessions:0,bonus:0}};
+    try{
+      await fetch(mbf("/members/"+p+".json"),{method:"PUT",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+    }catch(e){ alert("這位客人還沒有會員資料，系統想幫他自動建立但失敗了，沒辦法賣方案：\n"+e.message); return }
+    mbList.push({phone:p,name:name||"",note:"",points:0,sessions:0,bonus:0,ledger:{},createdAt:rec.createdAt});
+  }
   bkClose();
-  mbSell(phone);
+  mbSell(p);
 }
 function bkSearch(q){
   if(!bkMembers||!q||q.trim().length<2)return[];
@@ -1073,7 +1086,7 @@ async function bkRender(){
   root.querySelectorAll("[data-cx]").forEach(function(el){ el.onclick=function(){ bkCancel(el.dataset.cx) } });
   root.querySelectorAll("[data-sp]").forEach(function(el){ el.onclick=function(){
     var b=bkList.filter(function(x){return x.id===el.dataset.sp})[0]; if(!b)return;
-    bkSellPlanFor(bkResolvedPhone(b));
+    bkSellPlanFor(bkResolvedPhone(b),b.customer&&b.customer.name);
   } });
   root.querySelectorAll(".bk-nm").forEach(function(el){ el.onclick=function(){
     var b=bkList.filter(function(x){return x.id===el.dataset.bid})[0]; if(!b)return;
