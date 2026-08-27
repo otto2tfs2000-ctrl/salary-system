@@ -1973,7 +1973,7 @@ async function bkCheckout(id){
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
    '<div class="bk-f" id="ckSeBox" style="display:none"><label>這次扣幾堂</label>'+
      '<input id="ckSe" inputmode="decimal" value=""><div class="bk-left" id="ckSeHint"></div></div>'+
-   '<div class="bk-f"><label>加價項目（畫布、公仔等）</label><div id="ckAdd"></div>'+
+   '<div class="bk-f"><label>加價項目（畫布、公仔、補差額等）</label><div id="ckAdd"></div>'+
      '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button><div id="ckAddWarn"></div></div>'+
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
      '<input type="checkbox" id="ckProxy" style="width:16px;height:16px"> 用其他會員的點數（朋友代扣）</label>'+
@@ -3178,7 +3178,16 @@ css.textContent=
 ".bk-nopt.on{background:#1E2B4F;color:#fff;border-color:#1E2B4F}"+
 ".bk-nopt.on small{color:#C3CCDF}"+
 "@media(max-width:560px){.bk-cgrid{gap:4px}.bk-mday .n{font-size:18px}"+
-  ".bk-mday .c{font-size:11.5px}.bk-nopts{grid-template-columns:repeat(3,1fr)}}"+
+  ".bk-mday .c{font-size:11.5px}.bk-nopts{grid-template-columns:repeat(3,1fr)}"+
+  /* 2026-08-27：手機版座位表跟按鈕列以前用 flex-wrap 硬擠，
+     4 個座位區、7 顆按鈕擠在窄螢幕上會擠成大小不一、東倒西歪的樣子。
+     改用固定欄數的 grid，寬度平均分配，看起來才整齊。 */
+  ".bk-seat{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}"+
+  ".bk-seat-col{min-width:0}"+
+  ".bk-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}"+
+  ".bk-b{min-width:0;padding:11px 4px;font-size:14px}"+
+  ".bk-card{padding:14px}"+
+  "}"+
 ".bk-slot.c0{background:#EDF1F8;border-left-color:#B4C4DC}"+
 ".bk-slot.c1{background:#FAF1E4;border-left-color:#E2C293}"+
 ".bk-sh{position:sticky;top:0;z-index:5;font-size:20px;font-weight:800;color:#1F2A44;"+
