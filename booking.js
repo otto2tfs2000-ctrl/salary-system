@@ -177,7 +177,6 @@ var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c)
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) };
 
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
-var bkSlotOpen = {}; // 今日排課裡哪些時段是展開的，key 是「日期|時段」，預設收合
 var bkIndex = {}, bkIndexReady = false;
 var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
 var CAP_PER_TEACHER = 5;          /* 每位老師可帶人數 */
@@ -1148,26 +1147,24 @@ async function bkRender(){
       var aSum=0,kSum=0,akKnown=false;
       g.forEach(function(b){ var x=bkAK(b); if(x.a!=null||x.k!=null){akKnown=true; aSum+=(+x.a||0); kSum+=(+x.k||0)} });
       var akText=akKnown?("（大人 "+aSum+(kSum?"・小孩 "+kSum:"")+"）"):"";
-      /* 每個時段預設收合，只看標題就知道這個時段人數夠不夠，
-         點開才看到每一組客人的細節，安排位子時滑一輪比較快 */
+      /* 2026-08-27：以前這個標題要點一下才會展開座位表，結果字又小，
+         點兩層才看得到要上什麼課，容易看錯時段（大熊真的看錯過一次）。
+         改成時段標題跟座位表永遠都在，不用點；學員預約詳細資料
+         （上課明細）維持要點 bkSeatBoardHtml 裡那顆三角形才展開，
+         掃一眼座位表、想確認課程內容再點開就好。 */
       var slKey=dsNow+"|"+sl;
-      var open=!!bkSlotOpen[slKey];
       var svNow=sl!=="其他"?bkSchedVal(dsNow):null;
       /* 存過手動上限不代表真的有限制到——設的數字如果跟老師排班算出來的
          上限一樣大，其實完全沒有生效，不該顯示🔒讓人誤會「已經鎖住了」 */
       var capIsSet=sl!=="其他"&&svNow&&svNow[bkCapKind(sl)]!=null&&svNow[bkCapKind(sl)]<bkRawCapOfSlot(dsNow,sl);
-      return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
-        '<span style="display:inline-block;width:14px">'+(open?"▼":"▶")+'</span>'+sl+
-        (sl===EVE_SLOT?'<span class="bk-tag t" style="margin-left:6px">晚上</span>':'')+
-        '　<span'+(full?' class="bk-shfull"':'')+'>'+
+      return '<div class="'+cls+'"><div class="bk-sh">'+sl+
+        (sl===EVE_SLOT?'<span class="bk-tag t">晚上</span>':'')+
+        '<span'+(full?' class="bk-shfull"':'')+'>'+
         n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":"")+'</span>'+
         (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
         '</div>'+
-        /* 座位區域方塊（吧台/畫架/教室/臨時桌）只要時段本身展開就一直看得到，
-           下面整串學員登記卡片（含所有按鈕）才用三角形另外收合，
-           掃一眼位子還夠不夠不用被一堆卡片內容擋住畫面 */
-        (open?((sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
-          (sl==="其他"||bkSeatDetailOpen[slKey]?g.map(bkCard).join(""):"")):"")+'</div>';
+        (sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
+        (sl==="其他"||bkSeatDetailOpen[slKey]?g.map(bkCard).join(""):"")+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -1193,10 +1190,7 @@ async function bkRender(){
   /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
-  root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
-    bkSlotOpen[el.dataset.slk]=!bkSlotOpen[el.dataset.slk]; bkRender() } });
   root.querySelectorAll("[data-capbtn]").forEach(function(el){ el.onclick=function(e){
-    e.stopPropagation(); /* 不要連帶觸發外層時段展開/收合 */
     var slk=el.dataset.capbtn, i=slk.indexOf("|");
     bkCapOpen(slk.slice(0,i),slk.slice(i+1));
   } });
@@ -3174,7 +3168,7 @@ css.textContent=
   "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
 ".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
-".bk-capbtn{float:right;font-size:12.5px;font-weight:500;color:#8A90A0;"+
+".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
   "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
 ".bk-capbtn:hover{color:#5F6577;border-color:#C7CEDB}"+
 /* 班表設定月曆 */
@@ -3217,9 +3211,9 @@ css.textContent=
   "}"+
 ".bk-slot.c0{background:#EDF1F8;border-left-color:#B4C4DC}"+
 ".bk-slot.c1{background:#FAF1E4;border-left-color:#E2C293}"+
-".bk-sh{position:sticky;top:0;z-index:5;font-size:20px;font-weight:800;color:#1F2A44;"+
+".bk-sh{position:sticky;top:0;z-index:5;font-size:26px;font-weight:800;color:#1F2A44;"+
   "letter-spacing:.4px;margin:-12px -12px 6px;padding:12px 12px 12px 16px;"+
-  "border:0;border-radius:16px 16px 0 0}"+
+  "border:0;border-radius:16px 16px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}"+
 ".bk-slot.c0>.bk-sh{background:#EDF1F8}"+
 ".bk-slot.c1>.bk-sh{background:#FAF1E4}"+
 ".bk-sh span{font-weight:500;letter-spacing:0;font-size:15.5px;color:#77809A}"+
