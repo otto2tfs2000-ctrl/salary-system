@@ -177,6 +177,7 @@ var esc = function(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c)
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c] }) };
 
 var bkDate = new Date(), bkList = [], bkMembers = null, bkBusy = false;
+var bkSlotClosed = {}; // 今日排課裡哪些時段被手動收起來了，key 是「日期|時段」，預設展開
 var bkIndex = {}, bkIndexReady = false;
 var SHEET_ID = "1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M";
 var CAP_PER_TEACHER = 5;          /* 每位老師可帶人數 */
@@ -1147,30 +1148,32 @@ async function bkRender(){
       var aSum=0,kSum=0,akKnown=false;
       g.forEach(function(b){ var x=bkAK(b); if(x.a!=null||x.k!=null){akKnown=true; aSum+=(+x.a||0); kSum+=(+x.k||0)} });
       var akText=akKnown?("（大人 "+aSum+(kSum?"・小孩 "+kSum:"")+"）"):"";
-      /* 2026-08-27：以前這個標題要點一下才會展開座位表，結果字又小，
-         點兩層才看得到要上什麼課，容易看錯時段（大熊真的看錯過一次）。
-         改成時段標題跟座位表（含座位表裡的姓名/課程）永遠都在，不用點——
-         光看名字跟課程還是不知道電話、訂金狀態、核銷按鈕這些，那些才
-         用「內容」這顆三角形收合，掃一眼座位表就知道要上什麼課，
-         需要處理報到/收訂金/核銷才點開內容。 */
+      /* 2026-08-27：時段標題字放大＋座位表姓名/課程永遠顯示，不用點
+         （見下面 bkSeatBoardHtml）；電話/按鈕收在「內容」三角形，見下面
+         data-cardtoggle。標題旁邊原本拿掉的三角形，大熊在手機上看
+         覺得每個時段都整組展開太佔畫面、東西太擠，要求加回來，可以
+         整段收合——預設還是展開（一打開頁面照樣看得到座位表，不用點），
+         只是多給一個「不需要的時段先收起來」的選項。 */
       var slKey=dsNow+"|"+sl;
+      var open=bkSlotClosed[slKey]!==true;
       var cardOpen=sl==="其他"||!!bkSeatDetailOpen[slKey];
       var svNow=sl!=="其他"?bkSchedVal(dsNow):null;
       /* 存過手動上限不代表真的有限制到——設的數字如果跟老師排班算出來的
          上限一樣大，其實完全沒有生效，不該顯示🔒讓人誤會「已經鎖住了」 */
       var capIsSet=sl!=="其他"&&svNow&&svNow[bkCapKind(sl)]!=null&&svNow[bkCapKind(sl)]<bkRawCapOfSlot(dsNow,sl);
-      return '<div class="'+cls+'"><div class="bk-sh">'+sl+
+      return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
+        '<span style="display:inline-block;width:16px">'+(open?"▼":"▶")+'</span>'+sl+
         (sl===EVE_SLOT?'<span class="bk-tag t">晚上</span>':'')+
         '<span'+(full?' class="bk-shfull"':'')+'>'+
         n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":"")+'</span>'+
         (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
         '</div>'+
-        (sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
+        (!open?"":(sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
         (sl==="其他"?"":'<div class="bk-seat-toggle" data-cardtoggle="'+esc(slKey)+'">'+
           '<span style="display:inline-block;width:12px">'+(cardOpen?"▼":"▶")+'</span>'+
           (cardOpen?"收合內容":"展開內容（電話、課程、報到／收訂金／核銷）")+
         '</div>')+
-        (cardOpen?g.map(bkCard).join(""):"")+'</div>';
+        (cardOpen?g.map(bkCard).join(""):""))+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -1196,11 +1199,17 @@ async function bkRender(){
   /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
+  root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
+    var k=el.dataset.slk;
+    bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender();
+  } });
   root.querySelectorAll("[data-capbtn]").forEach(function(el){ el.onclick=function(e){
+    e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
     var slk=el.dataset.capbtn, i=slk.indexOf("|");
     bkCapOpen(slk.slice(0,i),slk.slice(i+1));
   } });
-  root.querySelectorAll("[data-cardtoggle]").forEach(function(el){ el.onclick=function(){
+  root.querySelectorAll("[data-cardtoggle]").forEach(function(el){ el.onclick=function(e){
+    e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
     bkSeatDetailOpen[el.dataset.cardtoggle]=!bkSeatDetailOpen[el.dataset.cardtoggle]; bkRender();
   } });
   bkSeatBind(root);
