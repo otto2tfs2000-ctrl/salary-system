@@ -2182,10 +2182,32 @@ async function bkCheckout(id){
       ? "手動指定 "+n+" 堂"
       : "跟著課程人數走（目前 "+n+" 位）。只有部分人用堂數扣的話，直接改這格。";
   }
+  /* 2026-08-27：堂數扣抵時，如果扣的堂數比目前填的人數還多（例如預約
+     只寫 1 位，但這位客人現場畫了 3 幅、扣了 3 堂），代表這一位實際做了
+     更多堂的量——人流、老師人次不該卡在原本預約的人數，要跟著堂數走，
+     不然行政忙起來忘記手動改人數，這幾堂的人次/人流就會憑空少算，老師
+     的業績、時薪費也會跟著算錯，而且完全沒有提示看得出來哪裡錯了。
+     多出來的堂數優先併進小孩（現場最常是同一個小孩畫了好幾張），
+     沒有小孩才併進大人。人數比堂數多的情況（兩人一起來，只有一人用
+     堂數扣、另一人付現）維持不動，那是本來就該分開算、不能亂動的狀況。 */
+  var pplAutoBumped=false;
+  function syncPplToSessions(){
+    pplAutoBumped=false;
+    if(course.way!=="sessions")return;
+    var seN=ckSeNow(), cur=nAdult+nKid;
+    if(seN<=cur)return;
+    var extra=seN-cur;
+    if(nKid>0)nKid+=extra; else nAdult+=extra;
+    document.getElementById("ckAdult").value=nAdult;
+    document.getElementById("ckKid").value=nKid;
+    pplAutoBumped=true;
+  }
 
   function calc(){
     course.amt=+document.getElementById("ckAmt").value||0;
     drawSe();
+    syncPplToSessions();
+    pplHint();
     if(course.way==="sessions"&&course.amt>0&&!ckAmtTouched){
       /* 修正核銷時舊資料可能還帶著牌價，第一次算就歸零 */
       courseList=course.amt; course.amt=0;
@@ -2283,12 +2305,17 @@ async function bkCheckout(id){
     nAdult=+document.getElementById("ckAdult").value||0;
     nKid=+document.getElementById("ckKid").value||0;
     var s=nAdult+nKid, el=document.getElementById("ckPplHint");
+    if(pplAutoBumped){
+      el.innerHTML='<span class="bk-full">已依扣的 '+ckSeNow()+' 堂自動把人數帶到 '+s+
+        ' 位（原本預約是 '+ppl+' 位）——這樣人流、老師人次才會算對，數字不對可以自己改</span>';
+      return;
+    }
     el.innerHTML = s===ppl
       ? "合計 "+s+" 位，與預約人數相同"
       : '<span class="bk-full">合計 '+s+' 位，預約時是 '+ppl+' 位，確認是否有變動</span>';
   }
-  document.getElementById("ckAdult").oninput=pplHint;
-  document.getElementById("ckKid").oninput=pplHint;
+  document.getElementById("ckAdult").oninput=function(){ pplAutoBumped=false; pplHint() };
+  document.getElementById("ckKid").oninput=function(){ pplAutoBumped=false; pplHint() };
   pplHint();
 
   async function setPayer(phone){
