@@ -1149,10 +1149,12 @@ async function bkRender(){
       var akText=akKnown?("（大人 "+aSum+(kSum?"・小孩 "+kSum:"")+"）"):"";
       /* 2026-08-27：以前這個標題要點一下才會展開座位表，結果字又小，
          點兩層才看得到要上什麼課，容易看錯時段（大熊真的看錯過一次）。
-         改成時段標題跟座位表永遠都在，不用點；學員預約詳細資料
-         （上課明細）維持要點 bkSeatBoardHtml 裡那顆三角形才展開，
-         掃一眼座位表、想確認課程內容再點開就好。 */
+         改成時段標題跟座位表（含座位表裡的姓名/課程）永遠都在，不用點——
+         光看名字跟課程還是不知道電話、訂金狀態、核銷按鈕這些，那些才
+         用「內容」這顆三角形收合，掃一眼座位表就知道要上什麼課，
+         需要處理報到/收訂金/核銷才點開內容。 */
       var slKey=dsNow+"|"+sl;
+      var cardOpen=sl==="其他"||!!bkSeatDetailOpen[slKey];
       var svNow=sl!=="其他"?bkSchedVal(dsNow):null;
       /* 存過手動上限不代表真的有限制到——設的數字如果跟老師排班算出來的
          上限一樣大，其實完全沒有生效，不該顯示🔒讓人誤會「已經鎖住了」 */
@@ -1164,7 +1166,11 @@ async function bkRender(){
         (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
         '</div>'+
         (sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
-        (sl==="其他"||bkSeatDetailOpen[slKey]?g.map(bkCard).join(""):"")+'</div>';
+        (sl==="其他"?"":'<div class="bk-seat-toggle" data-cardtoggle="'+esc(slKey)+'">'+
+          '<span style="display:inline-block;width:12px">'+(cardOpen?"▼":"▶")+'</span>'+
+          (cardOpen?"收合內容":"展開內容（電話、課程、報到／收訂金／核銷）")+
+        '</div>')+
+        (cardOpen?g.map(bkCard).join(""):"")+'</div>';
     }).join("");
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
@@ -1193,6 +1199,9 @@ async function bkRender(){
   root.querySelectorAll("[data-capbtn]").forEach(function(el){ el.onclick=function(e){
     var slk=el.dataset.capbtn, i=slk.indexOf("|");
     bkCapOpen(slk.slice(0,i),slk.slice(i+1));
+  } });
+  root.querySelectorAll("[data-cardtoggle]").forEach(function(el){ el.onclick=function(){
+    bkSeatDetailOpen[el.dataset.cardtoggle]=!bkSeatDetailOpen[el.dataset.cardtoggle]; bkRender();
   } });
   bkSeatBind(root);
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
@@ -1409,17 +1418,15 @@ function bkSeatBoardHtml(dsNow,sl,g){
     (r.placements[b.id]||[]).forEach(function(p){ byArea[p.area].push({b:b,n:p.n}) });
   });
   var key=dsNow+"|"+sl;
-  var detailOpen=!!bkSeatDetailOpen[key];
+  /* 2026-08-27：以前姓名/課程要點「展開學員預約詳細資料」才看得到，
+     光看「2/7」這種數字誰知道是誰、上什麼課——改成姓名跟課程永遠
+     顯示，不用點。電話、訂金狀態、核銷按鈕這些更詳細的內容才收在
+     外層的「內容」三角形裡（見 bkRender 裡的 data-cardtoggle）。 */
   return '<div class="bk-seat" data-slk2="'+esc(key)+'">'+
-    '<div class="bk-seat-toggle" data-seat-toggle="'+esc(key)+'">'+
-      '<span style="display:inline-block;width:12px">'+(detailOpen?"▼":"▶")+'</span>'+
-      (detailOpen?"收合學員預約詳細資料":"展開學員預約詳細資料（誰坐哪、拖位子）")+
-    '</div>'+
     SEAT_AREAS.map(function(a){
       var n=r.counts[a.k]||0, over=n>a.cap;
       return '<div class="bk-seat-col" data-area="'+esc(a.k)+'">'+
         '<div class="bk-seat-h'+(over?" over":"")+'">'+esc(a.k)+'<span>'+n+'/'+a.cap+'</span></div>'+
-        (detailOpen?
         '<div class="bk-seat-list" data-area="'+esc(a.k)+'">'+
         (byArea[a.k]||[]).map(function(x){
           var b=x.b, ppl=x.n;
@@ -1433,12 +1440,12 @@ function bkSeatBoardHtml(dsNow,sl,g){
             '　<b class="bk-seat-ppl">'+ppl+(isSplit?'/'+totalPpl:'')+'位</b>'+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
-        '</div>':'')+
+        '</div>'+
         '</div>';
     }).join("")+
-    (detailOpen?'<div class="bk-seat-note">'+(bkSeatPicked
+    '<div class="bk-seat-note">'+(bkSeatPicked
       ?'已選取，點要搬去的區塊完成搬移（會取消拆位），或點同一張卡片取消。'
-      :'點一下卡片，再點要搬去的區塊，就能整組換位子；點卡片上的✂️可以把同一組人拆到不同區坐。')+'</div>':'')+
+      :'點一下卡片，再點要搬去的區塊，就能整組換位子；點卡片上的✂️可以把同一組人拆到不同區坐。')+'</div>'+
     '</div>';
 }
 /* 找出這個節點所在的座位表區塊是哪個「日期｜時段」，換位子時只重畫這一小塊，
@@ -1468,18 +1475,6 @@ function bkSeatMove(id,area,slk2){
   bkSeatRefresh(slk2);
 }
 function bkSeatBind(root){
-  root.querySelectorAll("[data-seat-toggle]").forEach(function(el){
-    el.onclick=function(e){
-      e.stopPropagation();
-      var key=el.dataset.seatToggle;
-      bkSeatDetailOpen[key]=!bkSeatDetailOpen[key];
-      bkSeatPicked=null; /* 收合/展開時順便清掉選取狀態，避免收合後留著一個看不到的選取卡片 */
-      /* 這個開關現在還連帶控制座位表下面那整串學員登記卡片要不要顯示，
-         卡片在座位表的 DOM 外面，只重畫座位表那一小塊(bkSeatRefresh)不會動到，
-         這裡要整頁重畫才能讓卡片跟著收合/展開 */
-      bkRender();
-    };
-  });
   root.querySelectorAll(".bk-seat-split").forEach(function(icon){
     icon.onclick=function(e){
       e.stopPropagation();
