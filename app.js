@@ -750,6 +750,30 @@ function dedDateStr(y, m, d) {
    不然切到國圖分頁，會把旗艦核銷的課全部当成國圖的人次帶進去。 */
 function dedStoreOf(dept) { return dept === '國圖' ? 'guotu' : 'flagship'; }
 
+/* 課程本身內含、核銷時照配方自動扣的材料（不額外收費）——直接讀 autoUsed 原始紀錄，
+   不用配方重新反推，確保畫面上看到的就是真的扣過庫存的東西。用 bookingId 對回同一筆核銷，
+   kind:'addon' 的是加購（已經另外用 r.addonText 顯示了，這裡不重複列）。 */
+function getIncludedMaterialsText(store, dateStr, bookingId) {
+  if (!bookingId) return '';
+  var dateKey = String(dateStr || '').replace(/\//g, '-');
+  var recs = ((S.inventory && S.inventory[store] && S.inventory[store].autoUsed) || {})[dateKey] || [];
+  var pool = {};
+  recs.forEach(function(r){
+    if (r.kind === 'addon') return;
+    if (r.bookingId !== bookingId) return;
+    pool[r.itemId] = (pool[r.itemId] || 0) + (+r.qty || 0);
+  });
+  var ids = Object.keys(pool);
+  if (!ids.length) return '';
+  var items = getInvStoreByName(store).items || [];
+  var byId = {}; items.forEach(function(it){ byId[String(it.id)] = it; });
+  return ids.map(function(id){
+    var it = byId[id];
+    var qty = pool[id];
+    return (it ? it.name : ('#' + id)) + '×' + (qty % 1 === 0 ? qty : qty.toFixed(1));
+  }).join('、');
+}
+
 async function loadDeductions(dateStr) {
   if (dedCache[dateStr] || dedLoading[dateStr]) return;
   dedLoading[dateStr] = true;
@@ -814,10 +838,13 @@ function buildDedHtml(dateStr) {
     var ak = [];
     if (r.adults) ak.push('大人' + r.adults);
     if (r.kids) ak.push('小孩' + r.kids);
+    var includedTxt = getIncludedMaterialsText(dedStoreOf(r.dept), dateStr, r.bookingId);
     rows += '<tr>' +
       '<td style="font-size:13.5px">' + (r.customer || '—') + '</td>' +
-      '<td style="font-size:13.5px;color:var(--text3)">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
-      '<td style="font-size:13.5px;color:var(--text3)">' + (r.items || '—') + (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
+      '<td style="font-size:13.5px;color:var(--text3);white-space:nowrap">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
+      '<td style="font-size:13.5px;color:var(--text3)">' + (r.items || '—') +
+        (includedTxt ? '<br><span style="color:var(--text3)">含：' + includedTxt + '</span>' : '') +
+        (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
       '<td style="font-size:13.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
       '<td style="text-align:right;font-size:13.5px">$' + amt.toLocaleString() + '</td>' +
       '<td><button class="btn btn-del btn-sm" onclick="delDeduction(\'' + r._id + '\',\'' + dateStr + '\')">刪除</button></td>' +
