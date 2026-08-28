@@ -421,6 +421,19 @@ function saveNow() {
   return doSave();
 }
 
+/* 給右上角「立即存檔」按鈕用：不看角落那顆小小的同步狀態字，
+   直接跳出使用者一定看得到的 alert 講清楚結果，讓人放心資料真的上雲端了。 */
+async function manualSaveNow(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '存檔中...'; }
+  var ok = await saveNow();
+  if (btn) { btn.disabled = false; btn.textContent = '💾 立即存檔'; }
+  if (ok) {
+    alert('✅ 已經確認存到雲端了，資料是安全的。');
+  } else {
+    alert('⚠️ 存檔失敗！資料目前只留在這台電腦，還沒送上雲端。\n\n請先不要關閉這個分頁、不要重新整理，截圖這個畫面告訴我。');
+  }
+}
+
 // ── Month ──────────────────────────────────────────────
 function getMonthKey() {
   return document.getElementById('selYear').value + '-' + document.getElementById('selMonth').value;

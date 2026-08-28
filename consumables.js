@@ -213,7 +213,8 @@ function addConsumable() {
     amount: Math.round(amount),
     source: source,
     note: note,
-    details: details.length > 0 ? details : null
+    details: details.length > 0 ? details : null,
+    paid: false // 新增時預設「未撥款（代墊中）」，要老闆自己確認撥款了才手動改成已撥款
   };
 
   var k = getCMKey();
@@ -957,7 +958,8 @@ function importAIResults() {
       amount: twd,
       source: '—',
       note: '',
-      details: null
+      details: null,
+      paid: false
     });
     count++;
   });
