@@ -412,6 +412,10 @@ function migratePlanSalesDateKeys() {
 /* 這台裝置存檔前，先把雲端現在有、但這台本機沒有的 key 補進本機資料再存出去，
    避免分頁開太久沒重整、或另一台裝置存過檔之後，這裡整包蓋過去把對方新增的東西蓋不見。
    只「補缺」，不覆蓋本機已經有的值——本機對同一個 key 的編輯還是本機優先。 */
+// 陣列內容完全相同（每個欄位都一樣）才視為同一筆，用來判斷 cloud 裡的項目本機是不是已經有了。
+function arrayItemKey(item) {
+  try { return JSON.stringify(item); } catch(e) { return String(item); }
+}
 function fillMissingFromCloud(local, cloud) {
   if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
   Object.keys(cloud).forEach(function(key){
@@ -419,11 +423,20 @@ function fillMissingFromCloud(local, cloud) {
     const lVal = local[key];
     if (lVal === undefined) {
       local[key] = cVal;
+    } else if (Array.isArray(cVal) && Array.isArray(lVal)) {
+      // 陣列（例如某天的核銷用料清單、某月的耗材記帳）取聯集：本機原本就有的維持原樣，
+      // 把 cloud 有、本機沒有的項目加進去——不然本機這邊只要是空陣列或少幾筆，
+      // 就會把 cloud 裡別的裝置剛新增的整批東西吃掉，這是之前修過一次還沒修乾淨的漏洞。
+      var seen = {}; lVal.forEach(function(it){ seen[arrayItemKey(it)] = true; });
+      cVal.forEach(function(it){
+        var k = arrayItemKey(it);
+        if (!seen[k]) { seen[k] = true; lVal.push(it); }
+      });
     } else if (cVal && typeof cVal === 'object' && !Array.isArray(cVal)
                && lVal && typeof lVal === 'object' && !Array.isArray(lVal)) {
       fillMissingFromCloud(lVal, cVal);
     }
-    // 其他情況（本機已經有值，不管是陣列還是純值）保留本機的，不覆蓋
+    // 其他情況（型別對不上，或本機已經是非陣列的純值）保留本機的，不覆蓋
   });
 }
 
