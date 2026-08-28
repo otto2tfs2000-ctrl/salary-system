@@ -26,6 +26,55 @@ function initFB() {
 }
 initFB();
 
+// ── 自動偵測新版本、逾時自動重新整理 ──────────────────────
+// 分頁開太久沒重整，就是一直在跑舊版存檔邏輯（整包覆蓋雲端）的根源。不能只靠人記得按 F5，
+// 改成定期跟伺服器要一份最新的 index.html，比對 <script src> 版本號跟現在這頁載入的是否一樣，
+// 不一樣就代表有新版上線了，跳提醒、給時間存檔，時間到自動重整——不用手動維護版本號常數，
+// 任何一支 .js 檔案的 ?v= 只要跳號就會被抓到。
+var VERSION_FINGERPRINT = null;
+var versionWarningShown = false;
+function initVersionCheck() {
+  var scripts = Array.prototype.map.call(document.scripts, function(s){ return s.getAttribute('src') }).filter(Boolean);
+  VERSION_FINGERPRINT = scripts.sort().join('|');
+  setTimeout(checkForNewVersion, 15000);
+  setInterval(checkForNewVersion, 3 * 60 * 1000);
+}
+function checkForNewVersion() {
+  if (versionWarningShown || !VERSION_FINGERPRINT) return;
+  fetch('index.html?_=' + Date.now(), { cache: 'no-store' })
+    .then(function(r){ return r.text() })
+    .then(function(html){
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var scripts = Array.prototype.map.call(doc.scripts, function(s){ return s.getAttribute('src') }).filter(Boolean);
+      var fp = scripts.sort().join('|');
+      if (fp && fp !== VERSION_FINGERPRINT) showVersionWarning();
+    })
+    .catch(function(){}); // 網路暫時不通就算了，下次排程再檢查
+}
+function showVersionWarning() {
+  if (versionWarningShown) return;
+  versionWarningShown = true;
+  var banner = document.getElementById('version-warn-banner');
+  if (!banner) { location.reload(); return; }
+  var secondsLeft = 30;
+  function render() {
+    banner.innerHTML = '🔄 系統已經更新到新版本，' + secondsLeft + ' 秒後自動重新整理（目前輸入的內容記得先按存檔）— ' +
+      '<button onclick="location.reload()" style="margin-left:10px;background:#fff;color:#c98a2c;border:none;padding:4px 12px;border-radius:5px;font-weight:600;cursor:pointer">立即重新整理</button>';
+  }
+  banner.style.display = 'block';
+  render();
+  var iv = setInterval(function(){
+    secondsLeft--;
+    if (secondsLeft <= 0) { clearInterval(iv); location.reload(); return }
+    render();
+  }, 1000);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initVersionCheck);
+} else {
+  initVersionCheck();
+}
+
 const SALES_STAFF_MAP = {
   'Ethan': ['吳忠懋-Ethan', 'Ethan'],
   '大熊': ['邱宗洲-大熊', '大熊', '邱宗洲'],
