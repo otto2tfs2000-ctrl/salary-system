@@ -360,6 +360,24 @@ function migratePlanSalesDateKeys() {
   save();
 }
 
+/* 這台裝置存檔前，先把雲端現在有、但這台本機沒有的 key 補進本機資料再存出去，
+   避免分頁開太久沒重整、或另一台裝置存過檔之後，這裡整包蓋過去把對方新增的東西蓋不見。
+   只「補缺」，不覆蓋本機已經有的值——本機對同一個 key 的編輯還是本機優先。 */
+function fillMissingFromCloud(local, cloud) {
+  if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
+  Object.keys(cloud).forEach(function(key){
+    const cVal = cloud[key];
+    const lVal = local[key];
+    if (lVal === undefined) {
+      local[key] = cVal;
+    } else if (cVal && typeof cVal === 'object' && !Array.isArray(cVal)
+               && lVal && typeof lVal === 'object' && !Array.isArray(lVal)) {
+      fillMissingFromCloud(lVal, cVal);
+    }
+    // 其他情況（本機已經有值，不管是陣列還是純值）保留本機的，不覆蓋
+  });
+}
+
 async function doSave() {
   setSync('saving','儲存中...');
   // 進站的 saveNow() 有可能跳過 save()、直接叫這支，所以旗標也在這裡補標一次，
@@ -368,7 +386,14 @@ async function doSave() {
   localStorage.setItem('otto2_v7', JSON.stringify(S));
   if (!fbDb2) { setSync('err','Firebase 未初始化'); return false; }
   try {
+    try {
+      const snap = await fbDb2.ref('salaryData').once('value');
+      fillMissingFromCloud(S, snap.val());
+    } catch(e2) {
+      console.warn('doSave: 存檔前讀雲端補缺失敗，直接存本機版本', e2);
+    }
     await fbDb2.ref('salaryData').set(S);
+    localStorage.setItem('otto2_v7', JSON.stringify(S)); // 補完雲端缺的 key 之後的版本也要留在本機
     localStorage.setItem('otto2_v7_pending','0'); // 這一輪的編輯確認存到雲端了，才清旗標
     setSync('ok','已儲存');
     return true;
