@@ -254,6 +254,7 @@ async function loadData() {
     }
     injectMayData();
     migrateFlagshipConsumablesToFloor4();
+    dedupeConsumablesById();
     applyCanvasTwoWeekForecast();
     migratePlanSalesDateKeys();
   } catch(e) {
@@ -316,6 +317,35 @@ function migrateFlagshipConsumablesToFloor4() {
   S.consumables['__cm_migrate_ver'] = CM_MIGRATE_VER;
   if (movedCount > 0) {
     console.log('[Otto2] 旗艦店耗材舊資料已併入四樓，共 ' + movedCount + ' 筆（月份：' + movedMonths.join('、') + '）');
+  }
+  save();
+}
+
+// ── 一次性清掉「未撥款改成已撥款」舊 bug 留下的重複耗材記帳筆數 ──
+// fillMissingFromCloud 之前用整筆內容比對是否為同一筆，導致本機把某筆 paid 改掉之後、
+// 存檔前去補雲端缺項時，把改之前的舊版本當成新項目塞回來，變成同一個 id 出現兩次
+// （一筆已撥款、一筆未撥款）。這裡把同一個 id 只留第一筆出現的（就是本機原本編輯過、
+// 位置沒變的那筆；重複的那筆是後來被 push 到陣列尾端的舊版本副本）。
+var CM_DEDUPE_VER = 'consumables_dedupe_by_id_20260831_v1';
+function dedupeConsumablesById() {
+  if (!S.consumables) return;
+  if (S.consumables['__cm_dedupe_ver'] === CM_DEDUPE_VER) return;
+  var removedCount = 0, removedKeys = [];
+  Object.keys(S.consumables).forEach(function(key){
+    var arr = S.consumables[key];
+    if (!Array.isArray(arr)) return;
+    var seen = {}, kept = [];
+    arr.forEach(function(x){
+      var k = (x && typeof x === 'object' && x.id !== undefined && x.id !== null) ? ('id:' + x.id) : JSON.stringify(x);
+      if (seen[k]) { removedCount++; removedKeys.push(key); return; }
+      seen[k] = true;
+      kept.push(x);
+    });
+    S.consumables[key] = kept;
+  });
+  S.consumables['__cm_dedupe_ver'] = CM_DEDUPE_VER;
+  if (removedCount > 0) {
+    console.log('[Otto2] 清掉耗材記帳重複筆數 ' + removedCount + ' 筆（' + removedKeys.join('、') + '）');
   }
   save();
 }
@@ -412,8 +442,15 @@ function migratePlanSalesDateKeys() {
 /* 這台裝置存檔前，先把雲端現在有、但這台本機沒有的 key 補進本機資料再存出去，
    避免分頁開太久沒重整、或另一台裝置存過檔之後，這裡整包蓋過去把對方新增的東西蓋不見。
    只「補缺」，不覆蓋本機已經有的值——本機對同一個 key 的編輯還是本機優先。 */
-// 陣列內容完全相同（每個欄位都一樣）才視為同一筆，用來判斷 cloud 裡的項目本機是不是已經有了。
+// 有 id 欄位的項目（例如耗材記帳、預約）用 id 判斷是不是同一筆——不能用內容完全相同才算，
+// 不然本機把某筆的欄位改掉（例如耗材記帳「未撥款」按成「已撥款」）之後，存檔前這裡去補雲端
+// 缺的東西時，會把 cloud 那份改之前的舊版本也當成「不一樣的新項目」塞回來，變成同一筆出現兩次
+// （一筆已撥款、一筆未撥款）。沒有 id 欄位的項目（例如核銷用料紀錄，本來就是只增不改的流水帳）
+// 才退回用整筆內容比對。
 function arrayItemKey(item) {
+  if (item && typeof item === 'object' && !Array.isArray(item) && item.id !== undefined && item.id !== null) {
+    return 'id:' + item.id;
+  }
   try { return JSON.stringify(item); } catch(e) { return String(item); }
 }
 function fillMissingFromCloud(local, cloud) {
