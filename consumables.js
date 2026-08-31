@@ -49,6 +49,7 @@ function setCMBalance(val) {
   var k = getCMKey();
   if (!S.cmBalance) S.cmBalance = {};
   if (val === '' || val === null || isNaN(parseFloat(val))) {
+    tombstonePath('cmBalance.' + k);
     delete S.cmBalance[k];
   } else {
     S.cmBalance[k] = parseFloat(val);
@@ -376,6 +377,7 @@ function setPaidStatus(id, val) {
 function delConsumable(id) {
   var k = getCMKey();
   if (!S.consumables || !S.consumables[k]) return;
+  tombstoneMark('consumables.' + k, { id: id });
   S.consumables[k] = S.consumables[k].filter(function(x){ return x.id !== id; });
   save();
   renderConsumables();

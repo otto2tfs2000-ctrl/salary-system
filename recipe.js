@@ -268,6 +268,8 @@ function rcSetQty(i, v){
 }
 function rcDel(i){
   var r = rcData()[rcOpen]; if (!r) return;
+  var removed = r.items[i];
+  if (removed) tombstoneMark('recipes.' + rcOpen + '.items', removed);
   r.items.splice(i, 1); save();
   var c = rcCourses.find(function(x){ return rcKey(x) === rcOpen });
   if (c) rcDrawModal(c, r);

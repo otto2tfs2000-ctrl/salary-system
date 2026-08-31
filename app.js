@@ -453,25 +453,61 @@ function arrayItemKey(item) {
   }
   try { return JSON.stringify(item); } catch(e) { return String(item); }
 }
-function fillMissingFromCloud(local, cloud) {
+
+/* 軟刪除墓碑：S.__deletedKeys[陣列路徑] = { arrayItemKey(項目): true, ... }。
+   下面 fillMissingFromCloud 的陣列合併是「只增不減」——本機刪掉一筆之後，
+   只要雲端那份還沒同步到這次刪除（另一台裝置、或分頁開太久沒重整都會這樣），
+   下次存檔前補缺就會把雲端那筆舊資料原封不動補回來，等於刪了跟沒刪一樣，
+   刪越多次甚至補出越多筆重複——這是被回報過好幾次的方案設定重複 bug 的
+   真正根因，同一個合併邏輯套用在耗材記帳、核銷、庫存品項/進貨、每日登記、
+   課程用料等所有陣列型資料上都會出這個問題，不是單一頁面的個案。
+   任何「真的把陣列元素刪掉」的地方，刪之前都要呼叫這支先留一個墓碑，
+   path 要跟 fillMissingFromCloud 遞迴組出來的路徑對得上（例如 'plans'、
+   'consumables.2026-08_flagship'、'daily.flagship_2026-08_15.entries'）。
+   墓碑本身存在 S 底下的一般物件，會跟著同一套合併機制在裝置間互相同步，
+   不會因為某台裝置沒看過這次刪除就漏記。 */
+function tombstoneMark(path, item) {
+  if (!S.__deletedKeys) S.__deletedKeys = {};
+  if (!S.__deletedKeys[path]) S.__deletedKeys[path] = {};
+  S.__deletedKeys[path][arrayItemKey(item)] = true;
+}
+
+/* 跟 tombstoneMark 同一個目的，但用在「整把一個物件的 key 刪掉」而不是「陣列裡的
+   一個元素」——例如清除某週盤點數字（delete st.weeks[weekKey]）、清空零用金結餘
+   （delete S.cmBalance[k]）。這種刪除下面 fillMissingFromCloud 完全看不到墓碑：
+   本機這個 key 直接變成 undefined，會直接命中「lVal===undefined → 從雲端整包補回來」
+   那個分支，跟陣列被清空後拿掉整個 key 是同一種問題，只是連陣列的墓碑機制都繞過去了。
+   呼叫前先把完整路徑（例如 'inventory.flagship.weeks.2026-W35'）記進來，
+   fillMissingFromCloud 判斷「本機沒有這個 key」時才知道是刻意刪的，不是漏掉的。 */
+function tombstonePath(path) {
+  if (!S.__deletedPaths) S.__deletedPaths = {};
+  S.__deletedPaths[path] = true;
+}
+
+function fillMissingFromCloud(local, cloud, path) {
   if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
   Object.keys(cloud).forEach(function(key){
     const cVal = cloud[key];
     const lVal = local[key];
+    const childPath = path ? path + '.' + key : key;
     if (lVal === undefined) {
+      if (S.__deletedPaths && S.__deletedPaths[childPath]) return;
       local[key] = cVal;
     } else if (Array.isArray(cVal) && Array.isArray(lVal)) {
       // 陣列（例如某天的核銷用料清單、某月的耗材記帳）取聯集：本機原本就有的維持原樣，
       // 把 cloud 有、本機沒有的項目加進去——不然本機這邊只要是空陣列或少幾筆，
       // 就會把 cloud 裡別的裝置剛新增的整批東西吃掉，這是之前修過一次還沒修乾淨的漏洞。
+      // 但墓碑（見上面 tombstoneMark 的說明）記過的項目不補——那是本機刻意刪掉的，
+      // 不是漏掉的。
+      var tomb = (S.__deletedKeys && S.__deletedKeys[childPath]) || {};
       var seen = {}; lVal.forEach(function(it){ seen[arrayItemKey(it)] = true; });
       cVal.forEach(function(it){
         var k = arrayItemKey(it);
-        if (!seen[k]) { seen[k] = true; lVal.push(it); }
+        if (!seen[k] && !tomb[k]) { seen[k] = true; lVal.push(it); }
       });
     } else if (cVal && typeof cVal === 'object' && !Array.isArray(cVal)
                && lVal && typeof lVal === 'object' && !Array.isArray(lVal)) {
-      fillMissingFromCloud(lVal, cVal);
+      fillMissingFromCloud(lVal, cVal, childPath);
     }
     // 其他情況（型別對不上，或本機已經是非陣列的純值）保留本機的，不覆蓋
   });
@@ -678,6 +714,8 @@ function addEntry(store, mKey, day, entry) {
 function delEntry(store, mKey, day, idx) {
   const k = dayKey(store, mKey, day);
   if (S.daily[k]?.entries) {
+    var removed = S.daily[k].entries[idx];
+    if (removed) tombstoneMark('daily.' + k + '.entries', removed);
     S.daily[k].entries.splice(idx, 1);
     save();
     renderDaily();
@@ -1860,6 +1898,7 @@ function addTeacher() {
 
 function delTeacher(id) {
   if (!confirm('確定要刪除？')) return;
+  tombstoneMark('teachers', { id: id });
   S.teachers = S.teachers.filter(function(t){ return t.id!==id; });
   save(); renderTeacherList();
 }

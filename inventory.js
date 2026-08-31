@@ -165,8 +165,13 @@ function addInvRestock(itemId, qty, dateStr, note) {
 function deleteInvRestock(dateKey, idx) {
   var st = getInvStore();
   if (!st.restocks[dateKey]) return;
+  var removed = st.restocks[dateKey][idx];
+  if (removed) tombstoneMark('inventory.' + curStore.inventory + '.restocks.' + dateKey, removed);
   st.restocks[dateKey].splice(idx, 1);
-  if (st.restocks[dateKey].length === 0) delete st.restocks[dateKey];
+  // 故意不把清空的 dateKey 從 st.restocks 刪掉（維持空陣列）——如果整個 key 消失，
+  // 下次存檔前補雲端缺的東西時，這個 key 本身會被判斷成「本機沒有的新東西」，
+  // 把雲端那份還沒同步到這次刪除的整包舊資料原封不動補回來，等於白刪。
+  // 只刪陣列裡的元素、留著空陣列，上面那行的墓碑才擋得住。
   save();
 }
 
@@ -257,13 +262,19 @@ function listInvAutoUsed(fromDateKey, toDateKey) {
 // 把某筆預約的自動耗用整筆撤掉（修正核銷、取消核銷時用）
 function releaseInvAutoUse(bookingId) {
   if (!bookingId) return 0;
-  var st = getInvStore(), removed = 0;
+  var st = getInvStore(), removed = 0, store = curStore.inventory;
   Object.keys(st.autoUsed).forEach(function(dateKey) {
     var keep = st.autoUsed[dateKey].filter(function(r){
-      if (String(r.bookingId) === String(bookingId)) { removed++; return false }
+      if (String(r.bookingId) === String(bookingId)) {
+        removed++;
+        tombstoneMark('inventory.' + store + '.autoUsed.' + dateKey, r);
+        return false;
+      }
       return true;
     });
-    if (keep.length) st.autoUsed[dateKey] = keep; else delete st.autoUsed[dateKey];
+    // 空陣列留著、不刪 key，理由跟 deleteInvRestock 裡的註解一樣——刪掉整個 key
+    // 會繞過上面剛留的墓碑，下次存檔補雲端缺的東西時整包舊資料會被原封不動補回來。
+    st.autoUsed[dateKey] = keep;
   });
   return removed;
 }
@@ -958,10 +969,17 @@ function delInvItem(id) {
   if (restockCount > 0) msg += '\n另有 ' + restockCount + ' 筆進貨紀錄會一併刪除。';
   if (!confirm(msg)) return;
 
+  var store = curStore.inventory;
+  tombstoneMark('inventory.' + store + '.items', { id: id });
+  Object.keys(st.restocks || {}).forEach(function(dk) {
+    st.restocks[dk].forEach(function(r) {
+      if (String(r.itemId) === String(id)) tombstoneMark('inventory.' + store + '.restocks.' + dk, r);
+    });
+  });
   st.items = st.items.filter(function(x){ return x.id !== id; });
   Object.keys(st.restocks || {}).forEach(function(dk) {
+    // 空陣列留著、不刪 key，理由跟 deleteInvRestock 裡的註解一樣。
     st.restocks[dk] = st.restocks[dk].filter(function(r){ return String(r.itemId) !== String(id); });
-    if (st.restocks[dk].length === 0) delete st.restocks[dk];
   });
   save();
   renderInvItemList();
@@ -1389,7 +1407,7 @@ function clearInvWeek() {
   if (!confirm('確定要清除「' + label + '」填入的用量和實際庫存數字？\n（品項清單不受影響）')) return;
   var st = getInvStore();
   if (st.weeks[weekKey]) {
-    // 只清除每個品項的 used 和 stock，保留其他結構
+    tombstonePath('inventory.' + curStore.inventory + '.weeks.' + weekKey);
     delete st.weeks[weekKey];
   }
   save();
@@ -1438,6 +1456,7 @@ function autoSaveInvItem(itemId) {
   var used = existingBefore && typeof existingBefore.used === 'number' ? existingBefore.used : null; // 本週用掉不再手動填，保留舊資料就好
   if (used === null && stock === null) {
     // 兩欄都清空時刪除該筆記錄
+    tombstonePath('inventory.' + curStore.inventory + '.weeks.' + weekKey + '.' + itemId);
     delete st.weeks[weekKey][itemId];
   } else {
     st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(existingBefore, stock) };
