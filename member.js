@@ -862,7 +862,7 @@ function mbImportPreset(){
   if (!confirm('要建立以下 ' + add.length + ' 個方案嗎？\n\n' +
       add.map(function(p){ return '・' + p.name + '　$' + p.price.toLocaleString() }).join('\n') +
       '\n\n建好後可以自己編輯，價格或回饋有調整就直接改。')) return;
-  add.forEach(function(p){ plans.push(JSON.parse(JSON.stringify(p))) });
+  add.forEach(function(p){ var rec = JSON.parse(JSON.stringify(p)); rec.createdAt = mbNow(); plans.push(rec) });
   save();
   renderMember();
   alert('已建立 ' + add.length + ' 個方案。請對照你的方案表確認一次數字，有出入直接按「編輯」修改。');
@@ -873,7 +873,7 @@ function mbPlansHtml(){
   var h = '';
   h += '<div class="card" style="margin-bottom:14px">' +
        '<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
-       '<div class="muted" style="font-size:13.5px">建好方案，賣的時候用選的，行政不用手打金額。舊方案改成「停用」就好，不要刪除——已經賣掉的紀錄要對得回來。</div>' +
+       '<div class="muted" style="font-size:13.5px">建好方案，賣的時候用選的，行政不用手打金額。要下架的方案改「停用」就好，賣出紀錄不受影響；如果是打錯、重複建立的方案才用「刪除」清掉。</div>' +
        '<div style="display:flex;gap:8px">' +
        (plans.length ? '' : '<button class="btn" onclick="mbImportPreset()">📋 匯入現有方案</button>') +
        '<button class="btn btn-gold" onclick="mbPlanEdit(-1)">＋ 新增方案</button></div></div>' +
@@ -881,10 +881,21 @@ function mbPlansHtml(){
        '</div>';
   h += '<table><thead><tr><th>方案名稱</th><th style="width:80px">售價</th><th style="width:80px">點數</th>' +
        '<th style="width:80px">創作回饋</th><th style="width:60px">堂數</th><th style="width:60px">效期</th>' +
-       '<th style="width:120px">新客／續約回饋</th><th style="width:70px">狀態</th><th style="width:110px"></th></tr></thead><tbody>';
-  if (!plans.length) h += '<tr><td colspan="9"><div class="empty" style="padding:20px">還沒有方案，按右上角新增</div></td></tr>';
-  plans.forEach(function(p, i){
+       '<th style="width:120px">新客／續約回饋</th><th style="width:90px">建立時間</th><th style="width:70px">狀態</th><th style="width:160px"></th></tr></thead><tbody>';
+  if (!plans.length) h += '<tr><td colspan="10"><div class="empty" style="padding:20px">還沒有方案，按右上角新增</div></td></tr>';
+  /* 啟用中排前面、已停用沉到最後，同一組內維持原本的建立順序（穩定排序，
+     用原始 index 當 tie-break，避免部分瀏覽器 sort 不穩定）；按鈕的 onclick
+     一律用 row.i（原始陣列索引），不要用畫面上排序後的順序，不然會點錯方案。 */
+  var rows = plans.map(function(p, i){ return { p: p, i: i } });
+  rows.sort(function(a, b){
+    var offA = a.p.active === false ? 1 : 0, offB = b.p.active === false ? 1 : 0;
+    if (offA !== offB) return offA - offB;
+    return a.i - b.i;
+  });
+  rows.forEach(function(row){
+    var p = row.p, i = row.i;
     var off = p.active === false;
+    var created = p.createdAt ? String(p.createdAt).slice(0, 10) : '—';
     h += '<tr' + (off ? ' style="opacity:.45"' : '') + '>' +
       '<td>' + mbEsc(p.name) + '</td>' +
       '<td style="text-align:right">$' + (+p.price || 0).toLocaleString() + '</td>' +
@@ -893,10 +904,12 @@ function mbPlansHtml(){
       '<td style="text-align:right">' + (p.sessions || '—') + (p.voucher ? '<br><span class="muted" style="font-size:12px">折價$' + (+p.voucher).toLocaleString() + '</span>' : '') + '</td>' +
       '<td style="text-align:right">' + (p.months ? p.months + '月' : '—') + '</td>' +
       '<td style="text-align:right;font-size:13.5px">' + ((p.newBonus || p.renewBonus) ? (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
+      '<td style="font-size:12.5px;color:var(--text3)">' + created + '</td>' +
       '<td style="font-size:13.5px;color:' + (off ? 'var(--text3)' : 'var(--green)') + '">' + (off ? '已停用' : '啟用中') + '</td>' +
       '<td style="display:flex;gap:6px">' +
         '<button class="btn btn-outline btn-sm" onclick="mbPlanEdit(' + i + ')">編輯</button>' +
         '<button class="btn btn-sm" onclick="mbPlanToggle(' + i + ')">' + (off ? '啟用' : '停用') + '</button>' +
+        '<button class="btn btn-del btn-sm" onclick="mbPlanDelete(' + i + ')">刪除</button>' +
       '</td></tr>';
   });
   h += '</tbody></table>';
@@ -957,8 +970,14 @@ function mbPlanSave(idx){
   var plans = mbPlans();
   var rec = { name:name, price:price, points:points, bonusPoints:bonus, sessions:ses,
               months:months, newBonus:newB, renewBonus:renB, voucher:vou, gift:gift, active:true };
-  if (idx >= 0) { rec.active = plans[idx].active !== false; plans[idx] = rec; }
-  else plans.push(rec);
+  if (idx >= 0) {
+    rec.active = plans[idx].active !== false;
+    rec.createdAt = plans[idx].createdAt || mbNow();
+    plans[idx] = rec;
+  } else {
+    rec.createdAt = mbNow();
+    plans.push(rec);
+  }
   save();
   mbClose(); renderMember();
 }
@@ -966,6 +985,26 @@ function mbPlanSave(idx){
 function mbPlanToggle(idx){
   var plans = mbPlans();
   plans[idx].active = (plans[idx].active === false);
+  save(); renderMember();
+}
+
+/* 刪除方案。已賣出的紀錄存在 S.planSales 裡是當時價格/點數的快照，
+   不是存索引，所以刪掉方案不會動到歷史售出紀錄——但賣過的方案刪掉後
+   就沒辦法再選來賣了，所以刪之前跟使用者確認一次，賣過的話多提醒一句。 */
+function mbPlanDelete(idx){
+  var plans = mbPlans();
+  var p = plans[idx];
+  if (!p) return;
+  var soldCount = 0;
+  if (S.planSales) {
+    Object.keys(S.planSales).forEach(function(d){
+      (S.planSales[d] || []).forEach(function(r){ if (r.plan === p.name) soldCount++ });
+    });
+  }
+  var msg = '確定要刪除「' + p.name + '」這個方案嗎？此動作無法復原。';
+  if (soldCount > 0) msg += '\n\n這個方案賣過 ' + soldCount + ' 次，歷史售出紀錄不會受影響（賣出時已經存好當時的價格/點數），但刪掉後這個方案就不能再選來賣了。';
+  if (!confirm(msg)) return;
+  plans.splice(idx, 1);
   save(); renderMember();
 }
 
