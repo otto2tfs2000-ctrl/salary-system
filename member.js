@@ -55,7 +55,16 @@ function mbPlans(){
   return S.plans;
 }
 function mbActivePlans(){
-  return mbPlans().filter(function(p){ return p.active !== false });
+  return mbPlans().filter(function(p){ return p.active !== false && !p.deleted });
+}
+/* 方案沒有穩定 id 的話，存檔前的雲端補缺合併（fillMissingFromCloud，app.js）
+   會把「內容整包比對」當成判斷依據——只要編輯/停用/刪除改到內容，新舊兩份
+   長得不一樣，就會被當成兩筆不同的東西，舊的那筆從雲端被補回來，越改越多筆
+   重複方案（跟耗材記帳當初的坑一模一樣，app.js 的 arrayItemKey 註解有解釋）。
+   所以任何會改到既有方案內容的地方，都要先確保這筆方案有 id。 */
+function mbEnsurePlanId(p){
+  if (!p.id) p.id = 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  return p.id;
 }
 
 /* ── 會員資料 ──────────────────────────────────────────── */
@@ -862,7 +871,7 @@ function mbImportPreset(){
   if (!confirm('要建立以下 ' + add.length + ' 個方案嗎？\n\n' +
       add.map(function(p){ return '・' + p.name + '　$' + p.price.toLocaleString() }).join('\n') +
       '\n\n建好後可以自己編輯，價格或回饋有調整就直接改。')) return;
-  add.forEach(function(p){ var rec = JSON.parse(JSON.stringify(p)); rec.createdAt = mbNow(); plans.push(rec) });
+  add.forEach(function(p){ var rec = JSON.parse(JSON.stringify(p)); rec.createdAt = mbNow(); mbEnsurePlanId(rec); plans.push(rec) });
   save();
   renderMember();
   alert('已建立 ' + add.length + ' 個方案。請對照你的方案表確認一次數字，有出入直接按「編輯」修改。');
@@ -882,11 +891,13 @@ function mbPlansHtml(){
   h += '<table><thead><tr><th>方案名稱</th><th style="width:80px">售價</th><th style="width:80px">點數</th>' +
        '<th style="width:80px">創作回饋</th><th style="width:60px">堂數</th><th style="width:60px">效期</th>' +
        '<th style="width:120px">新客／續約回饋</th><th style="width:90px">建立時間</th><th style="width:70px">狀態</th><th style="width:160px"></th></tr></thead><tbody>';
-  if (!plans.length) h += '<tr><td colspan="10"><div class="empty" style="padding:20px">還沒有方案，按右上角新增</div></td></tr>';
   /* 啟用中排前面、已停用沉到最後，同一組內維持原本的建立順序（穩定排序，
      用原始 index 當 tie-break，避免部分瀏覽器 sort 不穩定）；按鈕的 onclick
-     一律用 row.i（原始陣列索引），不要用畫面上排序後的順序，不然會點錯方案。 */
-  var rows = plans.map(function(p, i){ return { p: p, i: i } });
+     一律用 row.i（S.plans 裡的原始陣列索引，不是這裡濾掉刪除項目之後的順序），
+     不然會點錯方案。刪除是軟刪除（p.deleted=true，理由見 mbEnsurePlanId 上面的
+     註解），這裡直接濾掉不顯示，陣列本身不動，索引才會一直穩定。 */
+  var rows = plans.map(function(p, i){ return { p: p, i: i } }).filter(function(row){ return !row.p.deleted });
+  if (!rows.length) h += '<tr><td colspan="10"><div class="empty" style="padding:20px">還沒有方案，按右上角新增</div></td></tr>';
   rows.sort(function(a, b){
     var offA = a.p.active === false ? 1 : 0, offB = b.p.active === false ? 1 : 0;
     if (offA !== offB) return offA - offB;
@@ -973,9 +984,12 @@ function mbPlanSave(idx){
   if (idx >= 0) {
     rec.active = plans[idx].active !== false;
     rec.createdAt = plans[idx].createdAt || mbNow();
+    rec.id = plans[idx].id;
+    mbEnsurePlanId(rec);
     plans[idx] = rec;
   } else {
     rec.createdAt = mbNow();
+    mbEnsurePlanId(rec);
     plans.push(rec);
   }
   save();
@@ -984,13 +998,23 @@ function mbPlanSave(idx){
 
 function mbPlanToggle(idx){
   var plans = mbPlans();
+  mbEnsurePlanId(plans[idx]);
   plans[idx].active = (plans[idx].active === false);
   save(); renderMember();
 }
 
-/* 刪除方案。已賣出的紀錄存在 S.planSales 裡是當時價格/點數的快照，
-   不是存索引，所以刪掉方案不會動到歷史售出紀錄——但賣過的方案刪掉後
-   就沒辦法再選來賣了，所以刪之前跟使用者確認一次，賣過的話多提醒一句。 */
+/* 刪除方案，用「軟刪除」（打 p.deleted=true 標記），不是真的把陣列元素挖掉。
+   原因：存檔前 doSave()（app.js）會先讀一次雲端現況、用 fillMissingFromCloud
+   補本機缺的東西，這個合併是「只增不減」——如果真的用 splice 刪掉，
+   雲端那份還在的舊資料下次存檔就會被原封不動補回來，變成刪了跟沒刪一樣，
+   甚至因為 plans 陣列原本沒有穩定 id、editable 過的內容前後對不起來，
+   越刪／越改越多筆重複方案（就是這次被回報的那個 bug，跟耗材記帳當初用
+   id 解決重複的坑同一個成因，見 mbEnsurePlanId 上面的說明）。
+   標成 deleted 之後這筆的 id 在本機陣列裡「還在」，雲端那份舊內容就不會
+   被誤判成「本機沒有的新東西」補回來，才是真的刪得掉。
+   已賣出的紀錄存在 S.planSales 裡是當時價格/點數的快照，不是存索引，
+   所以刪掉方案不會動到歷史售出紀錄——但賣過的方案刪掉後就不能再選來賣了，
+   所以刪之前跟使用者確認一次，賣過的話多提醒一句。 */
 function mbPlanDelete(idx){
   var plans = mbPlans();
   var p = plans[idx];
@@ -1004,7 +1028,9 @@ function mbPlanDelete(idx){
   var msg = '確定要刪除「' + p.name + '」這個方案嗎？此動作無法復原。';
   if (soldCount > 0) msg += '\n\n這個方案賣過 ' + soldCount + ' 次，歷史售出紀錄不會受影響（賣出時已經存好當時的價格/點數），但刪掉後這個方案就不能再選來賣了。';
   if (!confirm(msg)) return;
-  plans.splice(idx, 1);
+  mbEnsurePlanId(p);
+  p.deleted = true;
+  p.active = false;
   save(); renderMember();
 }
 
