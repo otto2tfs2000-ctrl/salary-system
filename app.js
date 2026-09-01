@@ -257,6 +257,7 @@ async function loadData() {
     dedupeConsumablesById();
     applyCanvasTwoWeekForecast();
     migratePlanSalesDateKeys();
+    migratePlanDedupReset();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -436,6 +437,42 @@ function migratePlanSalesDateKeys() {
   if (fixed > 0) {
     console.log('[Otto2] planSales 日期 key 格式修正（"/"→"-"），共 ' + fixed + ' 個日期');
   }
+  save();
+}
+
+// ── 一次性修復：方案設定被隨機 id bug 洗出一堆重複/損毀資料 ────────────
+// 2026-09-01 那版 mbEnsurePlanId 用 Date.now()+隨機字串 產生 id，每按一次
+// 「刪除」/「停用」，本機新算出的隨機 id 都跟雲端那份舊內容（沒有 id）對不起來，
+// 存檔前補雲端缺的東西時就把還沒刪除的舊版本當成新東西補回來——按一次刪除多生
+// 一筆，累積到 50 幾筆方案混在一起（已經改用內容算固定 id，見 member.js 的
+// mbEnsurePlanId，這個 bug 不會再發生）。這裡把 plans 直接重置回跟大熊確認過的
+// 正確 9 筆，只跑一次，不用大熊自己一筆一筆手動刪。
+var PLAN_DEDUP_VER = 'plan_dedup_reset_20260901_v2';
+function migratePlanDedupReset() {
+  if (S.__planDedupVer === PLAN_DEDUP_VER) return;
+  var now = new Date().toISOString();
+  // 先把換掉之前那些舊資料（不管是損毀的、重複的、還是已經標過 deleted 的）
+  // 都留一個墓碑，不然待會整批換成乾淨的 9 筆之後，下次存檔前補雲端缺的東西時，
+  // 這些舊資料會被判斷成「本機沒有的新東西」原封不動補回來——v1 就是漏了這步，
+  // 越補越多（51 筆補成 60 筆），這裡補上。
+  (S.plans || []).forEach(function(p){ tombstoneMark('plans', p); });
+  S.plans = [
+    { name:'入門創作家',   price:11000, points:11000, bonusPoints:700,  sessions:0,  months:12, newBonus:150,  renewBonus:300,  voucher:0,    gift:'', active:true },
+    { name:'創意實踐家',   price:15000, points:15000, bonusPoints:1600, sessions:0,  months:15, newBonus:400,  renewBonus:800,  voucher:0,    gift:'', active:true },
+    { name:'藝術探索家',   price:18000, points:18000, bonusPoints:4000, sessions:0,  months:18, newBonus:800,  renewBonus:1600, voucher:0,    gift:'', active:true },
+    { name:'藝術生活家',   price:22000, points:22000, bonusPoints:5000, sessions:0,  months:20, newBonus:1200, renewBonus:2400, voucher:0,    gift:'', active:true },
+    { name:'純繪畫 30 堂', price:30000, points:1000,  bonusPoints:0,    sessions:30, months:12, newBonus:0,    renewBonus:0,    voucher:1000, gift:'', active:true },
+    { name:'純繪畫 70 堂', price:60000, points:3000,  bonusPoints:0,    sessions:70, months:24, newBonus:0,    renewBonus:0,    voucher:3000, gift:'專屬咖啡／茶包禮品兩組', active:true },
+    { name:'純繪畫45堂',   price:42000, points:0,     bonusPoints:0,    sessions:45, months:15, newBonus:0,    renewBonus:0,    voucher:0,    gift:'', active:true },
+    { name:'堂數限定優惠', price:6800,  points:0,     bonusPoints:0,    sessions:4,  months:5,  newBonus:0,    renewBonus:0,    voucher:0,    gift:'', active:true },
+    { name:'測試方案',     price:5000,  points:5000,  bonusPoints:200,  sessions:0,  months:6,  newBonus:0,    renewBonus:0,    voucher:0,    gift:'', active:false }
+  ];
+  S.plans.forEach(function(p){
+    p.createdAt = now;
+    if (typeof mbEnsurePlanId === 'function') mbEnsurePlanId(p);
+  });
+  S.__planDedupVer = PLAN_DEDUP_VER;
+  console.log('[Otto2] 方案設定重置回正確的 9 筆（清掉隨機 id bug 洗出的重複資料）');
   save();
 }
 

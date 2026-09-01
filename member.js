@@ -61,9 +61,27 @@ function mbActivePlans(){
    會把「內容整包比對」當成判斷依據——只要編輯/停用/刪除改到內容，新舊兩份
    長得不一樣，就會被當成兩筆不同的東西，舊的那筆從雲端被補回來，越改越多筆
    重複方案（跟耗材記帳當初的坑一模一樣，app.js 的 arrayItemKey 註解有解釋）。
-   所以任何會改到既有方案內容的地方，都要先確保這筆方案有 id。 */
+   所以任何會改到既有方案內容的地方，都要先確保這筆方案有 id。
+
+   2026-09-01 修過一次大 bug：這裡原本用 Date.now()+隨機字串 產生 id，結果
+   同一筆「舊資料第一次被觸碰」時，本機把它蓋成新 id，但雲端那份還是舊內容
+   （沒有 id），兩邊的 arrayItemKey 對不起來，合併時雲端那份舊內容被當成
+   「本機沒有的新東西」補回來——按一次刪除、多生一筆，越刪越多，被回報過
+   好幾次「試了無數次還是刪不掉」。改成用內容本身算一個固定的 id（同一筆
+   資料、不管在哪台裝置、哪個時間點算，結果都一樣），這樣「舊資料第一次
+   被觸碰」這個瞬間，本機新算出來的 id 反而不會製造出雲端辨識不出來的新身分，
+   從根本避免這個問題，不只是治標。 */
+function mbPlanContentKey(p){
+  var keys = Object.keys(p).filter(function(k){ return k !== 'id' }).sort();
+  return JSON.stringify(p, keys);
+}
 function mbEnsurePlanId(p){
-  if (!p.id) p.id = 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  if (!p.id) {
+    var seed = mbPlanContentKey(p);
+    var h = 0;
+    for (var i = 0; i < seed.length; i++) { h = ((h << 5) - h + seed.charCodeAt(i)) | 0; }
+    p.id = 'plan_' + (h >>> 0).toString(36) + seed.length.toString(36);
+  }
   return p.id;
 }
 
@@ -982,10 +1000,13 @@ function mbPlanSave(idx){
   var rec = { name:name, price:price, points:points, bonusPoints:bonus, sessions:ses,
               months:months, newBonus:newB, renewBonus:renB, voucher:vou, gift:gift, active:true };
   if (idx >= 0) {
+    // 先用「編輯前」的舊內容算 id（不是編輯後的 rec）——這樣算出來的 id
+    // 才會跟雲端現在存的內容對應得上，不然編輯瞬間本機內容已經變了，
+    // 用新內容算出的 id 沒辦法辨識出雲端那份「舊」資料是同一筆。
+    mbEnsurePlanId(plans[idx]);
     rec.active = plans[idx].active !== false;
     rec.createdAt = plans[idx].createdAt || mbNow();
     rec.id = plans[idx].id;
-    mbEnsurePlanId(rec);
     plans[idx] = rec;
   } else {
     rec.createdAt = mbNow();
