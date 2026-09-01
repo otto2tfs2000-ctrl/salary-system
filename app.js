@@ -592,7 +592,27 @@ function initMonth() {
     if (i===now.getMonth()) o.selected = true;
     mEl.appendChild(o);
   });
-  yEl.onchange = mEl.onchange = renderAll;
+  yEl.onchange = mEl.onchange = onGlobalMonthChange;
+}
+
+/* 右上角這個月份選單只管「按月彙整」的頁面（每日登記月結算表、薪資、耗材記帳、
+   庫存…），對「今日排課」完全不起作用——排課本來就是按天運作，日期是它自己
+   一套獨立的 bkDate（用頁面中間的 ‹ › 今天 按鈕控制），程式碼從來沒把兩邊接在
+   一起過，改月份時排課那頁的日期會停在原地不動，看起來像壞掉。
+   照大熊的要求把兩邊接起來：月份選單一改，bkDate 跳到那個月的 1 號（哪一天
+   還是要靠排課頁自己的日期箭頭/日期選擇器挑），如果現在正好停在「今日排課」
+   分頁，直接重畫一次讓畫面立刻對上。 */
+function onGlobalMonthChange() {
+  renderAll();
+  // bkDate 是 booking.js 那個 IIFE 裡的私有變數，這裡碰不到，
+  // 只能透過它自己公開出來的 window.bkGoToMonth 改。
+  if (window.bkGoToMonth) {
+    var y = parseInt(document.getElementById('selYear').value);
+    var m = parseInt(document.getElementById('selMonth').value);
+    window.bkGoToMonth(y, m);
+    var todayTab = document.querySelector('.tab[data-tab="today"]');
+    if (todayTab && todayTab.classList.contains('active') && window.bkRender) bkRender();
+  }
 }
 
 // ── Lock ───────────────────────────────────────────────

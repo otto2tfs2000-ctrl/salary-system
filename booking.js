@@ -1235,6 +1235,9 @@ async function bkRender(){
   bkRenderShortageBanner();
 }
 window.bkRender=bkRender;
+/* bkDate 是這個 IIFE 內部的變數，外面（app.js 的月份選單）碰不到，
+   要跳月只能透過這支公開出去的函式改，改完由呼叫端自己決定要不要 bkRender()。 */
+window.bkGoToMonth=function(y,m){ bkDate=new Date(y,m-1,1); };
 
 /* 未來備料預警的精簡版，放在今日排課最上面每次開頁都看得到（不用特地跑去庫存盤點分頁）。
    實際的加總/比對邏輯在 inventory.js 的 computeUpcomingShortages，這裡只負責顯示摘要，
