@@ -258,6 +258,7 @@ async function loadData() {
     applyCanvasTwoWeekForecast();
     migratePlanSalesDateKeys();
     migratePlanDedupReset();
+    migrateTombstoneKeys();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -476,6 +477,46 @@ function migratePlanDedupReset() {
   save();
 }
 
+// ── 一次性修復：墓碑（tombstoneMark/tombstonePath）path 帶 "." 直接當 Firebase key
+// 存進去，被 SDK 擋下來（見 fbSafeTombKey 上面的說明），造成這台裝置一旦刪除過任何
+// 一筆資料，之後每次存檔都失敗（紅字「儲存失敗（本機備份）」）。這裡把這台裝置本機
+// 已經壞掉的舊 key（可能還留在 localStorage 備份裡）轉成安全格式修好，之後的墓碑
+// 寫入邏輯（tombstoneMark/tombstonePath）都已經改用 fbSafeTombKey，不會再壞。
+var TOMBSTONE_KEY_MIGRATE_VER = 'tombstone_key_escape_v1';
+function migrateTombstoneKeys() {
+  if (S.__tombstoneKeyMigrateVer === TOMBSTONE_KEY_MIGRATE_VER) return;
+  var fixed = 0;
+  if (S.__deletedKeys) {
+    var newDK = {};
+    Object.keys(S.__deletedKeys).forEach(function(path){
+      var safePath = fbSafeTombKey(path);
+      if (safePath !== path) fixed++;
+      var innerOut = newDK[safePath] || {};
+      Object.keys(S.__deletedKeys[path] || {}).forEach(function(itemKey){
+        var safeItemKey = fbSafeTombKey(itemKey);
+        if (safeItemKey !== itemKey) fixed++;
+        innerOut[safeItemKey] = true;
+      });
+      newDK[safePath] = innerOut;
+    });
+    S.__deletedKeys = newDK;
+  }
+  if (S.__deletedPaths) {
+    var newDP = {};
+    Object.keys(S.__deletedPaths).forEach(function(path){
+      var safePath = fbSafeTombKey(path);
+      if (safePath !== path) fixed++;
+      newDP[safePath] = true;
+    });
+    S.__deletedPaths = newDP;
+  }
+  S.__tombstoneKeyMigrateVer = TOMBSTONE_KEY_MIGRATE_VER;
+  if (fixed > 0) {
+    console.log('[Otto2] 墓碑 key 格式修正（跳脫 Firebase 不准的字元），共 ' + fixed + ' 個 key');
+  }
+  save();
+}
+
 /* 這台裝置存檔前，先把雲端現在有、但這台本機沒有的 key 補進本機資料再存出去，
    避免分頁開太久沒重整、或另一台裝置存過檔之後，這裡整包蓋過去把對方新增的東西蓋不見。
    只「補缺」，不覆蓋本機已經有的值——本機對同一個 key 的編輯還是本機優先。 */
@@ -491,6 +532,20 @@ function arrayItemKey(item) {
   try { return JSON.stringify(item); } catch(e) { return String(item); }
 }
 
+/* tombstoneMark/tombstonePath 的路徑、還有 arrayItemKey() 的回傳值（沒有 id 的項目
+   會退回用 JSON.stringify 整筆內容當 key，數字欄位帶小數點、字串裡剛好有 "/" 都很常見），
+   最後都會變成 S.__deletedKeys/__deletedPaths 底下的物件 key，一路存進 Firebase——
+   但 Firebase key 不准包含 "." "#" "$" "/" "[" "]"，路徑本身用 "." 串接、加上
+   JSON.stringify 常常帶小數點或斜線，两邊都會踩到。這裡統一跳脫，寫入
+   （tombstoneMark/tombstonePath）跟讀取比對（fillMissingFromCloud）都要走同一支，
+   不然兩邊算出來的 key 對不起來，墓碑等於失效。2026-09-03 事件：庫存核銷刪除
+   一筆紀錄後，'inventory.flagship.autoUsed.2026-08-31' 這種路徑直接當 key 寫入，
+   被 Firebase SDK 擋下來，這台裝置從此存檔一律失敗（紅字「儲存失敗（本機備份）」），
+   跟 8/25 那次 planSales 日期 key 帶 "/" 是同一種錯誤模式。 */
+function fbSafeTombKey(s) {
+  return String(s).replace(/[.#$/[\]]/g, function(c){ return c === '.' ? '__' : '_'; });
+}
+
 /* 軟刪除墓碑：S.__deletedKeys[陣列路徑] = { arrayItemKey(項目): true, ... }。
    下面 fillMissingFromCloud 的陣列合併是「只增不減」——本機刪掉一筆之後，
    只要雲端那份還沒同步到這次刪除（另一台裝置、或分頁開太久沒重整都會這樣），
@@ -504,9 +559,10 @@ function arrayItemKey(item) {
    墓碑本身存在 S 底下的一般物件，會跟著同一套合併機制在裝置間互相同步，
    不會因為某台裝置沒看過這次刪除就漏記。 */
 function tombstoneMark(path, item) {
+  var pKey = fbSafeTombKey(path);
   if (!S.__deletedKeys) S.__deletedKeys = {};
-  if (!S.__deletedKeys[path]) S.__deletedKeys[path] = {};
-  S.__deletedKeys[path][arrayItemKey(item)] = true;
+  if (!S.__deletedKeys[pKey]) S.__deletedKeys[pKey] = {};
+  S.__deletedKeys[pKey][fbSafeTombKey(arrayItemKey(item))] = true;
 }
 
 /* 跟 tombstoneMark 同一個目的，但用在「整把一個物件的 key 刪掉」而不是「陣列裡的
@@ -518,7 +574,7 @@ function tombstoneMark(path, item) {
    fillMissingFromCloud 判斷「本機沒有這個 key」時才知道是刻意刪的，不是漏掉的。 */
 function tombstonePath(path) {
   if (!S.__deletedPaths) S.__deletedPaths = {};
-  S.__deletedPaths[path] = true;
+  S.__deletedPaths[fbSafeTombKey(path)] = true;
 }
 
 function fillMissingFromCloud(local, cloud, path) {
@@ -528,7 +584,7 @@ function fillMissingFromCloud(local, cloud, path) {
     const lVal = local[key];
     const childPath = path ? path + '.' + key : key;
     if (lVal === undefined) {
-      if (S.__deletedPaths && S.__deletedPaths[childPath]) return;
+      if (S.__deletedPaths && S.__deletedPaths[fbSafeTombKey(childPath)]) return;
       local[key] = cVal;
     } else if (Array.isArray(cVal) && Array.isArray(lVal)) {
       // 陣列（例如某天的核銷用料清單、某月的耗材記帳）取聯集：本機原本就有的維持原樣，
@@ -536,11 +592,11 @@ function fillMissingFromCloud(local, cloud, path) {
       // 就會把 cloud 裡別的裝置剛新增的整批東西吃掉，這是之前修過一次還沒修乾淨的漏洞。
       // 但墓碑（見上面 tombstoneMark 的說明）記過的項目不補——那是本機刻意刪掉的，
       // 不是漏掉的。
-      var tomb = (S.__deletedKeys && S.__deletedKeys[childPath]) || {};
+      var tomb = (S.__deletedKeys && S.__deletedKeys[fbSafeTombKey(childPath)]) || {};
       var seen = {}; lVal.forEach(function(it){ seen[arrayItemKey(it)] = true; });
       cVal.forEach(function(it){
         var k = arrayItemKey(it);
-        if (!seen[k] && !tomb[k]) { seen[k] = true; lVal.push(it); }
+        if (!seen[k] && !tomb[fbSafeTombKey(k)]) { seen[k] = true; lVal.push(it); }
       });
     } else if (cVal && typeof cVal === 'object' && !Array.isArray(cVal)
                && lVal && typeof lVal === 'object' && !Array.isArray(lVal)) {
