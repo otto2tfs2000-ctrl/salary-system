@@ -1787,6 +1787,18 @@ function getBaseSalary(t, bk) {
   return n;
 }
 
+/* 業績績效比例：目前只有米雪的合約是級距制（未達12萬0%／12萬~15萬2%／15萬以上3%，
+   整包業績套一個比例，不是像所得稅那樣分段累進），其他人維持原本固定 2%。
+   2026-09-10 大熊回報米雪的業績算法沒有跟著級距走，查出來是這裡當初寫死 0.02。 */
+function salesPerfRate(t){
+  if (t.name === '米雪') return function(amt){
+    if (amt >= 150000) return 0.03;
+    if (amt >= 120000) return 0.02;
+    return 0;
+  };
+  return function(){ return 0.02 };
+}
+
 function calcSalary(t, store, mKey) {
   var totals = aggregateMonth(store, mKey);
   var tt = totals.teachers[t.id] || {};
@@ -1818,10 +1830,11 @@ function calcSalary(t, store, mKey) {
   var selM = parseInt(document.getElementById('selMonth').value);
   var fbAmt = getFBSales(getSalesKey(t.name), selM, store);
   var salesAmt = fbAmt > 0 ? fbAmt : (tt.sales||0);
-  var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
-  // 參考顯示用：個人業績總和 + 個人績效（=業績×2%，不併入總薪資）；業務角色連參考數字都不顯示，避免誤會
+  var perfRate = salesPerfRate(t)(salesAmt);
+  var salesPerf  = t.role !== 'sales' ? Math.round(salesAmt*perfRate) : 0;
+  // 參考顯示用：個人業績總和 + 個人績效（=業績×比例，不併入總薪資）；業務角色連參考數字都不顯示，避免誤會
   var personalTotal = salesAmt;
-  var personalBonus = t.role !== 'sales' ? Math.round(salesAmt*0.02) : 0;
+  var personalBonus = t.role !== 'sales' ? Math.round(salesAmt*perfRate) : 0;
   var supFee     = (t.name==='米雪' && store==='flagship') ? (tt.supHours||0)*(tt.supRate||0) : 0;
   // 國圖兼職：總部支付時數（如米雪特休、米妮代班的星期二）由總部出錢，店內只付剩餘時數
   // 注意：人次獎金上面已用「總時數＋總人次」算完，不受此拆分影響
