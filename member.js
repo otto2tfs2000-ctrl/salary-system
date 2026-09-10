@@ -155,6 +155,12 @@ function mbSellRenew(m){
   if (el) return el.value === 'renew';
   return mbIsRenewal(m);
 }
+/* 新客回饋要套「體驗當天」還是「本月內」那個數字，只有新客才有這層差異，
+   續約固定套 renewBonus，不看這個值。沒有這個下拉（畫面還沒渲染）就當本月內。 */
+function mbSellTiming(){
+  var el = document.getElementById('mb-s-timing');
+  return el && el.value === 'today' ? 'today' : 'month';
+}
 
 /* 依方案效期算到期日 */
 function mbExpiry(months){
@@ -704,6 +710,11 @@ function mbSell(phone){
          ? '系統看到明細裡有「' + mbEsc(rnWhy || '方案') + '」的購買紀錄，先當續約。'
          : '系統在明細裡找不到任何方案購買紀錄，先當新客。') +
        '判斷錯了直接改，回饋點數會跟著重算。</div></div>';
+  h += '<div class="fg" id="mb-s-timing-wrap" style="display:' + (rnDef ? 'none' : '') + '"><label>報名時機（決定新客回饋點數）</label>' +
+       '<select id="mb-s-timing" onchange="mbSellPreview(\'' + phone + '\')">' +
+       '<option value="month">本月內報名</option>' +
+       '<option value="today">體驗當天報名</option>' +
+       '</select></div>';
   h += '<div class="fg"><label>付款方式</label><select id="mb-s-pay">' +
        ['現金','LINE Pay','刷卡','匯款'].map(function(w){ return '<option>' + w + '</option>' }).join('') +
        '</select></div>';
@@ -732,7 +743,10 @@ function mbSellPreview(phone){
   if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:13.5px">選了方案會顯示明細</div>'; return; }
   var p = mbActivePlans()[+i];
   var renew = mbSellRenew(m);
-  var giftPts = renew ? (+p.renewBonus || 0) : (+p.newBonus || 0);
+  var timingWrap = document.getElementById('mb-s-timing-wrap');
+  if (timingWrap) timingWrap.style.display = renew ? 'none' : '';
+  var timing = mbSellTiming();
+  var giftPts = renew ? (+p.renewBonus || 0) : (timing === 'today' ? (+p.newBonusToday || 0) : (+p.newBonus || 0));
   var addPts = (+p.points || 0) + (+p.bonusPoints || 0) + giftPts;
   var addSes = +p.sessions || 0, addVou = +p.voucher || 0;
   var exp = mbExpiry(p.months);
@@ -743,7 +757,7 @@ function mbSellPreview(phone){
   h += '<br>售價 <strong>$' + (+p.price || 0).toLocaleString() + '</strong>';
   if (+p.points) h += '<br>基本點數 +' + (+p.points).toLocaleString();
   if (+p.bonusPoints) h += '<br>創作回饋 +' + (+p.bonusPoints).toLocaleString();
-  if (giftPts) h += '<br>' + (renew ? '續約回饋' : '首次入會回饋') + ' <span style="color:var(--gold2)">+' + giftPts.toLocaleString() + '</span>';
+  if (giftPts) h += '<br>' + (renew ? '續約回饋' : ('首次入會回饋（' + (timing === 'today' ? '體驗當天' : '本月內') + '）')) + ' <span style="color:var(--gold2)">+' + giftPts.toLocaleString() + '</span>';
   if (addSes) h += '<br>堂數 +' + addSes;
   if (addVou) h += '<br>表框折價金 +$' + addVou.toLocaleString();
   if (p.gift) h += '<br><span class="muted">好禮：' + mbEsc(p.gift) + '（現場給，系統不計點）</span>';
@@ -764,12 +778,13 @@ async function mbSellSave(phone){
   var note = document.getElementById('mb-s-note').value.trim();
   var renew = mbSellRenew(m);
   var rnAuto = mbIsRenewal(m);
-  var giftPts = renew ? (+p.renewBonus || 0) : (+p.newBonus || 0);
+  var timing = renew ? '' : mbSellTiming();
+  var giftPts = renew ? (+p.renewBonus || 0) : (timing === 'today' ? (+p.newBonusToday || 0) : (+p.newBonus || 0));
   var addSes = +p.sessions || 0, addVou = +p.voucher || 0;
   var exp = mbExpiry(p.months);
 
   if (!confirm('確認售出？\n\n' + p.name + '　$' + (+p.price || 0).toLocaleString() + '（' + pay + '）\n' +
-      (renew ? '身分：續約會員' : '身分：新客首購') +
+      (renew ? '身分：續約會員' : '身分：新客首購（' + (timing === 'today' ? '體驗當天' : '本月內') + '）') +
       (renew !== rnAuto ? '（人工改的，系統原本判斷是' + (rnAuto ? '續約' : '新客') + '）' : '') + '\n' +
       (+p.points ? '基本點數 +' + (+p.points).toLocaleString() + '\n' : '') +
       (+p.bonusPoints ? '創作回饋 +' + (+p.bonusPoints).toLocaleString() + '\n' : '') +
@@ -789,6 +804,7 @@ async function mbSellSave(phone){
   var base = { at: now, by: by, planName: p.name, pay: pay, renew: renew };
   /* 身分是人工改的就記一筆，之後對帳看得出來為什麼回饋是這個數 */
   if (renew !== rnAuto) base.renewManual = true;
+  if (!renew) base.timing = timing;
   if (exp) base.expiry = exp;
   var writes = [];
   var mk = function(suffix, delta, type, why, extra){
@@ -798,7 +814,7 @@ async function mbSellSave(phone){
 
   if (+p.points)      mk('p',  +p.points,      'points',   reason, { price: +p.price || 0 });
   if (+p.bonusPoints) mk('pb', +p.bonusPoints, 'points',   p.name + '・創作回饋');
-  if (giftPts)        mk('pg', giftPts,        'points',   p.name + (renew ? '・續約回饋' : '・首次入會回饋'));
+  if (giftPts)        mk('pg', giftPts,        'points',   p.name + (renew ? '・續約回饋' : ('・首次入會回饋（' + (timing === 'today' ? '體驗當天' : '本月內') + '）')));
   if (addSes)         mk('s',  addSes,         'sessions', reason, { price: +p.price || 0 });
   if (addVou)         mk('v',  addVou,         'voucher',  p.name + '・表框折價金');
 
@@ -908,7 +924,7 @@ function mbPlansHtml(){
        '</div>';
   h += '<table><thead><tr><th>方案名稱</th><th style="width:80px">售價</th><th style="width:80px">點數</th>' +
        '<th style="width:80px">創作回饋</th><th style="width:60px">堂數</th><th style="width:60px">效期</th>' +
-       '<th style="width:120px">新客／續約回饋</th><th style="width:90px">建立時間</th><th style="width:70px">狀態</th><th style="width:160px"></th></tr></thead><tbody>';
+       '<th style="width:140px">新客當天／本月／續約</th><th style="width:90px">建立時間</th><th style="width:70px">狀態</th><th style="width:160px"></th></tr></thead><tbody>';
   /* 啟用中排前面、已停用沉到最後，同一組內維持原本的建立順序（穩定排序，
      用原始 index 當 tie-break，避免部分瀏覽器 sort 不穩定）；按鈕的 onclick
      一律用 row.i（S.plans 裡的原始陣列索引，不是這裡濾掉刪除項目之後的順序），
@@ -932,7 +948,7 @@ function mbPlansHtml(){
       '<td style="text-align:right;color:var(--gold2)">' + (p.bonusPoints ? '+' + (+p.bonusPoints).toLocaleString() : '—') + '</td>' +
       '<td style="text-align:right">' + (p.sessions || '—') + (p.voucher ? '<br><span class="muted" style="font-size:12px">折價$' + (+p.voucher).toLocaleString() + '</span>' : '') + '</td>' +
       '<td style="text-align:right">' + (p.months ? p.months + '月' : '—') + '</td>' +
-      '<td style="text-align:right;font-size:13.5px">' + ((p.newBonus || p.renewBonus) ? (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
+      '<td style="text-align:right;font-size:13.5px">' + ((p.newBonusToday || p.newBonus || p.renewBonus) ? (+p.newBonusToday||0).toLocaleString() + ' / ' + (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
       '<td style="font-size:12.5px;color:var(--text3)">' + created + '</td>' +
       '<td style="font-size:13.5px;color:' + (off ? 'var(--text3)' : 'var(--green)') + '">' + (off ? '已停用' : '啟用中') + '</td>' +
       '<td style="display:flex;gap:6px">' +
@@ -954,7 +970,7 @@ function mbPlansHtml(){
 function mbPlanEdit(idx){
   var plans = mbPlans();
   var p = idx >= 0 ? plans[idx] : { name:'', price:'', points:'', bonusPoints:'', sessions:'',
-    months:'', newBonus:'', renewBonus:'', voucher:'', gift:'', active:true };
+    months:'', newBonusToday:'', newBonus:'', renewBonus:'', voucher:'', gift:'', active:true };
   var h = '<h3 style="margin:0 0 4px">' + (idx >= 0 ? '編輯方案' : '新增方案') + '</h3>' +
     '<div class="muted" style="font-size:13.5px;margin-bottom:14px">用不到的欄位留空就好，系統會自動略過。</div>' +
     '<div class="fg"><label>方案名稱 *</label><input id="mb-p-name" value="' + mbEsc(p.name) + '" placeholder="例：創意實踐家"></div>' +
@@ -974,12 +990,13 @@ function mbPlanEdit(idx){
     '</div>' +
     '<div style="font-size:13.5px;color:var(--gold2);font-weight:600;margin:14px 0 8px">本月好禮（擇一自動套用）</div>' +
     '<div class="row" style="gap:10px">' +
-      '<div class="fg" style="flex:1"><label>新客首次入會回饋</label><input id="mb-p-newb" type="number" min="0" value="' + (p.newBonus || '') + '"></div>' +
-      '<div class="fg" style="flex:1"><label>會員續約回饋</label><input id="mb-p-renb" type="number" min="0" value="' + (p.renewBonus || '') + '"></div>' +
+      '<div class="fg" style="flex:1"><label>新客・體驗當天回饋</label><input id="mb-p-newb-today" type="number" min="0" value="' + (p.newBonusToday || '') + '"></div>' +
+      '<div class="fg" style="flex:1"><label>新客・本月內回饋</label><input id="mb-p-newb" type="number" min="0" value="' + (p.newBonus || '') + '"></div>' +
     '</div>' +
+    '<div class="fg" style="max-width:calc(50% - 5px)"><label>會員續約回饋</label><input id="mb-p-renb" type="number" min="0" value="' + (p.renewBonus || '') + '"></div>' +
     '<div class="fg"><label>入會好禮（文字，只記錄不加點）</label><input id="mb-p-gift" value="' + mbEsc(p.gift || '') + '" placeholder="例：專屬咖啡／茶包禮品兩組"></div>' +
     '<div class="muted" style="font-size:13.5px;line-height:1.7;margin-top:6px">' +
-      '賣的時候系統會自己判斷這位是新客還是續約（看有沒有買過方案），套用對應的回饋，行政不用選。</div>' +
+      '賣的時候系統會自己判斷這位是新客還是續約（看有沒有買過方案）。新客還會多問一次「體驗當天」還是「本月內」報名，套對應的那個回饋；續約固定套用「會員續約回饋」，不分時機。</div>' +
     '<div class="row" style="margin-top:14px;gap:8px">' +
     '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
     '<button class="btn btn-gold" style="flex:2" onclick="mbPlanSave(' + idx + ')">儲存</button></div>';
@@ -992,13 +1009,13 @@ function mbPlanSave(idx){
   var gift = document.getElementById('mb-p-gift').value.trim();
   var price = g('mb-p-price');
   var points = g('mb-p-points'), bonus = g('mb-p-bonus'), ses = g('mb-p-ses');
-  var months = g('mb-p-months'), newB = g('mb-p-newb'), renB = g('mb-p-renb'), vou = g('mb-p-voucher');
+  var months = g('mb-p-months'), newBToday = g('mb-p-newb-today'), newB = g('mb-p-newb'), renB = g('mb-p-renb'), vou = g('mb-p-voucher');
   if (!name) { alert('請填方案名稱'); return; }
   if (!price) { alert('請填售價'); return; }
   if (!points && !ses) { alert('基本點數和堂數至少要填一個，不然賣出去什麼都不會加'); return; }
   var plans = mbPlans();
   var rec = { name:name, price:price, points:points, bonusPoints:bonus, sessions:ses,
-              months:months, newBonus:newB, renewBonus:renB, voucher:vou, gift:gift, active:true };
+              months:months, newBonusToday:newBToday, newBonus:newB, renewBonus:renB, voucher:vou, gift:gift, active:true };
   if (idx >= 0) {
     // 先用「編輯前」的舊內容算 id（不是編輯後的 rec）——這樣算出來的 id
     // 才會跟雲端現在存的內容對應得上，不然編輯瞬間本機內容已經變了，
