@@ -738,13 +738,16 @@ function mbSell(phone){
 
 function mbSellPreview(phone){
   var m = mbList.find(function(x){ return x.phone === phone });
+  /* 報名時機選單的顯示/隱藏不能等到選了方案才更新——行政常常是先切「新客/續約」
+     身分，方案還沒選，如果把這段放在下面「沒選方案」的 early return 之後，
+     切身分當下選單不會跟著出現/消失，要選了方案才生效，會被誤以為沒做這個功能。 */
+  var timingWrap = document.getElementById('mb-s-timing-wrap');
+  if (timingWrap && m) timingWrap.style.display = mbSellRenew(m) ? 'none' : '';
   var i = document.getElementById('mb-s-plan').value;
   var box = document.getElementById('mb-s-prev');
   if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:13.5px">選了方案會顯示明細</div>'; return; }
   var p = mbActivePlans()[+i];
   var renew = mbSellRenew(m);
-  var timingWrap = document.getElementById('mb-s-timing-wrap');
-  if (timingWrap) timingWrap.style.display = renew ? 'none' : '';
   var timing = mbSellTiming();
   var giftPts = renew ? (+p.renewBonus || 0) : (timing === 'today' ? (+p.newBonusToday || 0) : (+p.newBonus || 0));
   var addPts = (+p.points || 0) + (+p.bonusPoints || 0) + giftPts;
