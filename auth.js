@@ -396,6 +396,15 @@ async function authInit(){
     return;
   }
 
+  /* 把網址上的 code 立刻清掉（在打 API 之前，不是換完 token 才清）。
+     LINE 的 code 只能用一次：如果這裡在等 /auth/line 回應時，
+     手機把分頁切走再切回來、頁面被系統重新整理，之前是網址上還留著
+     這組 code，重整後會拿同一組 code 再換一次 token，
+     結果 LINE 回「invalid authorization code」（這個 code 已經用掉了）。
+     現在先把網址清乾淨，重整後看到的是空網址，最多要求重新登入一次，
+     不會再去重放一個已經失效的 code。 */
+  history.replaceState(null, "", AUTH_REDIRECT);
+
   authScreen('<div style="font-size:14px;color:#6b665e">登入中…</div>');
   try {
     var r = await fetch(AUTH_API + "/auth/line", {
@@ -411,8 +420,6 @@ async function authInit(){
     ME = j;
     authStore(j);
     try { sessionStorage.removeItem("otto2_auth_state"); sessionStorage.removeItem("otto2_invite") } catch(e){}
-    /* 把網址上的 code 清掉，重整時才不會拿失效的 code 再換一次 */
-    history.replaceState(null, "", AUTH_REDIRECT);
     await authGate();
     console.log("登入成功：", j.displayName, j.userId, "名單狀態：", j.registered ? "已登記" : "尚未登記");
   } catch(e){
