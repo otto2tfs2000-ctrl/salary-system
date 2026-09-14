@@ -26,7 +26,14 @@ var QUOTE_COURSES = [
   {name:'樹脂複合媒材',      hrs:3.0, price:2000, mat:500}
 ];
 
-var QUOTE_CASE_DEFAULTS = { n:6, hrs:2.5, mat:400, gm:30, venue:1, trans:0 };
+/* 老師教學人次獎金：多數老師是「完整模式」每教學人次 $50（見 app.js calcSalary
+   的 countBonus 邏輯），這是隨人數變動的真實現金成本，但「老師每教學小時成本」
+   是固定時薪（人事費／月 ÷ 工時），完全不會隨這一團的人數變動——對一般團體，
+   歷史平均已經內含這筆錢，但對人數特別多的大團，固定時薪會低估真實老師成本，
+   這裡讓使用者自己選要不要疊加這筆變動成本，不預設開（不是每個老師都用完整模式）。 */
+var TEACH_BONUS_PER_HEAD = 50;
+
+var QUOTE_CASE_DEFAULTS = { n:6, hrs:2.5, mat:400, gm:30, venue:1, trans:0, teachBonus:false };
 var qCase = Object.assign({}, QUOTE_CASE_DEFAULTS);
 
 /* 新課程打平人數：預約制沒辦法事先知道單次會來幾個人，所以不猜人數、
@@ -36,7 +43,7 @@ var qCase = Object.assign({}, QUOTE_CASE_DEFAULTS);
    老師成本分兩種：自家老師用共用薪資池換算出的時薪成本（跟其他工具一致）；
    外聘老師是額外的實際現金支出，跟店內薪資池無關，直接輸入每次鐘點費。
    固定用自家教室、不含交通，跟現行牌價課程的算法一致。 */
-var QUOTE_NEW_DEFAULTS = { hrs:2.5, price:1500, mat:400, sessions:4, teacherMode:'inhouse', extFee:2000 };
+var QUOTE_NEW_DEFAULTS = { hrs:2.5, price:1500, mat:400, sessions:4, teacherMode:'inhouse', extFee:2000, teachBonus:false };
 var qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
 
 function qParams(){
@@ -105,6 +112,8 @@ function qSkeleton(){
   h +=       '<button type="button" class="store-btn'+(c.venue?'':' active')+'" data-v="0">對方場地</button>';
   h +=     '</div></div>';
   h +=   '</div>';
+  h +=   '<label class="chk top" style="margin-top:14px"><input type="checkbox" id="q-teachBonus"'+(c.teachBonus?' checked':'')+'>' +
+         '<span>疊加老師教學人次獎金 每人 '+TEACH_BONUS_PER_HEAD+' 元（多數老師適用，人數多的大團建議勾，讓報價更準）</span></label>';
   h += '</div>';
 
   h += '<div class="card">';
@@ -144,6 +153,10 @@ function qSkeleton(){
   h +=       '<button type="button" class="store-btn'+(qNew.teacherMode==='external'?' active':'')+'" data-v="external">外聘老師</button>';
   h +=     '</div></div>';
   h +=     '<div class="fg" id="qn-extFeeWrap" style="'+(qNew.teacherMode==='external'?'':'display:none')+'"><label>外聘老師每次費用</label><input type="number" id="qn-extFee" value="'+qNew.extFee+'" min="0" step="100" onwheel="this.blur()"></div>';
+  h +=   '</div>';
+  h +=   '<div id="qn-teachBonusWrap" style="'+(qNew.teacherMode==='external'?'display:none':'')+';margin-top:14px">';
+  h +=     '<label class="chk top"><input type="checkbox" id="qn-teachBonus"'+(qNew.teachBonus?' checked':'')+'>' +
+           '<span>疊加老師教學人次獎金 每人 '+TEACH_BONUS_PER_HEAD+' 元（外聘老師的鐘點費另計，不適用這筆）</span></label>';
   h +=   '</div>';
   h +=   '<div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-top:4px">';
   h +=     '<div class="stat-card"><div class="lbl">這堂課每月固定成本</div><div class="val" style="font-size:19px" id="qn-fixedMonthly">—</div></div>';
@@ -186,6 +199,8 @@ function qBindEvents(){
     qRecalc();
   });
 
+  document.getElementById('q-teachBonus').addEventListener('change', function(){ qCase.teachBonus = this.checked; qRecalc(); });
+
   document.getElementById('q-copy').addEventListener('click', qCopyText);
 
   document.getElementById('q-reset').addEventListener('click', function(){
@@ -215,8 +230,11 @@ function qBindEvents(){
     qNew.teacherMode = b.dataset.v;
     teacherWrap.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
     document.getElementById('qn-extFeeWrap').style.display = qNew.teacherMode === 'external' ? '' : 'none';
+    document.getElementById('qn-teachBonusWrap').style.display = qNew.teacherMode === 'external' ? 'none' : '';
     qNewRecalc();
   });
+
+  document.getElementById('qn-teachBonus').addEventListener('change', function(){ qNew.teachBonus = this.checked; qNewRecalc(); });
 
   document.getElementById('qn-reset').addEventListener('click', function(){
     qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
@@ -243,7 +261,8 @@ function qRecalc(){
   var room = m.roomHr * hrs * c.venue;
   var floor = teacher + room + trans;
   var matTotal = mat * n;
-  var be = (floor + matTotal) / m.keep;
+  var bonusTotal = c.teachBonus ? n * TEACH_BONUS_PER_HEAD : 0;
+  var be = (floor + matTotal + bonusTotal) / m.keep;
   var rec = be / (1 - gm);
   var ask = be / (1 - Math.min(0.79, gm + 0.15));
   var profit = rec - be;
@@ -281,7 +300,8 @@ function qRecalc(){
       qRow(c.venue ? ('教室占用　' + hrs + ' 小時 × ' + qFmt(m.roomHr)) : '教室占用　用對方場地', room) +
       qRow('交通／外派', trans) +
       qRow('材料　' + n + ' 人 × ' + qFmt(mat), matTotal) +
-      qRow('總部分攤＋廣告雜支　' + (100 - m.keep * 100).toFixed(1) + '%', rec - (floor + matTotal) - profit) +
+      (c.teachBonus ? qRow('老師教學人次獎金　' + n + ' 人 × ' + TEACH_BONUS_PER_HEAD, bonusTotal) : '') +
+      qRow('總部分攤＋廣告雜支　' + (100 - m.keep * 100).toFixed(1) + '%', rec - (floor + matTotal + bonusTotal) - profit) +
       '<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:4px;font-weight:600"><span>建議報價</span><span>' + qFmt(rec) + '</span></div>';
   }
 
@@ -323,8 +343,10 @@ function qNewRecalc(){
   var fixedMonthly = teacherMonthly + roomMonthly;
 
   /* 每人貢獻額：這個售價扣掉材料、扣掉總部抽成＋廣告雜支之後，
-     剩下多少錢可以拿去攤提「這堂課每月固定成本」。 */
-  var contrib = price * m.keep - mat;
+     剩下多少錢可以拿去攤提「這堂課每月固定成本」。自家老師且勾選教學人次
+     獎金時，每多一人老師就多領 50 元，這筆也要從貢獻額扣掉，才是真的淨貢獻。 */
+  var bonusPerHead = (qNew.teacherMode !== 'external' && qNew.teachBonus) ? TEACH_BONUS_PER_HEAD : 0;
+  var contrib = price * m.keep - mat - bonusPerHead;
   var minN = contrib > 0 ? Math.ceil(fixedMonthly / contrib - 1e-9) : null;
 
   qSetText('qn-fixedMonthly', qFmt(fixedMonthly));
