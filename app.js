@@ -743,6 +743,7 @@ function doSwitchTab(tab) {
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab==='today' && window.bkRender) bkRender();
   if (tab==='sched' && window.bkSchedRender) bkSchedRender();
+  if (tab==='quote' && window.renderQuote) renderQuote();
   if (tab==='member') renderMember();
   if (tab==='recipe') renderRecipe();
   if (tab==='daily') renderDaily();
