@@ -59,7 +59,6 @@
   <div class="side-brand">Otto2<span>ARTCLUB</span></div>
   <div class="tab active" data-tab="today" onclick="switchTab('today')">🎨 今日排課<span id="bk-new-badge" class="bk-new-badge" style="display:none" title="點一下標記為已讀" onclick="event.stopPropagation();switchTab('today');if(window.bkClearNewBadge)bkClearNewBadge()"></span></div>
   <div class="tab" data-tab="sched" onclick="switchTab('sched')">🗓️ 班表設定</div>
-  <div class="tab" data-tab="quote" onclick="switchTab('quote')">🧮 報價</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
@@ -67,6 +66,7 @@
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
   <div class="tab" data-tab="inventory" onclick="switchTab('inventory')">📦 庫存盤點</div>
   <div class="tab" data-tab="recipe" onclick="switchTab('recipe')">🎨 課程用料</div>
+  <div class="tab" data-tab="quote" onclick="switchTab('quote')">🧮 報價</div>
   <div class="tab" data-tab="salary" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
   <div class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ 老師設定 🔒</div>
 </div>
@@ -74,12 +74,6 @@
 <div id="tab-today" class="page active"><div id="bkRoot"></div></div>
 
 <div id="tab-sched" class="page"><div id="schedRoot"></div></div>
-
-<div id="tab-quote" class="page">
-  <h2>報價工具</h2>
-  <p class="muted" style="font-size:12.5px;margin-bottom:12px">包班、企業課、外部授課詢價，客人還在線上的時候直接算出可以講出口的價格，和絕對不能低於的底線。</p>
-  <div id="quoteRoot"></div>
-</div>
 
 <div id="tab-recipe" class="page">
   <h2>課程用料與毛利</h2>
@@ -117,6 +111,12 @@
     <button class="store-btn" onclick="switchStore('monthly','guotu',this)">國圖店</button>
   </div>
   <div id="monthly-content"></div>
+</div>
+
+<div id="tab-quote" class="page">
+  <h2>報價工具</h2>
+  <p class="muted" style="font-size:12.5px;margin-bottom:12px">包班、企業課、外部授課詢價，客人還在線上的時候直接算出可以講出口的價格，和絕對不能低於的底線；下面另外有研發新課程定價用的參考工具。</p>
+  <div id="quoteRoot"></div>
 </div>
 
 <div id="tab-salary" class="page">
@@ -460,7 +460,7 @@
 <script src="booking.js?v=20260901a"></script>
 <script src="member.js?v=20260910b"></script>
 <script src="recipe.js?v=20260901a"></script>
-<script src="quote.js?v=20260914a"></script>
+<script src="quote.js?v=20260914b"></script>
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20260814a"></script>
 <script src="staff.js?v=20260808c"></script>

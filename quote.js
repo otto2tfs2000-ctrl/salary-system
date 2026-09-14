@@ -29,6 +29,13 @@ var QUOTE_COURSES = [
 var QUOTE_CASE_DEFAULTS = { n:6, hrs:2.5, mat:400, gm:30, venue:1, trans:0 };
 var qCase = Object.assign({}, QUOTE_CASE_DEFAULTS);
 
+/* 新課程定價：研發階段還沒有客人時，決定要印在價目表上的每人固定售價。
+   跟團班報價的差別是地板成本（老師+教室）不是由一團客人全扛，而是攤在
+   「預期這堂課通常會開到幾個人」上面，算出來再回代最低人數公式讓你檢查
+   這個預期會不會太樂觀。固定用自家教室、不含交通，跟現行牌價課程的算法一致。 */
+var QUOTE_NEW_DEFAULTS = { hrs:2.5, mat:400, expectN:6, gm:30 };
+var qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
+
 function qParams(){
   if (!S.quoteParams) S.quoteParams = {};
   var p = S.quoteParams;
@@ -63,6 +70,7 @@ function renderQuote(){
   el.innerHTML = qSkeleton();
   qBindEvents();
   qRecalc();
+  qNewRecalc();
 }
 
 function qSkeleton(){
@@ -120,6 +128,25 @@ function qSkeleton(){
   h +=   '<p class="muted" style="margin-top:10px">最低人數＝地板成本 ÷（單價 × 留存率 － 材料）。小數一律進位：3.2 人代表要 4 人才不虧。</p>';
   h += '</div>';
 
+  h += '<div class="card" id="qn-card" style="border-left:4px solid var(--gold2)">';
+  h +=   '<div class="card-title">新課程定價（研發階段，還沒有客人時用）</div>';
+  h +=   '<p class="muted" style="margin-top:-8px;margin-bottom:16px">團班報價是已經知道人數幫一團算錢；這裡反過來——你還沒有客人，用「預期這堂課通常會開到幾個人」把地板成本分攤下去，算出可以印在價目表上的每人售價。固定用自家教室、不含交通。</p>';
+  h +=   '<div class="form-grid">';
+  h +=     '<div class="fg"><label>課程時長（小時）</label><input type="number" id="qn-hrs" value="'+qNew.hrs+'" min="0.5" step="0.5" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>材料成本／人</label><input type="number" id="qn-mat" value="'+qNew.mat+'" min="0" step="10" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>預期開班人數</label><input type="number" id="qn-expectN" value="'+qNew.expectN+'" min="1" step="1" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>目標毛利率 %</label><input type="number" id="qn-gm" value="'+qNew.gm+'" min="0" max="80" step="5" onwheel="this.blur()"></div>';
+  h +=   '</div>';
+  h +=   '<div class="stat-grid" style="grid-template-columns:repeat(2,1fr);margin-top:4px">';
+  h +=     '<div class="stat-card hi"><div class="lbl">建議售價／人</div><div class="val" id="qn-suggest">—</div></div>';
+  h +=     '<div class="stat-card"><div class="lbl">打平售價／人　不能再低</div><div class="val" id="qn-be">—</div></div>';
+  h +=   '</div>';
+  h +=   '<p id="qn-verdict" style="margin-top:12px;font-size:14px;line-height:1.6"></p>';
+  h +=   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">';
+  h +=     '<button class="btn btn-outline" id="qn-reset">回到預設條件</button>';
+  h +=   '</div>';
+  h += '</div>';
+
   h += '<div class="card">';
   h +=   '<details><summary style="cursor:pointer;font-weight:600;color:var(--gold2);font-size:14.5px">成本參數</summary>';
   h +=   '<div class="form-grid" style="margin-top:16px">';
@@ -164,7 +191,21 @@ function qBindEvents(){
       qParams()[id] = qN(this.value);
       save();
       qRecalc();
+      qNewRecalc();
     });
+  });
+
+  ['hrs','mat','expectN','gm'].forEach(function(id){
+    var input = document.getElementById('qn-'+id);
+    input.addEventListener('input', function(){ qNew[id] = qN(this.value); qNewRecalc(); });
+  });
+  document.getElementById('qn-reset').addEventListener('click', function(){
+    qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
+    document.getElementById('qn-hrs').value = qNew.hrs;
+    document.getElementById('qn-mat').value = qNew.mat;
+    document.getElementById('qn-expectN').value = qNew.expectN;
+    document.getElementById('qn-gm').value = qNew.gm;
+    qNewRecalc();
   });
 }
 
@@ -252,6 +293,40 @@ function qRecalc(){
       qStat('老師每教學小時成本', qFmt(m.teacherHr)) +
       qStat('教室每小時成本', qFmt(m.roomHr)) +
       qStat('每收100元留下', (m.keep * 100).toFixed(1) + ' 元');
+  }
+}
+
+function qNewRecalc(){
+  var m = qModel();
+  var hrs = qN(qNew.hrs), mat = qN(qNew.mat), expectN = Math.max(1, qN(qNew.expectN));
+  var gm = Math.min(0.79, qN(qNew.gm) / 100);
+
+  var floor = hrs * m.teacherHr + hrs * m.roomHr;
+  var perHeadCost = floor / expectN + mat;
+  var be = perHeadCost / m.keep;
+  var suggest = be / (1 - gm);
+
+  qSetText('qn-suggest', qFmt(suggest));
+  qSetText('qn-be', qFmt(be));
+
+  /* 注意：suggest 本來就是拿 expectN 反推出來的，所以這裡回代算出的 minN
+     數學上一定 ≤ expectN（gm=0 時剛好相等），不會出現「minN > expectN」——
+     這個回代不是抓「賣太貴」的風險，是讓你看到「就算沒坐滿預期人數，還留多少緩衝」。 */
+  var contrib = suggest * m.keep - mat;
+  var minN = contrib > 0 ? Math.ceil(floor / contrib - 1e-9) : null;
+
+  var verdict = document.getElementById('qn-verdict');
+  if (verdict) {
+    if (minN === null) {
+      verdict.style.color = 'var(--red)';
+      verdict.textContent = '這個材料成本＋預期人數，就算賣再貴也打不平，先降材料成本或抓更多開班人數。';
+    } else if (minN >= expectN) {
+      verdict.style.color = 'var(--gold2)';
+      verdict.textContent = '照建議售價 ' + qFmt(suggest) + ' 賣，' + expectN + ' 人剛好是打平門檻，完全沒有安全空間——目標毛利率設太低了，建議調高，或降材料成本。';
+    } else {
+      verdict.style.color = 'var(--green)';
+      verdict.textContent = '照建議售價 ' + qFmt(suggest) + ' 賣，最少 ' + minN + ' 人就打平，比你抓的預期開班人數 ' + expectN + ' 人少 ' + (expectN - minN) + ' 人，就算沒坐滿也還有緩衝。';
+    }
   }
 }
 
