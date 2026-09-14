@@ -29,11 +29,14 @@ var QUOTE_COURSES = [
 var QUOTE_CASE_DEFAULTS = { n:6, hrs:2.5, mat:400, gm:30, venue:1, trans:0 };
 var qCase = Object.assign({}, QUOTE_CASE_DEFAULTS);
 
-/* 新課程定價：研發階段還沒有客人時，決定要印在價目表上的每人固定售價。
-   跟團班報價的差別是地板成本（老師+教室）不是由一團客人全扛，而是攤在
-   「預期這堂課通常會開到幾個人」上面，算出來再回代最低人數公式讓你檢查
-   這個預期會不會太樂觀。固定用自家教室、不含交通，跟現行牌價課程的算法一致。 */
-var QUOTE_NEW_DEFAULTS = { hrs:2.5, mat:400, expectN:6, gm:30 };
+/* 新課程打平人數：預約制沒辦法事先知道單次會來幾個人，所以不猜人數、
+   改成「你先抓一個候選售價（通常參考同類課程），我告訴你整個月至少要
+   幾位客人才能打平」。以一個月為單位（開課次數 × 每次時長），不是單次，
+   因為預約制的來客數本來就是按月累積、不是按單次可控的。
+   老師成本分兩種：自家老師用共用薪資池換算出的時薪成本（跟其他工具一致）；
+   外聘老師是額外的實際現金支出，跟店內薪資池無關，直接輸入每次鐘點費。
+   固定用自家教室、不含交通，跟現行牌價課程的算法一致。 */
+var QUOTE_NEW_DEFAULTS = { hrs:2.5, price:1500, mat:400, sessions:4, teacherMode:'inhouse', extFee:2000 };
 var qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
 
 function qParams(){
@@ -129,17 +132,23 @@ function qSkeleton(){
   h += '</div>';
 
   h += '<div class="card" id="qn-card" style="border-left:4px solid var(--gold2)">';
-  h +=   '<div class="card-title">新課程定價（研發階段，還沒有客人時用）</div>';
-  h +=   '<p class="muted" style="margin-top:-8px;margin-bottom:16px">團班報價是已經知道人數幫一團算錢；這裡反過來——你還沒有客人，用「預期這堂課通常會開到幾個人」把地板成本分攤下去，算出可以印在價目表上的每人售價。固定用自家教室、不含交通。</p>';
+  h +=   '<div class="card-title">新課程打平人數（研發階段，這堂課開下去要幾位客人才夠本）</div>';
+  h +=   '<p class="muted" style="margin-top:-8px;margin-bottom:16px">預約制沒辦法事先知道單次會來幾個人，所以反過來算：你抓一個候選售價（通常參考同類課程），這裡告訴你整個月至少要幾位客人才能打平老師＋教室的固定成本。以一個月為單位，不是單次。固定用自家教室、不含交通。</p>';
   h +=   '<div class="form-grid">';
-  h +=     '<div class="fg"><label>課程時長（小時）</label><input type="number" id="qn-hrs" value="'+qNew.hrs+'" min="0.5" step="0.5" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>每次上課時長（小時）</label><input type="number" id="qn-hrs" value="'+qNew.hrs+'" min="0.5" step="0.5" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>候選售價／人</label><input type="number" id="qn-price" value="'+qNew.price+'" min="0" step="50" onwheel="this.blur()"></div>';
   h +=     '<div class="fg"><label>材料成本／人</label><input type="number" id="qn-mat" value="'+qNew.mat+'" min="0" step="10" onwheel="this.blur()"></div>';
-  h +=     '<div class="fg"><label>預期開班人數</label><input type="number" id="qn-expectN" value="'+qNew.expectN+'" min="1" step="1" onwheel="this.blur()"></div>';
-  h +=     '<div class="fg"><label>目標毛利率 %</label><input type="number" id="qn-gm" value="'+qNew.gm+'" min="0" max="80" step="5" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>每月開課次數</label><input type="number" id="qn-sessions" value="'+qNew.sessions+'" min="1" step="1" onwheel="this.blur()"></div>';
+  h +=     '<div class="fg"><label>老師來源</label><div class="store-tabs" id="qn-teacher" style="margin-bottom:0">';
+  h +=       '<button type="button" class="store-btn'+(qNew.teacherMode==='inhouse'?' active':'')+'" data-v="inhouse">自家老師</button>';
+  h +=       '<button type="button" class="store-btn'+(qNew.teacherMode==='external'?' active':'')+'" data-v="external">外聘老師</button>';
+  h +=     '</div></div>';
+  h +=     '<div class="fg" id="qn-extFeeWrap" style="'+(qNew.teacherMode==='external'?'':'display:none')+'"><label>外聘老師每次費用</label><input type="number" id="qn-extFee" value="'+qNew.extFee+'" min="0" step="100" onwheel="this.blur()"></div>';
   h +=   '</div>';
-  h +=   '<div class="stat-grid" style="grid-template-columns:repeat(2,1fr);margin-top:4px">';
-  h +=     '<div class="stat-card hi"><div class="lbl">建議售價／人</div><div class="val" id="qn-suggest">—</div></div>';
-  h +=     '<div class="stat-card"><div class="lbl">打平售價／人　不能再低</div><div class="val" id="qn-be">—</div></div>';
+  h +=   '<div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-top:4px">';
+  h +=     '<div class="stat-card"><div class="lbl">這堂課每月固定成本</div><div class="val" style="font-size:19px" id="qn-fixedMonthly">—</div></div>';
+  h +=     '<div class="stat-card"><div class="lbl">每人貢獻額</div><div class="val" style="font-size:19px" id="qn-contrib">—</div></div>';
+  h +=     '<div class="stat-card hi"><div class="lbl">整月最低打平人數</div><div class="val" style="font-size:19px" id="qn-minN">—</div></div>';
   h +=   '</div>';
   h +=   '<p id="qn-verdict" style="margin-top:12px;font-size:14px;line-height:1.6"></p>';
   h +=   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">';
@@ -195,17 +204,23 @@ function qBindEvents(){
     });
   });
 
-  ['hrs','mat','expectN','gm'].forEach(function(id){
+  ['hrs','price','mat','sessions','extFee'].forEach(function(id){
     var input = document.getElementById('qn-'+id);
     input.addEventListener('input', function(){ qNew[id] = qN(this.value); qNewRecalc(); });
   });
+
+  var teacherWrap = document.getElementById('qn-teacher');
+  teacherWrap.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    qNew.teacherMode = b.dataset.v;
+    teacherWrap.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x===b); });
+    document.getElementById('qn-extFeeWrap').style.display = qNew.teacherMode === 'external' ? '' : 'none';
+    qNewRecalc();
+  });
+
   document.getElementById('qn-reset').addEventListener('click', function(){
     qNew = Object.assign({}, QUOTE_NEW_DEFAULTS);
-    document.getElementById('qn-hrs').value = qNew.hrs;
-    document.getElementById('qn-mat').value = qNew.mat;
-    document.getElementById('qn-expectN').value = qNew.expectN;
-    document.getElementById('qn-gm').value = qNew.gm;
-    qNewRecalc();
+    renderQuote();
   });
 }
 
@@ -298,34 +313,33 @@ function qRecalc(){
 
 function qNewRecalc(){
   var m = qModel();
-  var hrs = qN(qNew.hrs), mat = qN(qNew.mat), expectN = Math.max(1, qN(qNew.expectN));
-  var gm = Math.min(0.79, qN(qNew.gm) / 100);
+  var hrs = qN(qNew.hrs), price = qN(qNew.price), mat = qN(qNew.mat);
+  var sessions = Math.max(1, qN(qNew.sessions));
 
-  var floor = hrs * m.teacherHr + hrs * m.roomHr;
-  var perHeadCost = floor / expectN + mat;
-  var be = perHeadCost / m.keep;
-  var suggest = be / (1 - gm);
+  var teacherMonthly = qNew.teacherMode === 'external'
+    ? qN(qNew.extFee) * sessions
+    : m.teacherHr * hrs * sessions;
+  var roomMonthly = m.roomHr * hrs * sessions;
+  var fixedMonthly = teacherMonthly + roomMonthly;
 
-  qSetText('qn-suggest', qFmt(suggest));
-  qSetText('qn-be', qFmt(be));
+  /* 每人貢獻額：這個售價扣掉材料、扣掉總部抽成＋廣告雜支之後，
+     剩下多少錢可以拿去攤提「這堂課每月固定成本」。 */
+  var contrib = price * m.keep - mat;
+  var minN = contrib > 0 ? Math.ceil(fixedMonthly / contrib - 1e-9) : null;
 
-  /* 注意：suggest 本來就是拿 expectN 反推出來的，所以這裡回代算出的 minN
-     數學上一定 ≤ expectN（gm=0 時剛好相等），不會出現「minN > expectN」——
-     這個回代不是抓「賣太貴」的風險，是讓你看到「就算沒坐滿預期人數，還留多少緩衝」。 */
-  var contrib = suggest * m.keep - mat;
-  var minN = contrib > 0 ? Math.ceil(floor / contrib - 1e-9) : null;
+  qSetText('qn-fixedMonthly', qFmt(fixedMonthly));
+  qSetText('qn-contrib', qFmt(contrib));
+  qSetText('qn-minN', minN === null ? '—' : (minN + ' 人'));
 
   var verdict = document.getElementById('qn-verdict');
   if (verdict) {
-    if (minN === null) {
+    if (contrib <= 0) {
       verdict.style.color = 'var(--red)';
-      verdict.textContent = '這個材料成本＋預期人數，就算賣再貴也打不平，先降材料成本或抓更多開班人數。';
-    } else if (minN >= expectN) {
-      verdict.style.color = 'var(--gold2)';
-      verdict.textContent = '照建議售價 ' + qFmt(suggest) + ' 賣，' + expectN + ' 人剛好是打平門檻，完全沒有安全空間——目標毛利率設太低了，建議調高，或降材料成本。';
+      verdict.textContent = '這個售價扣掉材料、總部抽成、廣告雜支之後是負的——賣一個人就虧一個人，不管每月開幾次、來幾位客人都打不平，先調高售價或降材料成本。';
     } else {
+      var perSession = minN / sessions;
       verdict.style.color = 'var(--green)';
-      verdict.textContent = '照建議售價 ' + qFmt(suggest) + ' 賣，最少 ' + minN + ' 人就打平，比你抓的預期開班人數 ' + expectN + ' 人少 ' + (expectN - minN) + ' 人，就算沒坐滿也還有緩衝。';
+      verdict.textContent = '這堂課定 ' + qFmt(price) + ' 元、每月開 ' + sessions + ' 次，整個月至少要 ' + minN + ' 位客人（平均每次約 ' + perSession.toFixed(1) + ' 人）才能打平老師＋教室的固定成本，超過這個人數才開始賺。';
     }
   }
 }
