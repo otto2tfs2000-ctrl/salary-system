@@ -2218,6 +2218,7 @@ async function computeUpcomingShortages(days) {
     var short = need-cur;
     if (short>0) shortages.push({ id:id, name:m.name, unit:m.unit, cat:m.cat,
       need:round1(need), current:round1(cur), short:round1(short),
+      orderQty: Math.ceil(short + (+m.safeStock||0)),
       bookingCount:Object.keys(pool[id].bookingIds).length });
   });
   shortages.sort(function(a,b){ return b.short-a.short });
@@ -2263,7 +2264,7 @@ async function renderInvShortageForecast() {
     }
     html += '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">'+
       x.name+'：需要 '+x.need+' '+x.unit+'，現有 '+x.current+' '+x.unit+' → 還差 '+x.short+' '+x.unit+
-      '（'+x.bookingCount+' 組預約用到）</span>';
+      '（'+x.bookingCount+' 組預約用到）→ 建議訂 '+x.orderQty+' '+x.unit+'</span>';
   });
   if (lastCat!==null) html += '</div>';
   if (r.missCourses.length){
