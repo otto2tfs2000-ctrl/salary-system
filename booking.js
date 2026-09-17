@@ -3182,17 +3182,17 @@ css.textContent=
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
 ".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
 ".bk-cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}"+
-".bk-cwd{text-align:center;font-size:13.5px;color:#8A90A0;padding-bottom:4px}"+
+".bk-cwd{text-align:center;font-size:15px;color:#8A90A0;padding-bottom:4px}"+
 ".bk-mday{display:flex;flex-direction:column;align-items:center;justify-content:center;"+
   "gap:1px;aspect-ratio:1/1.12;border:1px solid #E3E6EC;border-radius:12px;"+
   "background:#fff;cursor:pointer;font-family:inherit;transition:.15s;padding:4px}"+
 ".bk-mday:hover{border-color:#9FB0CE;background:#F6F8FC}"+
-".bk-mday .d{font-size:13.5px;color:#8A90A0}"+
-".bk-mday .n{font-size:21px;font-weight:700;color:#1E2B4F;line-height:1.15}"+
-".bk-mday .c{font-size:12px;color:#A8AEBC}"+
+".bk-mday .d{font-size:15px;color:#8A90A0}"+
+".bk-mday .n{font-size:24px;font-weight:700;color:#1E2B4F;line-height:1.15}"+
+".bk-mday .c{font-size:13.5px;color:#A8AEBC}"+
 ".bk-mday.set{border-color:#1E2B4F;border-width:2px;background:#EDF1FA}"+
 ".bk-mday.off{background:#F4F4F6;opacity:.6}"+
-".bk-mday.off .n{color:#8A90A0;font-size:18px}"+
+".bk-mday.off .n{color:#8A90A0;font-size:20px}"+
 ".bk-mday.now .d{color:#C99A3B;font-weight:700}"+
 ".bk-mday.void{border:1px dashed #EAECF0;background:transparent;cursor:default}"+
 ".bk-mday.void:hover{border-color:#EAECF0;background:transparent}"+
@@ -3205,8 +3205,8 @@ css.textContent=
 ".bk-nopt small{font-size:12px;font-weight:400;color:#8A90A0}"+
 ".bk-nopt.on{background:#1E2B4F;color:#fff;border-color:#1E2B4F}"+
 ".bk-nopt.on small{color:#C3CCDF}"+
-"@media(max-width:560px){.bk-cgrid{gap:4px}.bk-mday .n{font-size:18px}"+
-  ".bk-mday .c{font-size:11.5px}.bk-nopts{grid-template-columns:repeat(3,1fr)}"+
+"@media(max-width:560px){.bk-cgrid{gap:4px}.bk-mday .n{font-size:21px}"+
+  ".bk-mday .c{font-size:13px}.bk-nopts{grid-template-columns:repeat(3,1fr)}"+
   /* 2026-08-27：手機版座位表跟按鈕列以前用 flex-wrap 硬擠，
      4 個座位區、7 顆按鈕擠在窄螢幕上會擠成大小不一、東倒西歪的樣子。
      改用固定欄數的 grid，寬度平均分配，看起來才整齊。 */
