@@ -766,6 +766,65 @@ function bkDatePick(){
   }
   draw();
 }
+/* ══ 掛在單一欄位旁邊的整月月曆（2026-09-17）══════════════
+   跟 bkDatePick 同一套外觀，但不能用 bkSheet：bkSheet 只有一個全域
+   遮罩，若拿來挑「手動登記」表單裡的日期，會把整張還沒存的表單
+   直接蓋掉。這裡改成獨立浮出一小塊面板，貼著呼叫它的按鈕，
+   選完自己收掉，不動到底下表單的任何內容。 */
+function bkDayPop(anchor,iso,onPick){
+  bkDayPopClose();
+  var cur=iso?new Date(iso+"T00:00:00"):new Date();
+  var pop=document.createElement("div");
+  pop.id="bkDayPop"; pop.className="bk-daypop";
+  document.body.appendChild(pop);
+  function draw(){
+    var y=cur.getFullYear(), m=cur.getMonth();
+    var first=new Date(y,m,1), pad=(first.getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+    var todayK=ds(new Date()), selK=iso?iso.replace(/-/g,"/"):"";
+    var h='<div class="bk-cbar">'+
+      '<button type="button" class="bk-nav" id="pvPrev">‹</button>'+
+      '<div class="bk-ctitle">'+y+' 年 '+(m+1)+' 月</div>'+
+      '<button type="button" class="bk-nav" id="pvNext">›</button>'+
+      '</div><div class="bk-cgrid">';
+    ["一","二","三","四","五","六","日"].forEach(function(w){
+      h+='<div class="bk-cwd">'+w+'</div>' });
+    for(var i=0;i<pad;i++)h+='<div class="bk-mday void"></div>';
+    for(var i2=1;i2<=days;i2++){
+      var k=y+"/"+String(m+1).padStart(2,"0")+"/"+String(i2).padStart(2,"0");
+      var st=bkByDate[k];
+      var cls="bk-mday"+(k===todayK?" now":"")+(k===selK?" set":"")+(st?"":" off");
+      h+='<button type="button" class="'+cls+'" data-d="'+k+'">'+
+         '<span class="d">'+i2+'</span>'+
+         (st?'<span class="n">'+st.groups+'</span><span class="c">'+st.people+' 位</span>'
+            :'<span class="n">·</span><span class="c">—</span>')+
+         '</button>';
+    }
+    h+='</div>';
+    pop.innerHTML=h;
+    pop.querySelector("#pvPrev").onclick=function(e){ e.stopPropagation(); cur.setMonth(cur.getMonth()-1); draw() };
+    pop.querySelector("#pvNext").onclick=function(e){ e.stopPropagation(); cur.setMonth(cur.getMonth()+1); draw() };
+    pop.querySelectorAll(".bk-mday[data-d]").forEach(function(el){
+      el.onclick=function(e){ e.stopPropagation(); onPick(el.dataset.d.replace(/\//g,"-")); bkDayPopClose() };
+    });
+  }
+  draw();
+  /* 貼著呼叫它的按鈕，但不超出視窗右邊/下面 */
+  var r=anchor.getBoundingClientRect(), pw=300;
+  pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-pw-8))+"px";
+  pop.style.top=Math.min(r.bottom+6,window.innerHeight-360)+"px";
+  var onDoc=function(e){ if(!pop.contains(e.target)&&e.target!==anchor)bkDayPopClose() };
+  var sheetEl=document.getElementById("bkSheet");
+  setTimeout(function(){ document.addEventListener("click",onDoc) },0);
+  pop._cleanup=function(){
+    document.removeEventListener("click",onDoc);
+    if(sheetEl)sheetEl.removeEventListener("scroll",bkDayPopClose);
+  };
+  if(sheetEl)sheetEl.addEventListener("scroll",bkDayPopClose,{once:true});
+}
+function bkDayPopClose(){
+  var p=document.getElementById("bkDayPop");
+  if(p){ if(p._cleanup)p._cleanup(); p.remove() }
+}
 /* 之前有 if(bkMembers)return，一整個分頁只抓一次、之後全部吃快取。
    問題是：姓名搜尋（bkSearch）只查這份快取，電話查會員（bkMember）卻是
    每次都直接打伺服器。行政開著同一頁很久，中途才新建檔的會員，
@@ -1220,6 +1279,7 @@ async function bkRender(){
     var next=(cur&&cur.attend===el.dataset.v)?null:el.dataset.v;
     bkPatch("/bookings/"+el.dataset.at+".json",{attend:next}).then(bkRefresh) } });
   root.querySelectorAll("[data-ed]").forEach(function(el){ el.onclick=function(){ bkManual(el.dataset.ed) } });
+  root.querySelectorAll("[data-rp]").forEach(function(el){ el.onclick=function(){ bkManual(null,el.dataset.rp) } });
   root.querySelectorAll("[data-dp]").forEach(function(el){ el.onclick=function(){ bkDeposit(el.dataset.dp) } });
   root.querySelectorAll("[data-ck]").forEach(function(el){ el.onclick=function(){ bkCheckout(el.dataset.ck) } });
   root.querySelectorAll("[data-vd]").forEach(function(el){ el.onclick=function(){ bkVoid(el.dataset.vd) } });
@@ -1583,6 +1643,10 @@ function bkCard(b){
       /* 核銷前後都可能想順手賣方案（核銷前先加點折抵、核銷後續約），不綁核銷狀態 */
       (bkCan("sellPlan")?'<button class="bk-b sp" data-sp="'+b.id+'">賣方案</button>':"")+
       (c&&bkCan("void")?'<button class="bk-b vd" data-vd="'+b.id+'">作廢</button>':"")+
+      /* 上完這次課、當場約下次：帶著這筆的會員/課程/人數/時段直接開一張
+         新的登記表單，日期先幫忙抓下週同一天，行政確認沒問題再送出，
+         不用整組資料重打一次。 */
+      '<button class="bk-b" data-rp="'+b.id+'">約下次</button>'+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
@@ -2574,17 +2638,33 @@ async function bkCancel(id){
 }
 
 /* ══ 手動登記（代客人預約）══ */
-async function bkManual(editId){
+async function bkManual(editId,repeatId){
   /* 帶 editId 就是改一筆既有的。手動登記常常打錯人數或選錯時段，
      原本只能取消重開，客人的 LINE 通知會再發一次。 */
   var eb=editId?bkList.filter(function(x){return x.id===editId})[0]:null;
   if(editId&&!eb)return;
-  bkSheet('<h3>'+(eb?"修改預約":"手動登記預約")+'</h3><div class="bk-sh2">'+
-   (eb?"改完會直接覆蓋，不會重發通知":"代客人預約、現場加開")+'</div>'+
+  /* 帶 repeatId 是「約下次」：不是改這一筆，是拿這一筆的內容開一張
+     全新的登記表單（會重新發通知、會重新檢查名額），日期預設抓
+     下週同一天，金額用目前的課程單價重算，避免用到舊報價。 */
+  var rp=(!eb&&repeatId)?bkList.filter(function(x){return x.id===repeatId})[0]:null;
+  if(repeatId&&!eb&&!rp)return;
+  var tmpl=eb||rp;
+  var initDateIso=ds(bkDate).replace(/\//g,"-");
+  if(tmpl){
+    initDateIso=String(tmpl.date).replace(/\//g,"-");
+    if(rp){
+      var nd=new Date(initDateIso+"T00:00:00");
+      nd.setDate(nd.getDate()+7);
+      initDateIso=ds(nd).replace(/\//g,"-");
+    }
+  }
+  bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":"手動登記預約"))+'</h3><div class="bk-sh2">'+
+   (eb?"改完會直接覆蓋，不會重發通知":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
    (eb?'':'<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
      '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
-       '<input id="mDate" type="date" value="'+(eb?String(eb.date).replace(/\//g,"-"):ds(bkDate).replace(/\//g,"-"))+'"></div>'+
+       '<button type="button" id="mDateBtn" class="bk-datebtn"></button>'+
+       '<input type="hidden" id="mDate" value="'+initDateIso+'"></div>'+
      '<div class="bk-f"><label>時段（可複選，畫一整天就多選幾個）</label>'+
        '<div class="bk-ways" id="mSlots"></div>'+
        '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
@@ -2594,21 +2674,21 @@ async function bkManual(editId){
      '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
      '<div class="bk-left" id="mItemSum"></div></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
-       '<input id="mAdult" inputmode="numeric" value="'+(eb?(+eb.adults||0):1)+'"></div>'+
+       '<input id="mAdult" inputmode="numeric" value="'+(tmpl?(+tmpl.adults||0):1)+'"></div>'+
      '<div class="bk-f"><label>小孩</label>'+
-       '<input id="mKid" inputmode="numeric" value="'+(eb?(+eb.kids||0):0)+'"></div>'+
+       '<input id="mKid" inputmode="numeric" value="'+(tmpl?(+tmpl.kids||0):0)+'"></div>'+
      '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
        '<div class="bk-left">選課程後自動帶入</div></div></div>'+
    '<input type="hidden" id="mPeople" value="1">'+
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
-       esc(eb&&eb.customer&&eb.customer.name||"")+'"></div>'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
-       esc(eb&&eb.customer&&eb.customer.phone||"")+'"></div></div>'+
-   '<div class="bk-f" id="mChildNameBox" style="display:'+((eb?(+eb.kids||0):0)>0?"":"none")+'">'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
+   '<div class="bk-f" id="mChildNameBox" style="display:'+((tmpl?(+tmpl.kids||0):0)>0?"":"none")+'">'+
      '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
-       esc(eb&&eb.customer&&eb.customer.childName||"")+'"></div>'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.childName||"")+'"></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
-       esc(eb&&eb.customer&&eb.customer.note||"")+'</textarea></div>'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="mX">取消</button>'+
      '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
@@ -2616,7 +2696,7 @@ async function bkManual(editId){
   var picked=null, pickedUid=null;
 
   /* 時段：可複選。有人一畫就是一整天，三個時段都要佔。 */
-  var mSlots=eb?bkSlotsOf(eb):[];
+  var mSlots=tmpl?bkSlotsOf(tmpl):[];
   var extraSlots=mSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 });
   /* 編輯時如果真的改了日期或時段，「通知客人」預設不勾就太危險了——
      客人會像這次一樣，直到前一天提醒才第一次看到改過的時間，
@@ -2700,6 +2780,23 @@ async function bkManual(editId){
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
     await bkLoad(); bkDate=keep; showLeft(); syncNotifyDefault();
   };
+  /* 日期欄改用整月月曆挑選（原生 <input type="date"> 的彈出視窗是瀏覽器
+     自己畫的，網站的 CSS 完全套不上去，字體、對齊都調不動）。
+     真正的值還是存在隱藏的 #mDate 裡，挑完日期後手動觸發它原本的
+     onchange，其餘讀值/存檔的程式碼完全不用動。 */
+  function syncDateBtn(){
+    var v=document.getElementById("mDate").value;
+    document.getElementById("mDateBtn").textContent=
+      v?v.replace(/-/g,"/")+"　週"+WD[new Date(v+"T00:00:00").getDay()]:"選擇日期";
+  }
+  syncDateBtn();
+  document.getElementById("mDateBtn").onclick=function(){
+    var md=document.getElementById("mDate");
+    bkDayPop(this,md.value,function(iso){
+      md.value=iso; syncDateBtn();
+      if(md.onchange)md.onchange.call(md);
+    });
+  };
   function syncPpl(){
     var a=+document.getElementById("mAdult").value||0;
     var k=+document.getElementById("mKid").value||0;
@@ -2738,8 +2835,8 @@ async function bkManual(editId){
      加到第二列就得自己填，畫面會比對合計對不對得起來。
      ═════════════════════════════════════════════════════ */
   var mItems=[], mItemsDirty=false;
-  if(eb&&eb.items&&eb.items.length){
-    eb.items.forEach(function(it){
+  if(tmpl&&tmpl.items&&tmpl.items.length){
+    tmpl.items.forEach(function(it){
       var ci=-1;
       bkCourses.forEach(function(c,i){
         if(ci<0&&c.name===it.name&&String(c.spec||"")===String(it.spec||""))ci=i });
@@ -2752,9 +2849,18 @@ async function bkManual(editId){
     });
   }
   if(!mItems.length) mItems.push({ ci:"", qty:0, amt:0, qtyManual:false, amtManual:false, lostName:"", addons:[] });
-  /* 編輯既有預約時，金額以原本存的為準，不要被單價重算蓋掉 */
+  /* 編輯既有預約時，金額以原本存的為準，不要被單價重算蓋掉。
+     「約下次」則相反：故意不鎖，讓 mDraw 用目前的課程單價重算，
+     不要沿用上一次可能已經過期的報價。 */
   if(eb) mItems.forEach(function(r){ r.amtManual=true });
   if(eb&&mItems.length===1) mItems[0].amt=+eb.total||mItems[0].amt;
+  /* 約下次：品項套用上一筆選的課程，但金額用「現在」的單價重算，
+     不要照抄上次存的舊金額（課程可能後來調過價）。mRowPrice／
+     mAddonsTotal 是下面才宣告的 function，函式宣告會整段 hoist，
+     這裡先呼叫沒問題。 */
+  if(rp) mItems.forEach(function(r){
+    if(r.ci!=="")r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+  });
 
   function mPplNow(){
     return (+document.getElementById("mAdult").value||0)+(+document.getElementById("mKid").value||0);
@@ -2920,8 +3026,8 @@ async function bkManual(editId){
       if(r.addons&&r.addons.length)row.addons=r.addons.map(function(a){return {name:a.name,price:a.price}});
       out.push(row);
     });
-    /* 沒動過品項就別把原本的資料洗掉 */
-    if(!out.length&&eb&&!mItemsDirty)return eb.items||[];
+    /* 沒動過品項就別把原本的資料洗掉（「約下次」也一樣，套用來源那筆） */
+    if(!out.length&&tmpl&&!mItemsDirty)return tmpl.items||[];
     return out;
   }
   mDraw();
@@ -2930,11 +3036,26 @@ async function bkManual(editId){
   /* 會員搜尋 */
   await bkLoadMembers();
   if(eb)showNotify();
+  /* 「約下次」：來源那筆如果有綁會員，直接比照「找會員」點選的結果，
+     不用行政再手動搜一次同一個人。找不到（例如電話格式對不起來）
+     就維持空白，行政自己搜。 */
+  if(rp){
+    var rpPhone=rp.memberPhone||(rp.customer&&rp.customer.phone)||"";
+    var rpKey=bkNorm(rpPhone);
+    var rpMatch=rpKey?bkMembers.filter(function(m){return bkNorm(m.phone)===rpKey})[0]:null;
+    if(rpMatch){
+      picked=rpMatch;
+      document.getElementById("mPick").innerHTML='<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+
+        '</b> '+picked.phone+'<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
+        '</b>　紅利 <b>'+picked.bonus+'</b></div></div>';
+    }
+    showNotify();
+  }
   var findEl=document.getElementById("mFind");
-  if(findEl)findEl.oninput=function(){
+  function mFindRun(){
     picked=null; document.getElementById("mPick").innerHTML="";
-    var r=bkSearch(this.value), h=document.getElementById("mHits");
-    if(this.value.trim().length<2){ h.innerHTML=""; return }
+    var r=bkSearch(findEl.value), h=document.getElementById("mHits");
+    if(findEl.value.trim().length<2){ h.innerHTML=""; return }
     h.innerHTML=r.length?r.map(function(m,i){
       return '<div class="bk-hit" data-i="'+i+'"><b>'+esc(m.name||"（未填姓名）")+'</b> '+m.phone+
         '<div class="bk-bal">點數 '+m.points.toLocaleString()+'　堂數 '+m.sessions+'　紅利 '+m.bonus+'</div></div>' }).join("")
@@ -2950,7 +3071,15 @@ async function bkManual(editId){
         (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+'</div>';
       showNotify();
     } });
-  };
+  }
+  if(findEl){
+    findEl.oninput=mFindRun;
+    /* 有些來源（例如從 LINE 對話裡複製名字貼過來）貼上時不會照一般
+       輸入觸發 input 事件，導致畫面看起來貼了名字卻沒有跳出點數，
+       要行政再手動打一個字才會出現。貼上事件另外接一次，
+       用 setTimeout 等瀏覽器真的把值塞進欄位後再查一次，兜底。 */
+    findEl.addEventListener("paste",function(){ setTimeout(mFindRun,0) });
+  }
   async function showNotify(){
     var box=document.getElementById("mNotifyBox");
     /* 沒透過「找會員」點選、直接手動打電話的情況，以前完全不會查 LINE 綁定，
@@ -3320,6 +3449,13 @@ css.textContent=
   "box-sizing:border-box;background:#FBFCFD;transition:.15s;color:#232936}"+
 ".bk-f input:focus,.bk-f select:focus,.bk-f textarea:focus,#ckFind:focus,#mFind:focus{"+
   "outline:0;border-color:#9FB0D6;background:#fff;box-shadow:0 0 0 3px rgba(62,86,145,.09)}"+
+".bk-datebtn{width:100%;padding:11px 13px;border:1px solid #E3E6EC;border-radius:10px;"+
+  "font-size:16px;font-family:inherit;box-sizing:border-box;background:#FBFCFD;color:#232936;"+
+  "text-align:left;cursor:pointer;transition:.15s}"+
+".bk-datebtn:hover{border-color:#9FB0D6}"+
+".bk-daypop{position:fixed;z-index:950;width:300px;max-width:92vw;background:#fff;"+
+  "border-radius:14px;box-shadow:0 10px 32px rgba(16,24,40,.24);border:1px solid #E3E6EC;"+
+  "padding:14px;box-sizing:border-box}"+
 ".bk-ways{display:flex;gap:8px;flex-wrap:wrap}"+
 ".bk-way{flex:1 1 30%;min-width:92px;text-align:center;padding:11px 5px;border:1px solid #E3E6EC;"+
   "border-radius:10px;background:#FBFCFD;font-size:14.5px;cursor:pointer;color:#5B6272;transition:.15s}"+
