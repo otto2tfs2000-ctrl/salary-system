@@ -808,8 +808,12 @@ function bkDayPop(anchor,iso,onPick){
     });
   }
   draw();
-  /* 貼著呼叫它的按鈕，但不超出視窗右邊/下面 */
-  var r=anchor.getBoundingClientRect(), pw=300;
+  /* 貼著呼叫它的按鈕，但不超出視窗右邊/下面。
+     寬度不能用寫死的數字算——CSS 那邊手機會用 max-width 把彈窗縮到
+     比 320px 窄，這裡如果還照 320 去算「不超出右邊」的位置，等於是
+     拿一個比實際寬的尺寸去算，算出來的 left 會太靠右，彈窗還是會
+     被切到。直接讀瀏覽器排版完的 offsetWidth，兩邊永遠對得起來。 */
+  var r=anchor.getBoundingClientRect(), pw=pop.offsetWidth;
   pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-pw-8))+"px";
   pop.style.top=Math.min(r.bottom+6,window.innerHeight-360)+"px";
   var onDoc=function(e){ if(!pop.contains(e.target)&&e.target!==anchor)bkDayPopClose() };
@@ -3310,7 +3314,12 @@ css.textContent=
 /* 班表設定月曆 */
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
 ".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
-".bk-cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}"+
+/* minmax(0,1fr) 不是 1fr：格子裡「20 位」這種文字有自己的最小寬度，
+   單純 1fr 遇到 7 欄塞不下時，欄位會被撐大到超出整個格線的容器，
+   多出來的欄位會直接溢到容器外面（在小尺寸的 bk-daypop 上很明顯，
+   後面三欄整個跑出白色卡片，蓋到頁面其他地方去）。加 minmax(0,..)
+   讓瀏覽器可以把欄位縮到比文字本身還窄，情願裁切或換行，也不會撐爆版面。 */
+".bk-cgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}"+
 ".bk-cwd{text-align:center;font-size:15px;color:#8A90A0;padding-bottom:4px}"+
 ".bk-mday{display:flex;flex-direction:column;align-items:center;justify-content:center;"+
   "gap:1px;aspect-ratio:1/1.12;border:1px solid #E3E6EC;border-radius:12px;"+
@@ -3453,9 +3462,20 @@ css.textContent=
   "font-size:16px;font-family:inherit;box-sizing:border-box;background:#FBFCFD;color:#232936;"+
   "text-align:left;cursor:pointer;transition:.15s}"+
 ".bk-datebtn:hover{border-color:#9FB0D6}"+
-".bk-daypop{position:fixed;z-index:950;width:300px;max-width:92vw;background:#fff;"+
+".bk-daypop{position:fixed;z-index:950;width:320px;max-width:calc(100vw - 24px);background:#fff;"+
   "border-radius:14px;box-shadow:0 10px 32px rgba(16,24,40,.24);border:1px solid #E3E6EC;"+
-  "padding:14px;box-sizing:border-box}"+
+  "padding:14px;box-sizing:border-box;overflow:hidden}"+
+/* 這個小彈窗塞不下跟整頁月曆（班表設定用）一樣大的字，這裡另外縮小，
+   用 .bk-daypop 前綴限定範圍，不會動到共用的 .bk-cgrid/.bk-mday 樣式。
+   手機螢幕窄，彈窗本身也會跟著 max-width 縮，7 欄一縮，文字不跟著
+   縮小會直接爆版（這次「約下次」的月曆選日期在手機上跑版就是這樣）。 */
+".bk-daypop .bk-cgrid{gap:4px}"+
+".bk-daypop .bk-mday{padding:2px;gap:0}"+
+".bk-daypop .bk-mday .d{font-size:11px}"+
+".bk-daypop .bk-mday .n{font-size:16px}"+
+".bk-daypop .bk-mday .c{font-size:9.5px}"+
+".bk-daypop .bk-cwd{font-size:12px;padding-bottom:2px}"+
+".bk-daypop .bk-ctitle{font-size:16px}"+
 ".bk-ways{display:flex;gap:8px;flex-wrap:wrap}"+
 ".bk-way{flex:1 1 30%;min-width:92px;text-align:center;padding:11px 5px;border:1px solid #E3E6EC;"+
   "border-radius:10px;background:#FBFCFD;font-size:14.5px;cursor:pointer;color:#5B6272;transition:.15s}"+
