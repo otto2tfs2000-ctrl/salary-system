@@ -444,7 +444,11 @@ function bkGuessSlot(text,dateStr){
   if(hour>=18)return avail.indexOf(EVE_SLOT)>=0?EVE_SLOT:null;
   if(hour>=16)return avail.indexOf("16:00-18:00")>=0?"16:00-18:00":null;
   if(hour>=14)return avail.indexOf("14:00-16:00")>=0?"14:00-16:00":null;
-  if(hour>=9&&hour<14)return avail.indexOf("10:00-12:00")>=0?"10:00-12:00":null;
+  /* 12:00~13:59 落在「10-12」跟「14-16」中間的空檔，沒有對應的表定時段，
+     硬塞進 10:00-12:00 比留白更糟——那個時段可能早就額滿或已經過了，
+     畫面卻看起來「已經選好」，容易被忽略直接送出。猜不準就不選，
+     讓人自己從「其他加開時段」或「自訂」挑，跟這支函式一貫的原則一致。 */
+  if(hour>=9&&hour<12)return avail.indexOf("10:00-12:00")>=0?"10:00-12:00":null;
   return null;
 }
 /* 依開始時間排序，順序亂填也不影響 */
