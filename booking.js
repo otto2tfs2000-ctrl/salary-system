@@ -2718,21 +2718,35 @@ async function bkManual(editId,repeatId){
       initDateIso=ds(nd).replace(/\//g,"-");
     }
   }
-  /* ══ 表單順序（2026-09-22）══════════════════════════════
-     以前是找會員→日期時段→課程→人數金額→姓名電話，客人在電話裡
-     已經把時段/姓名/電話都講完的情境（現場登記最常見的情況），
-     行政卻要先滑過找會員、課程這兩個「不一定要填」的區塊才摸得到
-     姓名電話欄。改成時段→姓名電話→人數 優先出現，找會員／課程都
-     收進預設收合的區塊（真的需要才點開，展開後底下原本的邏輯完全
-     沒動，qty/amt/addons 那一整套 mDraw／mRecalc 還是同一份）。
-     金額留在外面，不点開課程也能直接手動打金額。 */
+  /* ══ 表單順序（2026-09-22，大熊指定的順序）══════════════════
+     截圖→姓名電話（電話會自動比對會員，不用另外點「找會員」）→
+     日期時段→課程→備註。找會員收合起來當作「只知道姓名、不知道
+     電話」時的備用查法；課程／加購也收合，展開後底下原本的邏輯
+     完全沒動，qty/amt/addons 那一整套 mDraw／mRecalc 還是同一份。 */
   var courseOpen=!!(eb||(tmpl&&tmpl.items&&tmpl.items.length));
   bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":"手動登記預約"))+'</h3><div class="bk-sh2">'+
    (eb?"改完會直接覆蓋，不會重發通知":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
    (eb?'':'<div class="bk-f" id="mPhotoBox">'+
-     '<label>📷 有客人的對話截圖嗎？上傳試著自動抓姓名/電話/時段（選填，AI 抓完一定要再檢查一次）</label>'+
+     '<label>📷 有客人的對話截圖嗎？上傳試著自動抓姓名/電話/時段，上課內容會放進下面備註（選填，AI 抓完一定要再檢查一次）</label>'+
      '<input type="file" id="mPhotoInput" accept="image/*" style="font-size:13px">'+
      '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#8A90A0)"></div></div>')+
+   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
+     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
+   '<div id="mPick"></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
+       '<input id="mAdult" inputmode="numeric" value="'+(tmpl?(+tmpl.adults||0):1)+'"></div>'+
+     '<div class="bk-f"><label>小孩</label>'+
+       '<input id="mKid" inputmode="numeric" value="'+(tmpl?(+tmpl.kids||0):0)+'"></div></div>'+
+   '<input type="hidden" id="mPeople" value="1">'+
+   '<div class="bk-f" id="mChildNameBox" style="display:'+((tmpl?(+tmpl.kids||0):0)>0?"":"none")+'">'+
+     '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.childName||"")+'"></div>'+
+   (eb?'':'<div class="bk-f"><a href="javascript:void(0)" id="mMemberToggle" class="bk-toggle">▸ 只知道姓名、不知道電話？點這裡用姓名搜尋（電話已經會自動比對，不用特別點這裡）</a>'+
+     '<div id="mMemberBox" style="display:none;margin-top:8px">'+
+       '<label>找會員（電話或姓名，兩個字以上）</label>'+
+       '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
        '<button type="button" id="mDateBtn" class="bk-datebtn"></button>'+
        '<input type="hidden" id="mDate" value="'+initDateIso+'"></div>'+
@@ -2741,30 +2755,16 @@ async function bkManual(editId,repeatId){
        '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
          '<input id="mSlotOther" placeholder="自訂時段，例如 09:00-13:00"></div>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
-   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
-     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
-   '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
-       '<input id="mAdult" inputmode="numeric" value="'+(tmpl?(+tmpl.adults||0):1)+'"></div>'+
-     '<div class="bk-f"><label>小孩</label>'+
-       '<input id="mKid" inputmode="numeric" value="'+(tmpl?(+tmpl.kids||0):0)+'"></div>'+
-     '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
-       '<div class="bk-left">選課程後自動帶入，不選也能直接手打</div></div></div>'+
-   '<input type="hidden" id="mPeople" value="1">'+
-   '<div class="bk-f" id="mChildNameBox" style="display:'+((tmpl?(+tmpl.kids||0):0)>0?"":"none")+'">'+
-     '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.childName||"")+'"></div>'+
-   (eb?'':'<div class="bk-f"><a href="javascript:void(0)" id="mMemberToggle" class="bk-toggle">▸ 這位是老會員？點這裡搜尋帶入資料（選填）</a>'+
-     '<div id="mMemberBox" style="display:none;margin-top:8px">'+
-       '<label>找會員（電話或姓名，兩個字以上）</label>'+
-       '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div></div>')+
    '<div class="bk-f"><a href="javascript:void(0)" id="mCourseToggle" class="bk-toggle">'+
      (courseOpen?"▾ 收起課程／加購":"▸ 指定課程／加購（選填，核銷時也能再改）")+'</a>'+
      '<div id="mCourseBox" style="display:'+(courseOpen?"":"none")+';margin-top:8px">'+
        '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
        '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
-       '<div class="bk-left" id="mItemSum"></div></div></div></div>'+
+       '<div class="bk-left" id="mItemSum"></div></div></div>'+
+     /* 金額特地放在課程收合區塊「外面」——沒點開課程也要能直接手打金額，
+        這是原本就有的用法（口頭報價、不想選課程明細），收合課程不該連帶擋掉它 */
+     '<div class="bk-f" style="margin-top:8px"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
+       '<div class="bk-left">選課程後自動帶入，不選也能直接手打</div></div></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
@@ -2776,7 +2776,7 @@ async function bkManual(editId,repeatId){
   if(mt)mt.onclick=function(){
     var b=document.getElementById("mMemberBox"); var open=b.style.display==="none";
     b.style.display=open?"":"none";
-    mt.textContent=open?"▾ 收起":"▸ 這位是老會員？點這裡搜尋帶入資料（選填）";
+    mt.textContent=open?"▾ 收起":"▸ 只知道姓名、不知道電話？點這裡用姓名搜尋（電話已經會自動比對，不用特別點這裡）";
     if(open)document.getElementById("mFind").focus();
   };
   document.getElementById("mCourseToggle").onclick=function(){
@@ -2959,11 +2959,14 @@ async function bkManual(editId,repeatId){
     }
   };
 
-  /* 課程。四個來源互不相依，同時發出去等最慢的那個就好——這是打開
-     「手動登記」表單最常被抱怨很慢的地方，客人電話/時段/姓名都講完了，
-     卻要多等好幾百毫秒表單才跳出來。課程/班表/加購第二次以後都有快取，
-     真正每次都要重打網路的只剩「舊方案單價」，已經另外加了快取。 */
-  await Promise.all([bkLoadCourses(), bkLoadSched(), bkLoadTktPlans(), bkLoadAddons()]);
+  /* 課程／班表／加購／會員清單五個來源互不相依，同時發出去等最慢的
+     那個就好——這是打開「手動登記」表單最常被抱怨很慢的地方，客人
+     電話/時段/姓名都講完了，卻要多等好幾百毫秒表單才跳出來。課程/
+     班表/加購第二次以後都有快取，真正每次都要重打網路的只剩「舊
+     方案單價」（已經另外加了快取）跟會員清單。會員清單併進來一起等，
+     下面電話欄「打電話自動比對會員」才能一開表單就緒，不用等使用者
+     打完電話那一刻才臨時再去抓一次名單。 */
+  await Promise.all([bkLoadCourses(), bkLoadSched(), bkLoadTktPlans(), bkLoadAddons(), bkLoadMembers()]);
 
   /* ══ 品項清單（2026-08-09）══════════════════════════════
      一組客人一起來，各上各的課——三個人來，一個畫流動畫、
@@ -3182,8 +3185,20 @@ async function bkManual(editId,repeatId){
   mDraw();
   showLeft();
 
-  /* 會員搜尋 */
-  await bkLoadMembers();
+  /* 會員搜尋。bkLoadMembers() 已經併進上面那個 Promise.all 提早載入過了，
+     這裡不用也不該再呼叫一次——它沒有快取旗標，再叫一次會整包重抓、
+     白白浪費一次網路請求。 */
+  /* 會員卡片渲染共用一份，「找會員」點選結果、「約下次」帶入來源會員、
+     電話欄自動比對，三個地方以前各自複製一份一樣的 HTML，容易改一個
+     忘記改另一個。 */
+  function renderPickCard(){
+    document.getElementById("mPick").innerHTML=picked?
+      '<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+'</b> '+picked.phone+
+      '<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
+      '</b>　紅利 <b>'+picked.bonus+'</b></div>'+
+      (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+
+      '</div>':"";
+  }
   if(eb)showNotify();
   /* 「約下次」：來源那筆如果有綁會員，直接比照「找會員」點選的結果，
      不用行政再手動搜一次同一個人。找不到（例如電話格式對不起來）
@@ -3192,17 +3207,39 @@ async function bkManual(editId,repeatId){
     var rpPhone=rp.memberPhone||(rp.customer&&rp.customer.phone)||"";
     var rpKey=bkNorm(rpPhone);
     var rpMatch=rpKey?bkMembers.filter(function(m){return bkNorm(m.phone)===rpKey})[0]:null;
-    if(rpMatch){
-      picked=rpMatch;
-      document.getElementById("mPick").innerHTML='<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+
-        '</b> '+picked.phone+'<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
-        '</b>　紅利 <b>'+picked.bonus+'</b></div></div>';
-    }
+    if(rpMatch){ picked=rpMatch; renderPickCard() }
     showNotify();
   }
+  /* ══ 電話自動比對會員（2026-09-22）══════════════════════════
+     大熊指出：以前打電話欄跟「找會員」是兩條互不相通的路——直接把
+     電話打進電話欄，系統完全不會去比對是不是舊會員，要另外點開
+     「找會員」再打一次同一支電話才查得到。現在打電話欄滿一組完整
+     手機格式，直接比照「找會員」點下去的效果：帶入姓名、顯示點數/
+     堂數/紅利卡片、設定 picked。只在姓名欄還空著時才覆蓋姓名，
+     行政已經手動打了別的姓名就不去動它，只顯示卡片讓人自己判斷。 */
+  function tryPhoneMatch(){
+    if(picked||!bkMembers)return;
+    var key=bkNorm(document.getElementById("mPhone").value);
+    if(!key)return;
+    var hit=bkMembers.filter(function(m){ return bkNorm(m.phone)===key })[0];
+    if(!hit)return;
+    picked=hit;
+    var nameEl=document.getElementById("mName");
+    if(!nameEl.value.trim())nameEl.value=hit.name||"";
+    renderPickCard();
+    showNotify();
+  }
+  document.getElementById("mPhone").addEventListener("input",function(){
+    if(picked&&bkNorm(this.value)!==bkNorm(picked.phone)){
+      /* 已經比對到一個人之後又把電話改掉，舊的卡片跟 picked 要一起清掉，
+         不然會變成「畫面顯示甲會員，實際存檔卻可能用了乙的電話」。 */
+      picked=null; renderPickCard();
+    }
+    tryPhoneMatch();
+  });
   var findEl=document.getElementById("mFind");
   function mFindRun(){
-    picked=null; document.getElementById("mPick").innerHTML="";
+    picked=null; renderPickCard();
     var r=bkSearch(findEl.value), h=document.getElementById("mHits");
     if(findEl.value.trim().length<2){ h.innerHTML=""; return }
     h.innerHTML=r.length?r.map(function(m,i){
@@ -3214,10 +3251,7 @@ async function bkManual(editId,repeatId){
       document.getElementById("mName").value=picked.name;
       document.getElementById("mPhone").value=picked.phone;
       document.getElementById("mFind").value=""; h.innerHTML="";
-      document.getElementById("mPick").innerHTML='<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+
-        '</b> '+picked.phone+'<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
-        '</b>　紅利 <b>'+picked.bonus+'</b></div>'+
-        (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+'</div>';
+      renderPickCard();
       showNotify();
     } });
   }
