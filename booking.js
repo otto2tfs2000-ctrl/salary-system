@@ -2731,9 +2731,10 @@ async function bkManual(editId,repeatId){
      '<input type="file" id="mPhotoInput" accept="image/*" style="font-size:13px">'+
      '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#8A90A0)"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'" autocomplete="off"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
+   '<div id="mNameHits"></div>'+
    '<div id="mPick"></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
        '<input id="mAdult" inputmode="numeric" value="'+(tmpl?(+tmpl.adults||0):1)+'"></div>'+
@@ -2743,10 +2744,6 @@ async function bkManual(editId,repeatId){
    '<div class="bk-f" id="mChildNameBox" style="display:'+((tmpl?(+tmpl.kids||0):0)>0?"":"none")+'">'+
      '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.childName||"")+'"></div>'+
-   (eb?'':'<div class="bk-f"><a href="javascript:void(0)" id="mMemberToggle" class="bk-toggle">▸ 只知道姓名、不知道電話？點這裡用姓名搜尋（電話已經會自動比對，不用特別點這裡）</a>'+
-     '<div id="mMemberBox" style="display:none;margin-top:8px">'+
-       '<label>找會員（電話或姓名，兩個字以上）</label>'+
-       '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
        '<button type="button" id="mDateBtn" class="bk-datebtn"></button>'+
        '<input type="hidden" id="mDate" value="'+initDateIso+'"></div>'+
@@ -2772,13 +2769,6 @@ async function bkManual(editId,repeatId){
      '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
-  var mt=document.getElementById("mMemberToggle");
-  if(mt)mt.onclick=function(){
-    var b=document.getElementById("mMemberBox"); var open=b.style.display==="none";
-    b.style.display=open?"":"none";
-    mt.textContent=open?"▾ 收起":"▸ 只知道姓名、不知道電話？點這裡用姓名搜尋（電話已經會自動比對，不用特別點這裡）";
-    if(open)document.getElementById("mFind").focus();
-  };
   document.getElementById("mCourseToggle").onclick=function(){
     var b=document.getElementById("mCourseBox"); var open=b.style.display==="none";
     b.style.display=open?"":"none";
@@ -3237,32 +3227,41 @@ async function bkManual(editId,repeatId){
     }
     tryPhoneMatch();
   });
-  var findEl=document.getElementById("mFind");
-  function mFindRun(){
-    picked=null; renderPickCard();
-    var r=bkSearch(findEl.value), h=document.getElementById("mHits");
-    if(findEl.value.trim().length<2){ h.innerHTML=""; return }
+  /* ══ 姓名欄直接搜會員（2026-09-22，取代原本另外收合的「找會員」）══
+     大熊回報：打了姓名（例如「邱宗洲」）什麼都沒發生，還要另外點開
+     一個收合區塊、把同一個名字再打一次才查得到，兩個欄位沒同步。
+     改成姓名欄本身就是搜尋框：打兩個字以上直接查、列出候選人點選，
+     跟電話欄自動比對是同一套邏輯（共用 renderPickCard()），姓名/電話
+     不管先填哪一個都查得到，不用再另外找一個地方搜第二次。
+     只在還沒 picked 的時候才搜——已經配對到人（不管是點名字候選、
+     還是電話欄自動比對成功）之後，繼續在姓名欄打字只是單純改名字，
+     不該因為打字就把已經配對到的會員關係洗掉；真的要換人，改電話欄
+     （電話欄自己會偵測「跟 picked 對不上」而清掉配對）比較準。 */
+  function runNameSearch(){
+    if(picked)return;
+    var nameEl=document.getElementById("mName");
+    var r=bkSearch(nameEl.value), h=document.getElementById("mNameHits");
+    if(nameEl.value.trim().length<2){ h.innerHTML=""; return }
     h.innerHTML=r.length?r.map(function(m,i){
       return '<div class="bk-hit" data-i="'+i+'"><b>'+esc(m.name||"（未填姓名）")+'</b> '+m.phone+
         '<div class="bk-bal">點數 '+m.points.toLocaleString()+'　堂數 '+m.sessions+'　紅利 '+m.bonus+'</div></div>' }).join("")
-      :'<div class="bk-hint">查無此人，可直接在下方手動填寫</div>';
+      :'<div class="bk-hint">查無此人，可直接照打的繼續填，當新客人登記</div>';
     h.querySelectorAll("[data-i]").forEach(function(el){ el.onclick=function(){
       picked=r[+el.dataset.i];
-      document.getElementById("mName").value=picked.name;
+      nameEl.value=picked.name;
       document.getElementById("mPhone").value=picked.phone;
-      document.getElementById("mFind").value=""; h.innerHTML="";
+      h.innerHTML="";
       renderPickCard();
       showNotify();
     } });
   }
-  if(findEl){
-    findEl.oninput=mFindRun;
-    /* 有些來源（例如從 LINE 對話裡複製名字貼過來）貼上時不會照一般
-       輸入觸發 input 事件，導致畫面看起來貼了名字卻沒有跳出點數，
-       要行政再手動打一個字才會出現。貼上事件另外接一次，
-       用 setTimeout 等瀏覽器真的把值塞進欄位後再查一次，兜底。 */
-    findEl.addEventListener("paste",function(){ setTimeout(mFindRun,0) });
-  }
+  var nameEl=document.getElementById("mName");
+  nameEl.addEventListener("input",runNameSearch);
+  /* 有些來源（例如從 LINE 對話裡複製名字貼過來）貼上時不會照一般
+     輸入觸發 input 事件，導致畫面看起來貼了名字卻沒有跳出點數，
+     要行政再手動打一個字才會出現。貼上事件另外接一次，
+     用 setTimeout 等瀏覽器真的把值塞進欄位後再查一次，兜底。 */
+  nameEl.addEventListener("paste",function(){ setTimeout(runNameSearch,0) });
   async function showNotify(){
     var box=document.getElementById("mNotifyBox");
     /* 沒透過「找會員」點選、直接手動打電話的情況，以前完全不會查 LINE 綁定，
