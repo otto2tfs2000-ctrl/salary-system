@@ -295,11 +295,17 @@ function bkCourseOptions(sel){
 async function bkLoadSched(force){
   if(bkSched&&!force)return;
   var m={};
+  /* 試算表「班表」跟 Firebase /schedule 是兩個互不相依的來源，
+     以前先 await 試算表、等它整個跑完才開始打 Firebase，兩段延遲
+     疊加起來。改成同時發出去，各自的等待時間會重疊，
+     整體只要等比較慢的那一個，不用等兩個加起來。 */
+  var schedP=bkGviz("班表").catch(function(){ return null });
+  var fbP=fetch(bkf("/schedule.json")).then(function(r){ return r.json() }).catch(function(){ return null });
   /* 1) 試算表「班表」當底（第 3 欄是老師數） */
   try{
-    var rows=await bkGviz("班表");
-    if(rows.length&&/日期|週/.test(String(rows[0][0])))rows.shift();
-    rows.forEach(function(r){
+    var rows=await schedP;
+    if(rows&&rows.length&&/日期|週/.test(String(rows[0][0])))rows.shift();
+    if(rows)rows.forEach(function(r){
       var d=String(r[0]||"").trim().replace(/-/g,"/");
       var v=String(r[2]==null?"":r[2]).trim();
       if(d&&v!=="")m[d]=Math.max(0,bkNum(v));
@@ -314,7 +320,7 @@ async function bkLoadSched(force){
         2026-08-27：capAM/capPM/capPM2/capEve 這幾個手動上限欄位也曾經漏轉，
         是同一種疏漏——重新整理後手動設的上限會看起來像沒設過，一起補上。 */
   try{
-    var j=await (await fetch(bkf("/schedule.json"))).json();
+    var j=await fbP;
     if(j)for(var k in j){
       var v2=j[k];
       if(v2===null||v2===undefined||v2==="")continue;
@@ -975,6 +981,8 @@ var BK_TKT_PLAN_BUILTIN = [
 ];
 var BK_TKT_PLAN = BK_TKT_PLAN_BUILTIN;
 var bkTktPlanSrc = "內建";
+var bkTktPlansLoaded = false; /* 沒快取以前，每開一次手動登記／核銷都會重打一次「舊方案單價」試算表，
+                                  白白多等 0.3~0.5 秒，同一批客人排隊登記時這個延遲會一直重複發生 */
 
 /* ══ 從試算表讀舊方案單價 ══════════════════════════════
    分頁名稱：舊方案單價
@@ -992,8 +1000,10 @@ var bkTktPlanSrc = "內建";
 
    名稱帶 (0.5) 的自動當成半堂，單價自動對半，不用另外填。 */
 async function bkLoadTktPlans(){
+  if(bkTktPlansLoaded)return;
   var rows=[];
   try{ rows=await bkGviz("舊方案單價") }catch(e){ return }   /* 分頁不存在就沿用內建 */
+  bkTktPlansLoaded=true;
   if(!rows.length)return;
   if(String(rows[0][0]||"").indexOf("票券")>=0||String(rows[0][0]||"").indexOf("名稱")>=0)rows.shift();
 
@@ -1144,7 +1154,9 @@ async function bkMember(phone){
 async function bkRender(){
   var root=document.getElementById("bkRoot"); if(!root)return;
   if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
-    await bkLoad(); await bkLoadIndex(); await bkLoadSched(); bkBusy=false; }
+    /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
+       同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
+    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched()]); bkBusy=false; }
   var d=bkDate, today=ds(new Date())===ds(d);
   var dsNow=ds(d);
   var tOn=bkTeachersOn(dsNow), tOnPM=bkTeachersOnPM(dsNow), tSet=!!(bkSched&&bkSched[dsNow]!=null);
@@ -1947,7 +1959,7 @@ async function bkCheckout(id){
   /* 核銷現在可以改課程，所以要先有課表。
      以前不需要——課程是預約時就選好的，核銷只照著結帳。
      少了這一行，沒先開過手動登記的人一按核銷就會整個視窗開不起來。 */
-  await bkLoadCourses(); await bkLoadTktPlans();
+  await Promise.all([bkLoadCourses(), bkLoadTktPlans()]);
   var old=b.checkout;
   var payer=null;
   /* course: 課程本身；addons: 加價項目 */
@@ -2817,8 +2829,11 @@ async function bkManual(editId,repeatId){
      不然這個客人就算早就綁過 LINE，系統也查不到。 */
   document.getElementById("mPhone").onchange=function(){ if(!picked)showNotify() };
 
-  /* 課程 */
-  await bkLoadCourses(); await bkLoadSched(); await bkLoadTktPlans(); await bkLoadAddons();
+  /* 課程。四個來源互不相依，同時發出去等最慢的那個就好——這是打開
+     「手動登記」表單最常被抱怨很慢的地方，客人電話/時段/姓名都講完了，
+     卻要多等好幾百毫秒表單才跳出來。課程/班表/加購第二次以後都有快取，
+     真正每次都要重打網路的只剩「舊方案單價」，已經另外加了快取。 */
+  await Promise.all([bkLoadCourses(), bkLoadSched(), bkLoadTktPlans(), bkLoadAddons()]);
 
   /* ══ 品項清單（2026-08-09）══════════════════════════════
      一組客人一起來，各上各的課——三個人來，一個畫流動畫、
