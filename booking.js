@@ -2719,11 +2719,10 @@ async function bkManual(editId,repeatId){
     }
   }
   /* ══ 表單順序（2026-09-22，大熊指定的順序）══════════════════
-     截圖→姓名電話（電話會自動比對會員，不用另外點「找會員」）→
-     日期時段→課程→備註。找會員收合起來當作「只知道姓名、不知道
-     電話」時的備用查法；課程／加購也收合，展開後底下原本的邏輯
-     完全沒動，qty/amt/addons 那一整套 mDraw／mRecalc 還是同一份。 */
-  var courseOpen=!!(eb||(tmpl&&tmpl.items&&tmpl.items.length));
+     截圖→姓名電話（打姓名或電話都會自動比對會員，不用另外找一個
+     地方搜）→日期時段→課程→備註。課程／加購原本收合過，大熊說
+     「這不用對折，直接大開就好」，改回一律展開；底下 qty/amt/addons
+     那一整套 mDraw／mRecalc 邏輯完全沒動，只是外層不再包收合容器。 */
   bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":"手動登記預約"))+'</h3><div class="bk-sh2">'+
    (eb?"改完會直接覆蓋，不會重發通知":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
    (eb?'':'<div class="bk-f" id="mPhotoBox">'+
@@ -2752,16 +2751,11 @@ async function bkManual(editId,repeatId){
        '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
          '<input id="mSlotOther" placeholder="自訂時段，例如 09:00-13:00"></div>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
-   '<div class="bk-f"><a href="javascript:void(0)" id="mCourseToggle" class="bk-toggle">'+
-     (courseOpen?"▾ 收起課程／加購":"▸ 指定課程／加購（選填，核銷時也能再改）")+'</a>'+
-     '<div id="mCourseBox" style="display:'+(courseOpen?"":"none")+';margin-top:8px">'+
-       '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
-       '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
-       '<div class="bk-left" id="mItemSum"></div></div></div>'+
-     /* 金額特地放在課程收合區塊「外面」——沒點開課程也要能直接手打金額，
-        這是原本就有的用法（口頭報價、不想選課程明細），收合課程不該連帶擋掉它 */
-     '<div class="bk-f" style="margin-top:8px"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
-       '<div class="bk-left">選課程後自動帶入，不選也能直接手打</div></div></div>'+
+   '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
+     '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
+     '<div class="bk-left" id="mItemSum"></div></div>'+
+   '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
+     '<div class="bk-left">選課程後自動帶入，不選也能直接手打</div></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
@@ -2769,11 +2763,6 @@ async function bkManual(editId,repeatId){
      '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
-  document.getElementById("mCourseToggle").onclick=function(){
-    var b=document.getElementById("mCourseBox"); var open=b.style.display==="none";
-    b.style.display=open?"":"none";
-    this.textContent=open?"▾ 收起課程／加購":"▸ 指定課程／加購（選填，核銷時也能再改）";
-  };
 
   /* 時段：可複選。有人一畫就是一整天，三個時段都要佔。 */
   var mSlots=tmpl?bkSlotsOf(tmpl):[];
@@ -3676,11 +3665,6 @@ css.textContent=
 ".bk-additem{border:1px dashed var(--bkGold,#C99A3B);background:transparent;"+
   "color:var(--bkGold,#C99A3B);border-radius:8px;padding:7px 12px;font-size:13.5px;"+
   "cursor:pointer;font-family:inherit;margin-bottom:6px}"+
-/* 「找會員」「課程／加購」收合連結——手動登記表單簡化過，這兩塊
-   預設收起來，需要才點開，避免一開表單就先看到一長串不一定要填的東西 */
-".bk-toggle{display:inline-block;font-size:13px;color:var(--bkGold,#C99A3B);"+
-  "text-decoration:none;cursor:pointer;font-weight:500}"+
-".bk-toggle:hover{text-decoration:underline}"+
 ".bk-addon .am{flex:2 1 132px}.bk-addon .an{flex:2 1 108px}.bk-addon .aq{flex:0 1 60px}"+
 ".bk-addon .av{flex:1 1 70px}.bk-addon .aw{flex:1 1 88px}"+
 ".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;"+
