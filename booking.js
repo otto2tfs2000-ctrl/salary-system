@@ -2760,7 +2760,11 @@ async function bkManual(editId,repeatId){
        esc(tmpl&&tmpl.customer&&tmpl.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
    '<div class="bk-act"><button class="bk-cancel" id="mX">取消</button>'+
-     '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
+     '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button>'+
+     /* 收訂金只對「新登記」有意義——改既有預約通常訂金早就處理過了，
+        混進編輯流程反而容易讓人搞混是要改訂金還是改預約內容。 */
+     (eb?"":'<button class="bk-save bk-save-gold" id="mOKDep">登記＋收訂金</button>')+
+     '</div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
 
@@ -3281,7 +3285,7 @@ async function bkManual(editId,repeatId){
       (eb?'<div class="bk-left">通知內容跟第一次預約的確認訊息一樣，會帶新的日期時段。</div>':"");
   }
 
-  document.getElementById("mOK").onclick=async function(){
+  async function submitManual(alsoDeposit){
     var g=function(id){ return document.getElementById(id).value.trim() };
     var nA=+g("mAdult")||0, nK=+g("mKid")||0;
     document.getElementById("mPeople").value=nA+nK;
@@ -3359,7 +3363,12 @@ async function bkManual(editId,repeatId){
     }
     var wantNotify=document.getElementById("mNotify");
     if(pickedUid)rec.line={userId:pickedUid};
-    var btn=this; btn.disabled=true; btn.textContent=eb?"儲存中…":"登記中…";
+    var btn=document.getElementById(alsoDeposit?"mOKDep":"mOK");
+    var otherBtn=document.getElementById(alsoDeposit?"mOK":"mOKDep");
+    var btnLabel=eb?"儲存修改":(alsoDeposit?"登記＋收訂金":"登記");
+    btn.disabled=true; btn.textContent=eb?"儲存中…":"登記中…";
+    if(otherBtn)otherBtn.disabled=true;
+    var newId=null;
     try{
       if(eb){
         /* 用 PATCH 不用 PUT：核銷、訂金、報到那些欄位要留著，
@@ -3377,9 +3386,11 @@ async function bkManual(editId,repeatId){
         if(d!==eb.date||useSlots.join(",")!==bkSortSlots(bkSlotsOf(eb)).join(","))
           rec.actualTime=null;
         await bkPatch("/bookings/"+editId+".json",rec);
-      }else
-      await fetch(bkf("/bookings.json"),{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+      }else{
+        var rr=await (await fetch(bkf("/bookings.json"),{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)})).json();
+        newId=rr&&rr.name;
+      }
       if(pickedUid&&wantNotify&&wantNotify.checked){
         fetch(NOTIFY+"/notify/booking",{method:"POST",
           headers:{"Content-Type":"application/json"},
@@ -3423,10 +3434,19 @@ async function bkManual(editId,repeatId){
       }
       bkClose();
       bkDate=new Date(d.replace(/\//g,"-")+"T00:00:00");
-      bkRefresh();
+      /* 「登記＋收訂金」要等 bkRefresh 把這筆新預約重新抓進 bkList，
+         bkDeposit(newId) 才查得到人——跟訂金分頁點單筆預約收訂金
+         是同一支函式，不用另外寫一份收訂金邏輯。 */
+      await bkRefresh();
+      if(alsoDeposit&&newId)bkDeposit(newId);
     }catch(e){ alert((eb?"儲存":"登記")+"失敗："+e.message);
-      btn.disabled=false; btn.textContent=eb?"儲存修改":"登記" }
-  };
+      btn.disabled=false; btn.textContent=btnLabel;
+      if(otherBtn)otherBtn.disabled=false;
+    }
+  }
+  document.getElementById("mOK").onclick=function(){ submitManual(false) };
+  var mOKDepBtn=document.getElementById("mOKDep");
+  if(mOKDepBtn)mOKDepBtn.onclick=function(){ submitManual(true) };
 }
 
 /* ── 樣式 ── */
@@ -3702,7 +3722,10 @@ css.textContent=
 ".bk-save{flex:2;padding:14px;background:#1E2B4F;color:#fff;border:0;border-radius:12px;"+
   "font-size:15.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}"+
 ".bk-save:hover{background:#16223F}"+
-".bk-save:disabled{background:#A8AEBC;cursor:default}";
+".bk-save:disabled{background:#A8AEBC;cursor:default}"+
+".bk-save-gold{background:var(--bkGold)}"+
+".bk-save-gold:hover{background:#B3872F}"+
+".bk-save-gold:disabled{background:#A8AEBC;cursor:default}";
 document.head.appendChild(css);
 
 document.addEventListener("DOMContentLoaded",function(){ setTimeout(bkRender,400) });
