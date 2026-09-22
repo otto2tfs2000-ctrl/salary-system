@@ -403,6 +403,50 @@ function bkSlotsOf(b){
 function bkHitsSlot(b,slot){
   return bkSlotsOf(b).some(function(x){ return x===slot||bkBase(x)===slot });
 }
+/* 截圖辨識抓到的是客人講話的原始文字（例如「下午兩點」「14:00」），
+   不是系統的時段按鈕格式，這裡盡量猜一個最接近的時段，猜不出來就
+   回傳 null 讓行政自己點——寧可不猜，也不要選錯又沒人發現（截圖的
+   原始文字會另外顯示在旁邊，方便對照，猜錯了一眼就看得出來）。 */
+var BK_CN_NUM={"零":0,"一":1,"二":2,"兩":2,"两":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10};
+/* 「四點」「十一點」這種中文數字時刻，客人打字比打阿拉伯數字常見，
+   一定要先試中文數字再退到粗略猜測，不然「下午四點」會被籠統的
+   「下午→抓15點」蓋過去，四點該落在16:00-18:00卻猜成14:00-16:00。 */
+function bkCnHour(s){
+  if(/^十[一二兩两三四五六七八九]?$/.test(s))return 10+(s.length>1?BK_CN_NUM[s[1]]:0);
+  return BK_CN_NUM[s]!=null?BK_CN_NUM[s]:null;
+}
+function bkGuessSlot(text,dateStr){
+  text=String(text||"");
+  var hour=null, m=text.match(/(\d{1,2})[:：](\d{2})/);
+  if(m){ hour=+m[1]; if(/下午|晚上|pm|PM/.test(text)&&hour<12)hour+=12 }
+  else{
+    m=text.match(/(\d{1,2})\s*[點点]/);
+    if(m){ hour=+m[1];
+      if(/下午|pm|PM/.test(text)&&hour<12)hour+=12;
+      else if(/晚上|晚間/.test(text)&&hour<12)hour+=12; }
+    else{
+      m=text.match(/([一二兩两三四五六七八九十]{1,3})\s*[點点]/);
+      if(m){ var ch=bkCnHour(m[1]);
+        if(ch!=null){ hour=ch;
+          if(/下午|pm|PM/.test(text)&&hour<12)hour+=12;
+          else if(/晚上|晚間/.test(text)&&hour<12)hour+=12; }
+      }
+    }
+  }
+  if(hour==null){
+    if(/上午|早上/.test(text))hour=10;
+    else if(/中午/.test(text))hour=12;
+    else if(/下午/.test(text))hour=15;
+    else if(/晚上|晚間/.test(text))hour=19;
+  }
+  if(hour==null)return null;
+  var avail=bkSlotsOn(dateStr||"");
+  if(hour>=18)return avail.indexOf(EVE_SLOT)>=0?EVE_SLOT:null;
+  if(hour>=16)return avail.indexOf("16:00-18:00")>=0?"16:00-18:00":null;
+  if(hour>=14)return avail.indexOf("14:00-16:00")>=0?"14:00-16:00":null;
+  if(hour>=9&&hour<14)return avail.indexOf("10:00-12:00")>=0?"10:00-12:00":null;
+  return null;
+}
 /* 依開始時間排序，順序亂填也不影響 */
 function bkSortSlots(list){
   return list.slice().sort(function(a,b){
@@ -2674,10 +2718,21 @@ async function bkManual(editId,repeatId){
       initDateIso=ds(nd).replace(/\//g,"-");
     }
   }
+  /* ══ 表單順序（2026-09-22）══════════════════════════════
+     以前是找會員→日期時段→課程→人數金額→姓名電話，客人在電話裡
+     已經把時段/姓名/電話都講完的情境（現場登記最常見的情況），
+     行政卻要先滑過找會員、課程這兩個「不一定要填」的區塊才摸得到
+     姓名電話欄。改成時段→姓名電話→人數 優先出現，找會員／課程都
+     收進預設收合的區塊（真的需要才點開，展開後底下原本的邏輯完全
+     沒動，qty/amt/addons 那一整套 mDraw／mRecalc 還是同一份）。
+     金額留在外面，不点開課程也能直接手動打金額。 */
+  var courseOpen=!!(eb||(tmpl&&tmpl.items&&tmpl.items.length));
   bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":"手動登記預約"))+'</h3><div class="bk-sh2">'+
    (eb?"改完會直接覆蓋，不會重發通知":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
-   (eb?'':'<div class="bk-f"><label>找會員（電話或姓名，兩個字以上）</label>'+
-     '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div>')+
+   (eb?'':'<div class="bk-f" id="mPhotoBox">'+
+     '<label>📷 有客人的對話截圖嗎？上傳試著自動抓姓名/電話/時段（選填，AI 抓完一定要再檢查一次）</label>'+
+     '<input type="file" id="mPhotoInput" accept="image/*" style="font-size:13px">'+
+     '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#8A90A0)"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>日期</label>'+
        '<button type="button" id="mDateBtn" class="bk-datebtn"></button>'+
        '<input type="hidden" id="mDate" value="'+initDateIso+'"></div>'+
@@ -2686,23 +2741,30 @@ async function bkManual(editId,repeatId){
        '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
          '<input id="mSlotOther" placeholder="自訂時段，例如 09:00-13:00"></div>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
-   '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
-     '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
-     '<div class="bk-left" id="mItemSum"></div></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
+     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
+       esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人 *</label>'+
        '<input id="mAdult" inputmode="numeric" value="'+(tmpl?(+tmpl.adults||0):1)+'"></div>'+
      '<div class="bk-f"><label>小孩</label>'+
        '<input id="mKid" inputmode="numeric" value="'+(tmpl?(+tmpl.kids||0):0)+'"></div>'+
      '<div class="bk-f"><label>金額</label><input id="mAmt" inputmode="numeric" value="'+(eb?(+eb.total||0):"")+'">'+
-       '<div class="bk-left">選課程後自動帶入</div></div></div>'+
+       '<div class="bk-left">選課程後自動帶入，不選也能直接手打</div></div></div>'+
    '<input type="hidden" id="mPeople" value="1">'+
-   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'"></div>'+
-     '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
-       esc(tmpl&&tmpl.customer&&tmpl.customer.phone||"")+'"></div></div>'+
    '<div class="bk-f" id="mChildNameBox" style="display:'+((tmpl?(+tmpl.kids||0):0)>0?"":"none")+'">'+
      '<label>小朋友姓名（選填）</label><input id="mChildName" placeholder="方便老師點名、稱呼小朋友" value="'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.childName||"")+'"></div>'+
+   (eb?'':'<div class="bk-f"><a href="javascript:void(0)" id="mMemberToggle" class="bk-toggle">▸ 這位是老會員？點這裡搜尋帶入資料（選填）</a>'+
+     '<div id="mMemberBox" style="display:none;margin-top:8px">'+
+       '<label>找會員（電話或姓名，兩個字以上）</label>'+
+       '<input id="mFind" placeholder="例：0965 或 曾亭"><div id="mHits"></div><div id="mPick"></div></div></div>')+
+   '<div class="bk-f"><a href="javascript:void(0)" id="mCourseToggle" class="bk-toggle">'+
+     (courseOpen?"▾ 收起課程／加購":"▸ 指定課程／加購（選填，核銷時也能再改）")+'</a>'+
+     '<div id="mCourseBox" style="display:'+(courseOpen?"":"none")+';margin-top:8px">'+
+       '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
+       '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
+       '<div class="bk-left" id="mItemSum"></div></div></div></div>'+
    '<div class="bk-f"><label>備註</label><textarea id="mNote" rows="2" placeholder="例：想畫自己的貓">'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.note||"")+'</textarea></div>'+
    '<div class="bk-f" id="mNotifyBox"></div>'+
@@ -2710,6 +2772,18 @@ async function bkManual(editId,repeatId){
      '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button></div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
+  var mt=document.getElementById("mMemberToggle");
+  if(mt)mt.onclick=function(){
+    var b=document.getElementById("mMemberBox"); var open=b.style.display==="none";
+    b.style.display=open?"":"none";
+    mt.textContent=open?"▾ 收起":"▸ 這位是老會員？點這裡搜尋帶入資料（選填）";
+    if(open)document.getElementById("mFind").focus();
+  };
+  document.getElementById("mCourseToggle").onclick=function(){
+    var b=document.getElementById("mCourseBox"); var open=b.style.display==="none";
+    b.style.display=open?"":"none";
+    this.textContent=open?"▾ 收起課程／加購":"▸ 指定課程／加購（選填，核銷時也能再改）";
+  };
 
   /* 時段：可複選。有人一畫就是一整天，三個時段都要佔。 */
   var mSlots=tmpl?bkSlotsOf(tmpl):[];
@@ -2730,13 +2804,26 @@ async function bkManual(editId,repeatId){
     var cb=document.getElementById("mNotify");
     if(cb&&mScheduleChanged())cb.checked=true;
   }
+  /* 以前一次列出全部 12+1 個時段按鈕，客人講的通常就是表定的那 3～4 個
+     （晚上有排才會有第 4 個），卻要在一排密密麻麻的按鈕裡找。改成預設
+     只顯示當天實際排班的時段，半點加開那些收進「其他加開時段…」，
+     點開才出現。已經選到的時段（例如編輯舊資料、或截圖猜到加開時段）
+     一定要顯示出來，不能因為收合就讓人看不到自己選了什麼。 */
+  var mShowAllSlots=false;
   function drawSlots(){
     var box=document.getElementById("mSlots"); if(!box)return;
-    var all=SLOTS_MANUAL.concat(extraSlots.filter(function(x){ return SLOTS_MANUAL.indexOf(x)<0 }));
-    box.innerHTML=all.map(function(sl){
+    var d=(document.getElementById("mDate").value||"").replace(/-/g,"/");
+    var primary=bkSlotsOn(d);
+    var extra=SLOTS_MANUAL.concat(extraSlots).filter(function(x){ return primary.indexOf(x)<0 });
+    extra=extra.filter(function(x,i){ return extra.indexOf(x)===i });
+    var hasHiddenSelected=mSlots.some(function(x){ return primary.indexOf(x)<0 });
+    var showAll=mShowAllSlots||hasHiddenSelected;
+    var show=primary.concat(showAll?extra:[]);
+    box.innerHTML=show.map(function(sl){
       return '<div class="bk-way'+(mSlots.indexOf(sl)>=0?" on":"")+'" data-sl="'+esc(sl)+'">'+
         esc(sl)+'</div>' }).join("")+
-      '<div class="bk-way" data-slother="1">其他…</div>';
+      (!showAll&&extra.length?'<div class="bk-way" data-moreslots="1">其他加開時段…</div>':"")+
+      '<div class="bk-way" data-slother="1">自訂…</div>';
     box.querySelectorAll("[data-sl]").forEach(function(el){
       el.onclick=function(){
         var sl=el.dataset.sl, i=mSlots.indexOf(sl);
@@ -2744,6 +2831,8 @@ async function bkManual(editId,repeatId){
         mSlots=bkSortSlots(mSlots);
         drawSlots(); showLeft(); syncNotifyDefault();
       } });
+    var moreBtn=box.querySelector("[data-moreslots]");
+    if(moreBtn)moreBtn.onclick=function(){ mShowAllSlots=true; drawSlots(); };
     box.querySelector("[data-slother]").onclick=function(){
       var b=document.getElementById("mSlotOtherBox");
       b.style.display=b.style.display==="none"?"":"none";
@@ -2794,7 +2883,7 @@ async function bkManual(editId,repeatId){
   document.getElementById("mDate").onchange=async function(){
     /* 換日期要重抓那天的預約才算得準 */
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
-    await bkLoad(); bkDate=keep; showLeft(); syncNotifyDefault();
+    await bkLoad(); bkDate=keep; drawSlots(); showLeft(); syncNotifyDefault();
   };
   /* 日期欄改用整月月曆挑選（原生 <input type="date"> 的彈出視窗是瀏覽器
      自己畫的，網站的 CSS 完全套不上去，字體、對齊都調不動）。
@@ -2828,6 +2917,47 @@ async function bkManual(editId,repeatId){
   /* 直接手動打電話（沒有走「找會員」搜尋）離開欄位時也查一次，
      不然這個客人就算早就綁過 LINE，系統也查不到。 */
   document.getElementById("mPhone").onchange=function(){ if(!picked)showNotify() };
+
+  /* ══ 截圖自動填（2026-09-22）══════════════════════════════
+     客人常常是在 LINE 上先把時段/姓名/電話都講完，行政卻還要重新
+     照著螢幕一個字一個字打進表單。借用 inventory.js 已經在用的
+     claudeOCR（同一支 Railway 後端 /api/ocr，剛加了 booking 模式），
+     上傳那段對話截圖，AI 抓姓名/電話/日期/時段/人數回來預填。
+     這只是「幫忙填」不是「自動送出」——填完人還是要按登記，
+     AI 抓錯最壞情況就是多改幾個字，不會有錯的預約被悄悄建立。 */
+  var photoInput=document.getElementById("mPhotoInput");
+  if(photoInput)photoInput.onchange=async function(){
+    var file=this.files&&this.files[0]; if(!file)return;
+    var statusEl=document.getElementById("mPhotoStatus");
+    statusEl.style.color="var(--bkGold,#C99A3B)"; statusEl.textContent="⏳ 辨識中…";
+    try{
+      var b64=await fileToOCRBase64(file);
+      var j=await claudeOCR([b64],"booking");
+      var b=j.booking||{};
+      var filled=[];
+      if(b.name){ document.getElementById("mName").value=b.name; filled.push("姓名") }
+      if(b.phone){ document.getElementById("mPhone").value=b.phone; showNotify(); filled.push("電話") }
+      if(b.date){
+        var dEl=document.getElementById("mDate");
+        dEl.value=b.date; syncDateBtn();
+        if(dEl.onchange)await dEl.onchange.call(dEl);
+      }
+      if(b.adults!=null&&+b.adults>0)document.getElementById("mAdult").value=b.adults;
+      if(b.kids!=null)document.getElementById("mKid").value=b.kids;
+      syncPpl();
+      if(b.note){ var noteEl=document.getElementById("mNote"); if(!noteEl.value)noteEl.value=b.note }
+      var slotGuess=b.time?bkGuessSlot(b.time,(document.getElementById("mDate").value||"").replace(/-/g,"/")):null;
+      if(slotGuess&&mSlots.indexOf(slotGuess)<0){ mSlots.push(slotGuess); mSlots=bkSortSlots(mSlots); filled.push("時段（猜的，請確認）") }
+      drawSlots(); showLeft(); syncNotifyDefault();
+      var msg=filled.length?("✅ 已帶入："+filled.join("、")):"⚠️ 這張截圖沒抓到明確的姓名/電話/時段，請手動填寫";
+      if(b.time)msg+="　｜截圖原文時段：「"+b.time+"」，時段按鈕記得對一下";
+      statusEl.style.color=filled.length?"var(--bkOk,#12805C)":"var(--bkRed,#C9453B)";
+      statusEl.textContent=msg;
+    }catch(err){
+      statusEl.style.color="var(--bkRed,#C9453B)";
+      statusEl.textContent="❌ 辨識失敗："+err.message+"，請手動填寫";
+    }
+  };
 
   /* 課程。四個來源互不相依，同時發出去等最慢的那個就好——這是打開
      「手動登記」表單最常被抱怨很慢的地方，客人電話/時段/姓名都講完了，
@@ -3513,6 +3643,11 @@ css.textContent=
 ".bk-additem{border:1px dashed var(--bkGold,#C99A3B);background:transparent;"+
   "color:var(--bkGold,#C99A3B);border-radius:8px;padding:7px 12px;font-size:13.5px;"+
   "cursor:pointer;font-family:inherit;margin-bottom:6px}"+
+/* 「找會員」「課程／加購」收合連結——手動登記表單簡化過，這兩塊
+   預設收起來，需要才點開，避免一開表單就先看到一長串不一定要填的東西 */
+".bk-toggle{display:inline-block;font-size:13px;color:var(--bkGold,#C99A3B);"+
+  "text-decoration:none;cursor:pointer;font-weight:500}"+
+".bk-toggle:hover{text-decoration:underline}"+
 ".bk-addon .am{flex:2 1 132px}.bk-addon .an{flex:2 1 108px}.bk-addon .aq{flex:0 1 60px}"+
 ".bk-addon .av{flex:1 1 70px}.bk-addon .aw{flex:1 1 88px}"+
 ".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;"+
