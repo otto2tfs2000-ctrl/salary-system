@@ -215,7 +215,10 @@ function addConsumable() {
     source: source,
     note: note,
     details: details.length > 0 ? details : null,
-    paid: false // 新增時預設「未撥款（代墊中）」，要老闆自己確認撥款了才手動改成已撥款
+    paid: false, // 新增時預設「未撥款（代墊中）」，要老闆自己確認撥款了才手動改成已撥款
+    /* buyer 是誰代墊付款的（人工填的業務欄位），enteredBy 是誰在系統裡
+       打這筆記帳的，兩者常常不是同一人（例如行政幫老師代墊的錢記帳）。 */
+    enteredBy: (typeof ME !== 'undefined' && ME && ME.displayName) || ''
   };
 
   var k = getCMKey();
@@ -562,7 +565,7 @@ function renderConsumables() {
     return '<tr id="cm-row-'+x.id+'">'+
       '<td style="font-size:13.5px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
       '<td><span class="badge '+badgeClass+'">'+icon+' '+x.cat+'</span></td>'+
-      '<td style="font-weight:500">'+x.name+'</td>'+
+      '<td style="font-weight:500"'+(x.enteredBy?' title="登記人：'+escAttr(x.enteredBy)+'"':'')+'>'+x.name+'</td>'+
       '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
       '<td style="font-size:13.5px;color:var(--text3)">'+x.source+'</td>'+
       '<td style="font-size:13.5px;color:var(--text2)">'+(x.buyer||'—')+'</td>'+
@@ -636,7 +639,7 @@ function renderCMBuyerSummary(items) {
         return '<tr>'+
           '<td style="font-size:13.5px;color:var(--text3)">'+x.date.slice(5)+'</td>'+
           '<td style="font-size:13.5px">'+icon+' '+x.cat+'</td>'+
-          '<td style="font-weight:500">'+x.name+'</td>'+
+          '<td style="font-weight:500"'+(x.enteredBy?' title="登記人：'+escAttr(x.enteredBy)+'"':'')+'>'+x.name+'</td>'+
           '<td style="color:var(--gold2);font-weight:600">$'+x.amount.toLocaleString()+'</td>'+
           '<td style="font-size:13.5px;color:var(--text3)">'+x.source+'</td>'+
           '<td style="font-size:13.5px">'+paidTxt+'</td>'+
@@ -961,7 +964,8 @@ function importAIResults() {
       source: '—',
       note: '',
       details: null,
-      paid: false
+      paid: false,
+      enteredBy: (typeof ME !== 'undefined' && ME && ME.displayName) || ''
     });
     count++;
   });

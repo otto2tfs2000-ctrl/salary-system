@@ -1668,7 +1668,9 @@ function bkCard(b){
     lines+='<div class="bk-dline tot"><span>'+(+c.depositAmt?"當日應收":"合計")+'</span><b>$'+
       ((+c.depositAmt)?(+c.due||0):(+c.total||0)).toLocaleString()+'</b></div>';
     doneHtml='<div class="bk-done"><div class="bk-dhead">已核銷'+
-      (c.teacher?'<span>'+esc(c.teacher)+'</span>':'')+'</div>'+lines+
+      (c.teacher?'<span>'+esc(c.teacher)+'</span>':'')+
+      /* teacher 是誰教的，這裡另外標「誰按核銷收款」，兩個角色常常不是同一人 */
+      (c.by?'<span class="bk-cap">'+esc(c.by)+' 收款</span>':'')+'</div>'+lines+
       '<div class="bk-dpay">'+esc(c.summary||"")+
       (c.bonus?'　·　紅利 +'+c.bonus:'')+'</div></div>';
   }
@@ -1684,7 +1686,8 @@ function bkCard(b){
         ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+
       (b.source==="ai-chat"?'<span class="bk-tag ai">AI待確認</span>':'')+'</div>'+
-    '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+'</div>'+
+    '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+
+      (b.createdBy?'　<span class="bk-cap">'+esc(b.createdBy)+' 登記</span>':'')+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
     doneHtml+
     '<div class="bk-btns">'+
@@ -2518,11 +2521,11 @@ async function bkCheckout(id){
       if(old){
         if(old.payerPhone){
           if(old.usePoints){ await bkLedger(old.payerPhone,{type:"points",delta:old.usePoints,
-            reason:"核銷修正沖銷",bookingId:id,by:"admin",at:now}); await bkCache(old.payerPhone,"points",old.usePoints); }
+            reason:"核銷修正沖銷",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(old.payerPhone,"points",old.usePoints); }
           if(old.useSessions){ await bkLedger(old.payerPhone,{type:"sessions",delta:old.useSessions,
-            reason:"核銷修正沖銷",bookingId:id,by:"admin",at:now}); await bkCache(old.payerPhone,"sessions",old.useSessions); }
+            reason:"核銷修正沖銷",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(old.payerPhone,"sessions",old.useSessions); }
           if(old.bonus){ await bkLedger(old.payerPhone,{type:"bonus",delta:-old.bonus,
-            reason:"核銷修正沖銷",bookingId:id,by:"admin",at:now}); await bkCache(old.payerPhone,"bonus",-old.bonus); }
+            reason:"核銷修正沖銷",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(old.payerPhone,"bonus",-old.bonus); }
         }
         if(old.logId)await fetch(salf("/deductions/"+old.logId+".json"),{method:"PATCH",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({voided:true,voidAt:now})});
@@ -2544,11 +2547,11 @@ async function bkCheckout(id){
       var bonus=useSe?0:bonusOf(course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
-          reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
+          reason:"扣課"+tail,bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
         if(useSe){ await bkLedger(payer.phone,{type:"sessions",delta:-useSe,
-          reason:"扣課"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"sessions",-useSe); }
+          reason:"扣課"+tail,bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(payer.phone,"sessions",-useSe); }
         if(bonus){ await bkLedger(payer.phone,{type:"bonus",delta:bonus,
-          reason:"扣課回饋"+tail,bookingId:id,by:"admin",at:now}); await bkCache(payer.phone,"bonus",bonus); }
+          reason:"扣課回饋"+tail,bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(payer.phone,"bonus",bonus); }
       }
       /* 拆付款：每一種方式各記一筆金額，方便每日登記分流。
          訂金不寫在這裡——它已經在收款那天記過一筆 deposits，
@@ -2593,7 +2596,10 @@ async function bkCheckout(id){
           courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
           adults:nAdult,kids:nKid,
           teacher:t,teachers:teachers.slice(),
-          payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now}};
+          payerPhone:payer?payer.phone:"",summary:sumTxt,logId:logId,at:now,
+          /* teacher 是「誰教」，這個是「誰按核銷收款」——兩件事分開記，
+             行政收銀出問題才查得到是哪個人按的，不會跟教課老師搞混。 */
+          by:(typeof ME!=="undefined"&&ME&&ME.displayName)||""}};
       /* 自動比對到的會員，順手綁回預約單，下次不用再找 */
       if(autoMatched&&ownPhone)patch.memberPhone=ownPhone;
       await bkPatch("/bookings/"+id+".json",patch);
@@ -2653,13 +2659,13 @@ async function bkVoid(id){
     var now=new Date().toISOString();
     if(c.payerPhone){
       if(+c.usePoints){ await bkLedger(c.payerPhone,{type:"points",delta:+c.usePoints,
-        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        reason:"核銷作廢",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now});
         await bkCache(c.payerPhone,"points",+c.usePoints) }
       if(+c.useSessions){ await bkLedger(c.payerPhone,{type:"sessions",delta:+c.useSessions,
-        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        reason:"核銷作廢",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now});
         await bkCache(c.payerPhone,"sessions",+c.useSessions) }
       if(+c.bonus){ await bkLedger(c.payerPhone,{type:"bonus",delta:-c.bonus,
-        reason:"核銷作廢",bookingId:id,by:"admin",at:now});
+        reason:"核銷作廢",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now});
         await bkCache(c.payerPhone,"bonus",-c.bonus) }
     }
     if(c.logId)await fetch(salf("/deductions/"+c.logId+".json"),{method:"PATCH",
@@ -3346,7 +3352,10 @@ async function bkManual(editId,repeatId){
       items:outItems,
       total:amt,
       customer:{name:g("mName"),phone:g("mPhone"),note:g("mNote"),childName:g("mChildName")},
-      status:"new",source:"manual",ts:new Date().toISOString()};
+      status:"new",source:"manual",ts:new Date().toISOString(),
+      /* 哪位員工幫客人登記的——只在「新建」這筆時定案，編輯既有預約
+         不該追認成編輯的人登記的，下面 eb 分支會把這欄刪掉再 PATCH。 */
+      createdBy:(typeof ME!=="undefined"&&ME&&ME.displayName)||""};
     /* 現場登記常常是全新客人，不是每次都會從「找會員」點選既有會員。
        picked 是 null 的時候以前完全不會處理會員檔案——預約存進去了，
        但 /members/{phone} 從頭到尾沒建過，這個人等於不存在於會員系統，
@@ -3377,7 +3386,7 @@ async function bkManual(editId,repeatId){
       if(eb){
         /* 用 PATCH 不用 PUT：核銷、訂金、報到那些欄位要留著，
            這裡只改行政填的那幾格。 */
-        delete rec.status; delete rec.ts;
+        delete rec.status; delete rec.ts; delete rec.createdBy;
         rec.editedAt=new Date().toISOString();
         rec.editedBy=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
         /* 客人自己在網頁上約的那筆，原本存了 actualTime（實際上課時間，

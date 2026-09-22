@@ -1369,7 +1369,7 @@ function renderInvWeekTable() {
         var curCell = invCurCellHtml(bd, rec, weekKey, it.safeStock);
 
         // 本週盤點的填寫時間——填了才顯示，讓人知道這數字是什麼時候數的
-        var stockAtTxt = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
+        var stockAtTxt = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) + (rec.by ? '・' + rec.by : '') : '';
 
         // 本週用掉：不用手動填，直接顯示系統自動核銷（銷課／扣課／加購扣的材料）的數字。
         var wkEndDate = new Date(weekKey + 'T00:00:00'); wkEndDate.setDate(wkEndDate.getDate() + 7);
@@ -1446,6 +1446,13 @@ function invKeepSavedAt(prevRec, newStock) {
   return Date.now();
 }
 
+// 跟 invKeepSavedAt 同一個邏輯：數字沒變就不要洗掉原本盤點的人，
+// 不然誰只是重新整理頁面路過，也會被誤記成是他改的。
+function invKeepBy(prevRec, newStock) {
+  if (prevRec && prevRec.stock === newStock) return prevRec.by || '';
+  return (typeof ME !== 'undefined' && ME && ME.displayName) || '';
+}
+
 function autoSaveInvItem(itemId) {
   var weekKey = invCurWeek;
   var st = getInvStore();
@@ -1459,13 +1466,13 @@ function autoSaveInvItem(itemId) {
     tombstonePath('inventory.' + curStore.inventory + '.weeks.' + weekKey + '.' + itemId);
     delete st.weeks[weekKey][itemId];
   } else {
-    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(existingBefore, stock) };
+    st.weeks[weekKey][itemId] = { used: used, stock: stock, savedAt: invKeepSavedAt(existingBefore, stock), by: invKeepBy(existingBefore, stock) };
   }
   save();
   var rec = st.weeks[weekKey][itemId] || {};
   // 同步刷新本週盤點的時間戳
   var stockAtEl = document.getElementById('inv-stockat-'+itemId);
-  if (stockAtEl) stockAtEl.textContent = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) : '';
+  if (stockAtEl) stockAtEl.textContent = typeof rec.savedAt === 'number' ? invFmtDateTime(rec.savedAt) + (rec.by ? '・' + rec.by : '') : '';
   // 即時更新建議訂購量
   var items = getInvItems();
   var it = items.find(function(x){ return x.id === itemId; });
@@ -1502,7 +1509,8 @@ function saveInvWeek() {
     st.weeks[weekKey][it.id] = {
       used: used,
       stock: stock,
-      savedAt: invKeepSavedAt(existing, stock)
+      savedAt: invKeepSavedAt(existing, stock),
+      by: invKeepBy(existing, stock)
     };
     savedCount++;
   });
