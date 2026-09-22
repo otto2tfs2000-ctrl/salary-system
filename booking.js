@@ -3727,7 +3727,13 @@ css.textContent=
   "font-size:15.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}"+
 ".bk-save:hover{background:#16223F}"+
 ".bk-save:disabled{background:#A8AEBC;cursor:default}"+
-".bk-save-gold{background:var(--bkGold)}"+
+/* 這裡不能用 var(--bkGold)：那個變數是在 #bkRoot 上定義的，
+   但彈窗（#bkMask/#bkSheet）是直接掛在 document.body 底下、不在
+   #bkRoot 子樹裡，變數在這裡讀不到會直接失效（背景退回透明），
+   結果字是白的（繼承 .bk-save 的 color:#fff）疊在透明底上，
+   整顆按鈕看起來像消失了，其實還在、也點得到，只是看不見。
+   跟 .bk-save 本身一樣，直接寫死色碼。 */
+".bk-save-gold{background:#C99A3B}"+
 ".bk-save-gold:hover{background:#B3872F}"+
 ".bk-save-gold:disabled{background:#A8AEBC;cursor:default}";
 document.head.appendChild(css);
