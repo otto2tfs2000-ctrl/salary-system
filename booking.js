@@ -292,6 +292,20 @@ function bkCourseOptions(sel){
   }).join("");
 }
 
+/* Firebase /schedule 單日的原始值 → 後台用的格式（數字原樣，物件補齊欄位） */
+function bkSchedNorm(v2){
+  if(v2===null||v2===undefined||v2==="")return null;
+  return (typeof v2==="object")?{t:Math.max(0,+v2.t||0),
+    tPM:(v2.tPM==null?Math.max(0,+v2.t||0):Math.max(0,+v2.tPM||0)),
+    ev:Math.max(0,+v2.ev||0),
+    capAM:v2.capAM!=null?Math.max(0,+v2.capAM||0):null,
+    capPM:v2.capPM!=null?Math.max(0,+v2.capPM||0):null,
+    capPM2:v2.capPM2!=null?Math.max(0,+v2.capPM2||0):null,
+    capEve:v2.capEve!=null?Math.max(0,+v2.capEve||0):null}
+                          :Math.max(0,+v2||0);
+}
+/* 試算表「班表」那層底值另外記一份，單日重抓 Firebase 發現被刪掉時才退得回去 */
+var bkSchedSheet={}, bkSchedAt=0;
 async function bkLoadSched(force){
   if(bkSched&&!force)return;
   var m={};
@@ -311,6 +325,7 @@ async function bkLoadSched(force){
       if(d&&v!=="")m[d]=Math.max(0,bkNum(v));
     });
   }catch(e){}
+  bkSchedSheet={}; for(var sk in m)bkSchedSheet[sk]=m[sk];
   /* 2) Firebase /schedule 蓋過去（預約後台按 ＋／− 存的就是這裡）
         值可能是數字（舊）或 {t,tPM,ev,capAM,capPM,capPM2,capEve}（上午/下午分開＋
         含晚上＋各時段手動上限），三種都原封不動收下，要用的時候再交給 bkSchedVal 正規化。
@@ -322,20 +337,31 @@ async function bkLoadSched(force){
   try{
     var j=await fbP;
     if(j)for(var k in j){
-      var v2=j[k];
-      if(v2===null||v2===undefined||v2==="")continue;
-      m[String(k).replace(/-/g,"/")]=
-        (typeof v2==="object")?{t:Math.max(0,+v2.t||0),
-          tPM:(v2.tPM==null?Math.max(0,+v2.t||0):Math.max(0,+v2.tPM||0)),
-          ev:Math.max(0,+v2.ev||0),
-          capAM:v2.capAM!=null?Math.max(0,+v2.capAM||0):null,
-          capPM:v2.capPM!=null?Math.max(0,+v2.capPM||0):null,
-          capPM2:v2.capPM2!=null?Math.max(0,+v2.capPM2||0):null,
-          capEve:v2.capEve!=null?Math.max(0,+v2.capEve||0):null}
-                              :Math.max(0,+v2||0);
+      var nv=bkSchedNorm(j[k]);
+      if(nv!=null)m[String(k).replace(/-/g,"/")]=nv;
     }
   }catch(e){}
-  bkSched=m;
+  bkSched=m; bkSchedAt=Date.now();
+}
+/* ══ 改班表前一定要先重抓當天的雲端資料（2026-09-23 修）══
+   以前班表只在開頁時讀一次，之後按老師＋／−、設上限，都是拿「開頁當下」
+   那份記憶體裡的資料整包寫回去。只要頁面開著沒重整（另一台電腦、手機、
+   同事的分頁），期間別人設的手動上限，一按＋／−就被舊資料蓋掉——
+   9/28 上限設 5、老師 2 位，家長卻看到還能約 4 位（10 − 已約 6），就是這樣來的。
+   現在每次寫入前先抓這一天最新的值，只改要改的那一欄，其他欄位保留雲端現況。 */
+async function bkSchedFresh(dateStr){
+  if(!bkSched)bkSched={};
+  var r=await fetch(bkf("/schedule/"+dateStr.replace(/\//g,"-")+".json"));
+  if(!r.ok)throw new Error("HTTP "+r.status);
+  var nv=bkSchedNorm(await r.json());
+  if(nv!=null)bkSched[dateStr]=nv;
+  else if(bkSchedSheet[dateStr]!=null)bkSched[dateStr]=bkSchedSheet[dateStr];
+  else delete bkSched[dateStr];
+}
+/* 讀不到最新資料就不要寫，寧可請使用者再按一次，也不要拿舊資料蓋掉別人的設定 */
+async function bkSchedFreshOrStop(dateStr){
+  try{ await bkSchedFresh(dateStr); return true }
+  catch(e){ alert("讀取最新班表失敗，這次沒有儲存，請檢查網路後再按一次。"); return false }
 }
 /* 班表的值 → {t, ev}。數字就是舊格式，晚上一律當沒開。 */
 /* tPM（下午老師數）2026-08-17 新增：老師常常早上有排、下午沒排，
@@ -488,7 +514,7 @@ function bkSchedPack(tAM,tPM,ev,capAM,capPM,capEve,capPM2){
 }
 /* 改上午老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
 async function bkSetTeachers(dateStr,val){
-  if(!bkSched)bkSched={};
+  if(!(await bkSchedFreshOrStop(dateStr)))return;
   if(val===null){ delete bkSched[dateStr] }
   else{
     var cur0=bkSchedVal(dateStr)||{};
@@ -498,7 +524,7 @@ async function bkSetTeachers(dateStr,val){
 }
 /* 改下午老師數，上午跟晚上不動 */
 async function bkSetTeachersPM(dateStr,val){
-  if(!bkSched)bkSched={};
+  if(!(await bkSchedFreshOrStop(dateStr)))return;
   var cur1=bkSchedVal(dateStr)||{};
   var packed=bkSchedPack(bkTeachersOn(dateStr),val,bkEveOn(dateStr),cur1.capAM,cur1.capPM,cur1.capEve,cur1.capPM2);
   /* 三個都跟星期預設一樣、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
@@ -512,7 +538,7 @@ async function bkSetTeachersPM(dateStr,val){
 }
 /* 只改晚上，上午下午不動 */
 async function bkSetEve(dateStr,ev){
-  if(!bkSched)bkSched={};
+  if(!(await bkSchedFreshOrStop(dateStr)))return;
   var cur2=bkSchedVal(dateStr)||{};
   var packed=bkSchedPack(bkTeachersOn(dateStr),bkTeachersOnPM(dateStr),ev,cur2.capAM,cur2.capPM,cur2.capEve,cur2.capPM2);
   /* 晚上關掉、上午下午又都是星期預設值、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
@@ -549,7 +575,7 @@ function bkCapKind(slot){
    /schedule 節點，改了之後客人那邊看到的名額會馬上跟著變少。
    val 傳 null ＝清除這個時段的手動上限，恢復照老師排班算。 */
 async function bkSetCap(dateStr,slot,val){
-  if(!bkSched)bkSched={};
+  if(!(await bkSchedFreshOrStop(dateStr)))return;
   var cur=bkSchedVal(dateStr)||{t:bkBaseOn(dateStr),tPM:bkBaseOn(dateStr),ev:0,capAM:null,capPM:null,capPM2:null,capEve:null};
   var kind=bkCapKind(slot);
   var capAM=kind==="capAM"?val:cur.capAM;
@@ -1283,7 +1309,7 @@ async function bkRender(){
   if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(), bkLoadCourses()]); bkBusy=false; }
+    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses()]); bkBusy=false; }
   var d=bkDate, today=ds(new Date())===ds(d);
   var dsNow=ds(d);
   var tOn=bkTeachersOn(dsNow), tOnPM=bkTeachersOnPM(dsNow), tSet=!!(bkSched&&bkSched[dsNow]!=null);
@@ -1390,14 +1416,18 @@ async function bkRender(){
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
   document.getElementById("bkReload").onclick=function(){ bkRefresh() };
-  document.getElementById("bkTMinusAM").onclick=function(){
-    bkSetTeachers(dsNow,Math.max(0,bkTeachersOn(dsNow)-1)); bkRender() };
-  document.getElementById("bkTPlusAM").onclick=function(){
-    bkSetTeachers(dsNow,Math.min(6,bkTeachersOn(dsNow)+1)); bkRender() };
-  document.getElementById("bkTMinusPM").onclick=function(){
-    bkSetTeachersPM(dsNow,Math.max(0,bkTeachersOnPM(dsNow)-1)); bkRender() };
-  document.getElementById("bkTPlusPM").onclick=function(){
-    bkSetTeachersPM(dsNow,Math.min(6,bkTeachersOnPM(dsNow)+1)); bkRender() };
+  /* ＋／− 以雲端最新的老師數為準加減，不是畫面上可能已經過時的數字 */
+  var bkTStep=async function(pm,delta){
+    if(!(await bkSchedFreshOrStop(dsNow)))return;
+    var cur=pm?bkTeachersOnPM(dsNow):bkTeachersOn(dsNow);
+    var nv=Math.max(0,Math.min(6,cur+delta));
+    if(pm)await bkSetTeachersPM(dsNow,nv); else await bkSetTeachers(dsNow,nv);
+    bkRender();
+  };
+  document.getElementById("bkTMinusAM").onclick=function(){ bkTStep(false,-1) };
+  document.getElementById("bkTPlusAM").onclick=function(){ bkTStep(false,1) };
+  document.getElementById("bkTMinusPM").onclick=function(){ bkTStep(true,-1) };
+  document.getElementById("bkTPlusPM").onclick=function(){ bkTStep(true,1) };
   /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
@@ -1821,7 +1851,7 @@ async function bkCache(phone,type,delta){
   c[type]=(+c[type]||0)+delta;
   await bkPatch("/members/"+phone+"/cache.json",c);
 }
-async function bkRefresh(){ bkMembers=null; await bkLoad(); bkRender() }
+async function bkRefresh(){ bkMembers=null; bkSchedAt=0; await bkLoad(); bkRender() }
 
 /* ══ 班表設定（獨立分頁・月曆）════════════════════════
    一格 = 一天。中間大字是可開課老師數，下面是該時段名額。
@@ -1834,6 +1864,7 @@ async function bkSchedRender(){
   var root=document.getElementById("schedRoot"); if(!root)return;
   if(bkCalY==null){ var t=new Date(); bkCalY=t.getFullYear(); bkCalM=t.getMonth()+1 }
   if(!bkSched){ root.innerHTML='<div class="bk-empty">載入班表中…</div>'; await bkLoadSched() }
+  else if(Date.now()-bkSchedAt>30000) await bkLoadSched(true);
 
   var first=new Date(bkCalY,bkCalM-1,1), days=new Date(bkCalY,bkCalM,0).getDate();
   var lead=(first.getDay()+6)%7;                  /* 月曆從週一起算 */
