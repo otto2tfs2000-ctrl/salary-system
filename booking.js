@@ -301,7 +301,8 @@ function bkSchedNorm(v2){
     capAM:v2.capAM!=null?Math.max(0,+v2.capAM||0):null,
     capPM:v2.capPM!=null?Math.max(0,+v2.capPM||0):null,
     capPM2:v2.capPM2!=null?Math.max(0,+v2.capPM2||0):null,
-    capEve:v2.capEve!=null?Math.max(0,+v2.capEve||0):null}
+    capEve:v2.capEve!=null?Math.max(0,+v2.capEve||0):null,
+    capPrev:(v2.capPrev&&typeof v2.capPrev==="object")?v2.capPrev:null}
                           :Math.max(0,+v2||0);
 }
 /* 試算表「班表」那層底值另外記一份，單日重抓 Firebase 發現被刪掉時才退得回去 */
@@ -376,8 +377,9 @@ function bkSchedVal(d){
     capAM:v.capAM!=null?Math.max(0,+v.capAM||0):null,
     capPM:v.capPM!=null?Math.max(0,+v.capPM||0):null,
     capPM2:v.capPM2!=null?Math.max(0,+v.capPM2||0):null,
-    capEve:v.capEve!=null?Math.max(0,+v.capEve||0):null};
-  return {t:Math.max(0,+v||0),tPM:Math.max(0,+v||0),ev:0,capAM:null,capPM:null,capPM2:null,capEve:null};
+    capEve:v.capEve!=null?Math.max(0,+v.capEve||0):null,
+    capPrev:(v.capPrev&&typeof v.capPrev==="object")?v.capPrev:null};
+  return {t:Math.max(0,+v||0),tPM:Math.max(0,+v||0),ev:0,capAM:null,capPM:null,capPM2:null,capEve:null,capPrev:null};
 }
 /* 沒特別指定的日子，看星期幾 */
 function bkBaseOn(d){
@@ -501,15 +503,19 @@ function bkCapOfSlot(d,slot){
 /* 三個數字（上午／下午／晚上）packing成要存進 Firebase 的格式：
    上午下午一樣、晚上沒開，就存成單一數字（維持舊格式，資料乾淨）；
    其他情況才用物件存三個欄位分開。 */
-function bkSchedPack(tAM,tPM,ev,capAM,capPM,capEve,capPM2){
+/* capPrev：時段「關閉預約」前原本設的上限，重新開放時還原用。
+   只有後台自己看，客人端、伺服器建自己的物件時不讀這欄，不影響名額計算。 */
+function bkSchedPack(tAM,tPM,ev,capAM,capPM,capEve,capPM2,capPrev){
   tAM=Math.max(0,+tAM||0); tPM=Math.max(0,+tPM||0); ev=Math.max(0,+ev||0);
-  var hasCap=capAM!=null||capPM!=null||capEve!=null||capPM2!=null;
+  if(capPrev&&!Object.keys(capPrev).length)capPrev=null;
+  var hasCap=capAM!=null||capPM!=null||capEve!=null||capPM2!=null||!!capPrev;
   if(tAM===tPM&&ev===0&&!hasCap)return tAM;
   var o={t:tAM,tPM:tPM,ev:ev};
   if(capAM!=null)o.capAM=capAM;
   if(capPM!=null)o.capPM=capPM;
   if(capPM2!=null)o.capPM2=capPM2;
   if(capEve!=null)o.capEve=capEve;
+  if(capPrev)o.capPrev=capPrev;
   return o;
 }
 /* 改上午老師數：先改本地讓畫面立刻反應，再寫回 Firebase */
@@ -518,7 +524,7 @@ async function bkSetTeachers(dateStr,val){
   if(val===null){ delete bkSched[dateStr] }
   else{
     var cur0=bkSchedVal(dateStr)||{};
-    bkSched[dateStr]=bkSchedPack(val,bkTeachersOnPM(dateStr),bkEveOn(dateStr),cur0.capAM,cur0.capPM,cur0.capEve,cur0.capPM2);
+    bkSched[dateStr]=bkSchedPack(val,bkTeachersOnPM(dateStr),bkEveOn(dateStr),cur0.capAM,cur0.capPM,cur0.capEve,cur0.capPM2,cur0.capPrev);
   }
   await bkSchedWrite(dateStr,val===null?null:bkSched[dateStr]);
 }
@@ -526,7 +532,7 @@ async function bkSetTeachers(dateStr,val){
 async function bkSetTeachersPM(dateStr,val){
   if(!(await bkSchedFreshOrStop(dateStr)))return;
   var cur1=bkSchedVal(dateStr)||{};
-  var packed=bkSchedPack(bkTeachersOn(dateStr),val,bkEveOn(dateStr),cur1.capAM,cur1.capPM,cur1.capEve,cur1.capPM2);
+  var packed=bkSchedPack(bkTeachersOn(dateStr),val,bkEveOn(dateStr),cur1.capAM,cur1.capPM,cur1.capEve,cur1.capPM2,cur1.capPrev);
   /* 三個都跟星期預設一樣、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
@@ -540,7 +546,7 @@ async function bkSetTeachersPM(dateStr,val){
 async function bkSetEve(dateStr,ev){
   if(!(await bkSchedFreshOrStop(dateStr)))return;
   var cur2=bkSchedVal(dateStr)||{};
-  var packed=bkSchedPack(bkTeachersOn(dateStr),bkTeachersOnPM(dateStr),ev,cur2.capAM,cur2.capPM,cur2.capEve,cur2.capPM2);
+  var packed=bkSchedPack(bkTeachersOn(dateStr),bkTeachersOnPM(dateStr),ev,cur2.capAM,cur2.capPM,cur2.capEve,cur2.capPM2,cur2.capPrev);
   /* 晚上關掉、上午下午又都是星期預設值、又沒設手動上限 → 整筆刪掉，格子回到「未指定」 */
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
@@ -574,15 +580,19 @@ function bkCapKind(slot){
    跟老師人數是兩件獨立的事，不會互相蓋掉。這份資料跟客人線上預約共用同一個
    /schedule 節點，改了之後客人那邊看到的名額會馬上跟著變少。
    val 傳 null ＝清除這個時段的手動上限，恢復照老師排班算。 */
-async function bkSetCap(dateStr,slot,val){
+async function bkSetCap(dateStr,slot,val,closing){
   if(!(await bkSchedFreshOrStop(dateStr)))return;
-  var cur=bkSchedVal(dateStr)||{t:bkBaseOn(dateStr),tPM:bkBaseOn(dateStr),ev:0,capAM:null,capPM:null,capPM2:null,capEve:null};
+  var cur=bkSchedVal(dateStr)||{t:bkBaseOn(dateStr),tPM:bkBaseOn(dateStr),ev:0,capAM:null,capPM:null,capPM2:null,capEve:null,capPrev:null};
   var kind=bkCapKind(slot);
+  /* 關閉：記下原本的上限（沒設就記 -1 代表「不限」）；其他任何改上限的動作都清掉這筆記錄 */
+  var capPrev={}; for(var pk in (cur.capPrev||{}))if(pk!==kind)capPrev[pk]=cur.capPrev[pk];
+  if(closing&&cur[kind]!==0)capPrev[kind]=cur[kind]==null?-1:cur[kind];
+  else if(closing&&cur.capPrev&&cur.capPrev[kind]!=null)capPrev[kind]=cur.capPrev[kind];
   var capAM=kind==="capAM"?val:cur.capAM;
   var capPM=kind==="capPM"?val:cur.capPM;
   var capPM2=kind==="capPM2"?val:cur.capPM2;
   var capEve=kind==="capEve"?val:cur.capEve;
-  var packed=bkSchedPack(cur.t,cur.tPM,cur.ev,capAM,capPM,capEve,capPM2);
+  var packed=bkSchedPack(cur.t,cur.tPM,cur.ev,capAM,capPM,capEve,capPM2,capPrev);
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
     await bkSchedWrite(dateStr,null);
@@ -590,6 +600,23 @@ async function bkSetCap(dateStr,slot,val){
   }
   bkSched[dateStr]=packed;
   await bkSchedWrite(dateStr,packed);
+}
+/* ══ 時段關閉／重新開放預約（2026-09-23）══
+   關閉＝把這個時段的手動上限設成 0。容量公式本來就是「老師排班 vs 手動上限取小」，
+   所以客人線上預約頁、AI 客服查名額、後台三邊不用改就會一起把這格當成額滿，
+   不會有哪一邊漏改對不起來的問題。已經約好的人不受影響，只是不再收新的。
+   重新開放時還原成關閉前的上限（原本沒設就回到照老師排班）。 */
+function bkIsClosed(d,sl){ var v=bkSchedVal(d); return !!(v&&v[bkCapKind(sl)]===0) }
+async function bkToggleClosed(dsNow,sl){
+  if(!(await bkSchedFreshOrStop(dsNow)))return;
+  if(bkIsClosed(dsNow,sl)){
+    var v=bkSchedVal(dsNow), prev=v&&v.capPrev?v.capPrev[bkCapKind(sl)]:null;
+    await bkSetCap(dsNow,sl,(prev==null||prev<0)?null:prev);
+  }else{
+    if(!confirm(dsNow+" "+sl+" 要關閉線上預約嗎？\n\n客人和 AI 客服都會看到這個時段額滿，已經約好的人不受影響。"))return;
+    await bkSetCap(dsNow,sl,0,true);
+  }
+  bkRender();
 }
 function bkCapOpen(dsNow,sl){
   var kind=bkCapKind(sl);
@@ -1367,7 +1394,9 @@ async function bkRender(){
         return sl==="其他"
           ? (!bkBase(b.slot)&&SLOTS.indexOf(b.slot)<0&&b.slot!==EVE_SLOT)
           : bkHitsSlot(b,sl) });
-      if(!g.length)return "";
+      /* 沒人約的時段以前整個不顯示，結果想先關掉還沒人約的時段（例如 16:00 那場）
+         找不到按鈕可以按。現在只要是當天有開的時段都列出來，沒人約的只顯示標題列。 */
+      if(!g.length&&sl==="其他")return "";
       var cls="bk-slot c"+(ci++%2);
       var n=g.reduce(function(s,b){return s+(+b.people||0)},0);
       var capS=bkCapOfSlot(dsNow,sl);
@@ -1389,14 +1418,20 @@ async function bkRender(){
       /* 存過手動上限不代表真的有限制到——設的數字如果跟老師排班算出來的
          上限一樣大，其實完全沒有生效，不該顯示🔒讓人誤會「已經鎖住了」 */
       var capIsSet=sl!=="其他"&&svNow&&svNow[bkCapKind(sl)]!=null&&svNow[bkCapKind(sl)]<bkRawCapOfSlot(dsNow,sl);
+      var closed=sl!=="其他"&&bkIsClosed(dsNow,sl);
       return '<div class="'+cls+'"><div class="bk-sh" data-slk="'+esc(slKey)+'" style="cursor:pointer;user-select:none">'+
         '<span style="display:inline-block;width:16px">'+(open?"▼":"▶")+'</span>'+sl+
         (sl===EVE_SLOT?'<span class="bk-tag t">晚上</span>':'')+
         '<span'+(full?' class="bk-shfull"':'')+'>'+
-        n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":"")+'</span>'+
-        (sl!=="其他"?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
+        (closed
+          ?n+' 位'+akText
+          :n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":""))+'</span>'+
+        (closed?'<span class="bk-tag bk-closedtag">已關閉預約</span>':'')+
+        (sl!=="其他"?'<span class="bk-closebtn'+(closed?' on':'')+'" data-closebtn="'+esc(slKey)+'">'+
+          (closed?"重新開放":"關閉預約")+'</span>':'')+
+        (sl!=="其他"&&!closed?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+
         '</div>'+
-        (!open?"":(sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
+        (!open||!g.length?"":(sl!=="其他"?bkSeatBoardHtml(dsNow,sl,g):"")+
         (sl==="其他"?"":'<div class="bk-seat-toggle" data-cardtoggle="'+esc(slKey)+'">'+
           '<span style="display:inline-block;width:12px">'+(cardOpen?"▼":"▶")+'</span>'+
           (cardOpen?"收合內容":"展開內容（電話、課程、報到／收訂金／核銷）")+
@@ -1434,6 +1469,11 @@ async function bkRender(){
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     var k=el.dataset.slk;
     bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender();
+  } });
+  root.querySelectorAll("[data-closebtn]").forEach(function(el){ el.onclick=function(e){
+    e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
+    var slk=el.dataset.closebtn, i=slk.indexOf("|");
+    bkToggleClosed(slk.slice(0,i),slk.slice(i+1));
   } });
   root.querySelectorAll("[data-capbtn]").forEach(function(el){ el.onclick=function(e){
     e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
@@ -3442,6 +3482,11 @@ async function bkManual(editId,repeatId){
       var sBase=bkBase(sl); if(!sBase||warned[sBase])return;
       warned[sBase]=1;
       var si=bkSlotInfo(d,sBase,editId);
+      /* 關閉預約只擋客人線上約，行政現場登記照樣可以，但先問一聲 */
+      if(bkIsClosed(d,sBase)){
+        if(!confirm(sBase+" 已經關閉線上預約（目前 "+si.used+" 位）。\n確定還是要登記這筆 "+ppl+" 位嗎？"))stop=true;
+        return;
+      }
       if(si.cap>0&&si.left<ppl&&
          !confirm(sBase+" 目前已預約 "+si.used+" 位，表定上限 "+si.cap+" 位。\n"+
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位，超過表定。\n確定要登記嗎？"))stop=true;
@@ -3634,6 +3679,11 @@ css.textContent=
 ".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
   "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
 ".bk-capbtn:hover{color:#5F6577;border-color:#C7CEDB}"+
+".bk-closebtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:600;color:#B23A30;"+
+  "border:1px solid #F0C9C4;background:#fff;border-radius:99px;padding:2px 10px;cursor:pointer}"+
+".bk-closebtn.on{color:#1F7A4D;border-color:#BFE0CC}"+
+".bk-closebtn+.bk-capbtn{margin-left:6px}"+
+".bk-tag.bk-closedtag{background:#C9453B;color:#fff;font-weight:700}"+
 /* 班表設定月曆 */
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
 ".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
@@ -3875,4 +3925,47 @@ css.textContent=
 document.head.appendChild(css);
 
 document.addEventListener("DOMContentLoaded",function(){ setTimeout(bkRender,400) });
+
+/* ══ 後台有新版時，提醒還開著舊版的頁面重新整理（2026-09-23）══
+   index.html 裡每支 .js 都帶 ?v=版本號。定期重抓一次 index.html，
+   跟自己這頁載入時的版本號比，不一樣就在最上面跳紅條請使用者重新整理。
+   起因：班表上限被舊頁面蓋掉，就是有裝置一直開著舊版沒重整。
+   不直接自動重新整理，因為別的分頁（薪資、會員）可能有還沒存的輸入。 */
+function bkVerSig(list){
+  var out=[];
+  list.forEach(function(src){ var m=String(src||"").match(/([\w-]+\.js)\?v=([\w.-]+)/); if(m)out.push(m[1]+"="+m[2]) });
+  return out.sort().join("&");
+}
+/* 自己的版本要等整頁載入完才算：booking.js 執行當下，排在它後面的
+   member.js、finance.js…還沒被讀到，太早算會少掉那幾支，永遠跟線上對不起來。 */
+var bkMyVer="", bkVerShown=false, bkVerLast=Date.now();
+function bkMySig(){
+  if(!bkMyVer&&document.readyState!=="loading")
+    bkMyVer=bkVerSig([].map.call(document.scripts,function(x){ return x.getAttribute("src") }));
+  return bkMyVer;
+}
+async function bkVerCheck(){
+  if(bkVerShown||!bkMySig()||Date.now()-bkVerLast<60000)return;
+  bkVerLast=Date.now();
+  try{
+    var r=await fetch(location.pathname+"?_vc="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    var html=await r.text(), srcs=[], re=/<script[^>]+src="([^"]+)"/g, m;
+    while((m=re.exec(html)))srcs.push(m[1]);
+    var remote=bkVerSig(srcs);
+    if(!remote||remote===bkMyVer)return;
+    bkVerShown=true;
+    var bar=document.createElement("div");
+    /* 在 #bkRoot 外面，CSS 變數讀不到，顏色一律寫死 */
+    bar.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;background:#C9453B;color:#fff;"+
+      "font-size:15px;font-weight:700;text-align:center;padding:12px 16px;cursor:pointer;"+
+      "box-shadow:0 2px 10px rgba(0,0,0,.2);font-family:inherit";
+    bar.textContent="⚠️ 後台系統已更新，這個頁面是舊版。請先把正在填的東西存好，再點這裡重新整理";
+    bar.onclick=function(){ location.reload() };
+    document.body.appendChild(bar);
+  }catch(e){}
+}
+setInterval(bkVerCheck,5*60000);
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible")bkVerCheck() });
+window.addEventListener("focus",bkVerCheck);
 })();
