@@ -632,8 +632,58 @@ async function bkLoad(){
   bkList=arr.filter(function(b){ return b.date===d })
     .sort(function(a,b){ return String(a.slot).localeCompare(String(b.slot)) });
   bkAllWeb=arr.filter(function(b){ return b.source==="web" });
+  bkBuildHist(arr);
   bkUpdateNewBadge();
   bkStartLiveWatch();
+}
+
+/* ══ 來店紀錄：這位客人之前哪幾天真的來上過課 ══
+   二次來上體驗課要收原價（2026-09-23 老闆要求），排課當下就要看得到。
+   「來過」＝有核銷或按過已報到，取消的、沒到的不算。
+   電話跟手動配對的會員電話都當鑰匙，客人換格式填電話也對得起來。
+   注意：預約系統 2026/07/30 才開始用，那之前（夯客時代）的來店紀錄這裡查不到。 */
+var bkHist={};
+function bkKeysOf(b){
+  var ks=[bkNorm(b.customer&&b.customer.phone),bkNorm(b.memberPhone)].filter(Boolean);
+  /* 沒留電話的（ks 是空的）要回空陣列，不能回 [undefined]，
+     不然所有沒電話的客人會被當成同一個人，互相算成「來過」。 */
+  return ks.length===2&&ks[0]===ks[1]?[ks[0]]:ks;
+}
+function bkBuildHist(arr){
+  bkHist={};
+  arr.forEach(function(b){
+    if(!(b.checkout||b.attend==="in"))return;
+    bkKeysOf(b).forEach(function(k){ (bkHist[k]=bkHist[k]||[]).push(b) });
+  });
+}
+/* 這筆預約之前（日期更早）的來店紀錄，新的排前面 */
+function bkPastVisits(b){
+  var seen={}, out=[];
+  bkKeysOf(b).forEach(function(k){ (bkHist[k]||[]).forEach(function(v){
+    if(v.id===b.id||seen[v.id]||!(String(v.date)<String(b.date)))return;
+    seen[v.id]=1; out.push(v);
+  }) });
+  return out.sort(function(x,y){ return String(y.date).localeCompare(String(x.date)) });
+}
+function bkIsTrial(b){
+  return (b.items||[]).some(function(i){ return /體驗/.test(String(i.name||"")+String(i.spec||"")) });
+}
+/* 繪畫＝試算表「我想學畫畫」那一類（選圖繪畫、創作繪畫、邏輯素描），其他都算多媒材。
+   優先照試算表分類判斷，課程表還沒載入就用名稱比對。 */
+function bkIsPainting(v){
+  var it=v.items||[]; if(!it.length)return false;
+  return it.every(function(i){
+    var c=(bkCourses||[]).filter(function(x){ return x.name===i.name })[0];
+    return c?c.cat==="我想學畫畫":/^(選圖繪畫|創作繪畫|邏輯素描|零基礎繪畫)/.test(String(i.name||"")) });
+}
+/* 同一支電話可能是一家人（兄弟姊妹共用爸媽的電話），
+   上次來的如果不是這次這位，前面標出名字，才不會把哥哥的紀錄當成弟弟的。 */
+function bkVisitWho(v,b){
+  var a=String(v.customer&&v.customer.name||"").trim(), c=String(b&&b.customer&&b.customer.name||"").trim();
+  return a&&c&&a!==c?"【"+a+"】":"";
+}
+function bkVisitItems(v){
+  return (v.items||[]).map(function(i){ return i.name+(i.spec?"("+i.spec+")":"") }).join("、");
 }
 
 /* ══ 客人自己用 LINE 預約的提醒紅點 ══════════════════════
@@ -894,15 +944,32 @@ async function bkLoadMembers(){
   var j=await staffMembers(false)||{};
   bkMembers=Object.keys(j).map(function(p){ var m=j[p]||{}; var c=m.cache||{};
     return {phone:p,name:m.name||"",points:+c.points||0,sessions:+c.sessions||0,bonus:+c.bonus||0} });
-  bkIndex={};
-  bkMembers.forEach(function(m){ var k=bkNorm(m.phone); if(k)bkIndex[k]=m.phone });
+  bkBuildIndex(j);
 }
-/* 只抓會員電話清單（shallow），不抓 ledger，畫面用這個判斷是不是會員 */
+/* 卡片上的「會員／新客」照老闆的定義（2026-09-23）：
+   手上還有點數、堂數、或沒過期的票券，才算會員；
+   有建檔但全部用完的、從沒建檔的，一律算新客。
+   所以光看「電話在不在會員資料庫」不夠（1500 多筆裡只有 400 多筆還有餘額），
+   要抓完整資料看餘額。完整資料約 600KB，每分鐘最多重抓一次，
+   賣完方案、核銷完回到畫面時餘額才會跟著變。 */
+var bkMemBal={}, bkIndexAt=0, BK_INDEX_TTL=60000;
+function bkBuildIndex(j){
+  var today=ds(new Date()).replace(/\//g,"-");
+  bkIndex={}; bkMemBal={};
+  Object.keys(j).forEach(function(p){
+    var k=bkNorm(p); if(!k)return;
+    bkIndex[k]=p;
+    var m=j[p]||{}, c=m.cache||{};
+    var t=m.tickets||[]; if(!Array.isArray(t))t=Object.keys(t).map(function(x){return t[x]});
+    var tkt=t.filter(function(x){ return x&&+x.qty>0&&!(x.expiry&&x.expiry<today) })
+      .reduce(function(s,x){ return s+(+x.qty||0) },0);
+    bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt};
+  });
+  bkIndexReady=true; bkIndexAt=Date.now();
+}
 async function bkLoadIndex(){
-  if(bkIndexReady)return;
-  var j=await staffMembers(true)||{};
-  Object.keys(j).forEach(function(p){ var k=bkNorm(p); if(k)bkIndex[k]=p });
-  bkIndexReady=true;
+  if(bkIndexReady&&Date.now()-bkIndexAt<BK_INDEX_TTL)return;
+  bkBuildIndex(await staffMembers(false)||{});
 }
 /* 用任何格式的電話找出會員的主鍵電話，找不到回 "" */
 async function bkFindPhone(raw){
@@ -911,9 +978,8 @@ async function bkFindPhone(raw){
   return bkIndex[k]||"";
 }
 function bkIsMember(b){
-  if(b.memberPhone)return true;
-  var k=bkNorm(b.customer&&b.customer.phone);
-  return !!(k&&bkIndex[k]);
+  var x=bkMemBal[bkResolvedPhone(b)];
+  return !!(x&&(x.points>0||x.sessions>0||x.tkt>0));
 }
 /* 這筆預約真正對得到會員資料庫的電話：優先用手動登記時already配對好的
    memberPhone，沒有的話就正規化客人自己填的電話去比對索引，
@@ -925,13 +991,25 @@ function bkResolvedPhone(b){
   return (b.customer&&b.customer.phone)||"";
 }
 /* 點客人姓名看目前餘額，不用切去會員分頁或等核銷完才看得到 */
-async function bkShowBalance(phone,name){
+/* 點名字跳出來的視窗裡，列出這位之前哪幾天來過、上什麼課 */
+function bkVisitHtml(b){
+  if(!b)return "";
+  var pv=bkPastVisits(b);
+  var rows=pv.length?pv.slice(0,10).map(function(v){
+    return '<div class="bk-dline"><span>'+esc(v.date)+'</span><b style="font-weight:500">'+esc(bkVisitWho(v,b)+bkVisitItems(v))+'</b></div>' }).join("")+
+    (pv.length>10?'<div class="muted" style="font-size:12px">…還有 '+(pv.length-10)+' 筆更早的</div>':"")
+    :'<div class="muted" style="font-size:12.5px">這次之前沒有來上過課的紀錄（2026/07/30 以後）</div>';
+  return '<div style="margin:10px 0 12px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">來店紀錄'+
+    (pv.length?'（'+pv.length+' 次）':'')+'</div>'+rows+'</div>';
+}
+async function bkShowBalance(phone,name,b){
   if(!phone){ alert("這筆沒有留可對應的電話，查不到會員資料。"); return }
   bkSheet('<h3 style="margin:0 0 2px">查詢中…</h3>');
   var m=await bkMember(phone);
   if(!m){
     bkSheet('<h3 style="margin:0 0 2px">'+esc(name||"")+'</h3>'+
       '<div class="bk-info">'+esc(phone)+'　查無會員資料，可能還沒建檔。</div>'+
+      bkVisitHtml(b)+
       '<div class="bk-act"><button class="bk-cancel" id="bkBalX">關閉</button></div>');
     document.getElementById("bkBalX").onclick=bkClose;
     return;
@@ -958,6 +1036,7 @@ async function bkShowBalance(phone,name){
       '<div><b>'+(+c.sessions||0)+'</b><span>堂數</span></div>'+
       '<div><b>'+(+c.bonus||0).toLocaleString()+'</b><span>紅利</span></div>'+
     '</div>'+
+    bkVisitHtml(b)+
     '<div class="bk-act">'+
       (bkCan("sellPlan")?'<button class="bk-save" id="bkBalSell">賣方案</button>':'')+
       '<button class="bk-cancel" id="bkBalX">關閉</button></div>');
@@ -1204,7 +1283,7 @@ async function bkRender(){
   if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched()]); bkBusy=false; }
+    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(), bkLoadCourses()]); bkBusy=false; }
   var d=bkDate, today=ds(new Date())===ds(d);
   var dsNow=ds(d);
   var tOn=bkTeachersOn(dsNow), tOnPM=bkTeachersOnPM(dsNow), tSet=!!(bkSched&&bkSched[dsNow]!=null);
@@ -1354,7 +1433,7 @@ async function bkRender(){
   } });
   root.querySelectorAll(".bk-nm").forEach(function(el){ el.onclick=function(){
     var b=bkList.filter(function(x){return x.id===el.dataset.bid})[0]; if(!b)return;
-    bkShowBalance(bkResolvedPhone(b),(b.customer&&b.customer.name)||"");
+    bkShowBalance(bkResolvedPhone(b),(b.customer&&b.customer.name)||"",b);
   } });
   bkRenderShortageBanner();
 }
@@ -1679,8 +1758,21 @@ function bkCard(b){
       esc(b.customer&&b.customer.name||"—")+'</b>'+
       (b.customer&&b.customer.childName?'<span class="bk-childname">・小朋友 '+esc(b.customer.childName)+'</span>':'')+
       ' '+bkPplText(b)+
-      (bkIsNewWeb(b)?'<span class="bk-tag new">NEW</span>':'')+
-      (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'')+
+      /* 卡片上不再標 NEW（2026-09-23 老闆要求），分頁旁的紅點提醒照舊 */
+      (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'<span class="bk-tag nc">新客</span>')+
+      /* 二次體驗（2026-09-23 老闆定的規則）：沒有方案（點、券、堂都沒有）但之前來過的，
+         一律標出上次來的日期跟上了什麼。灰色＝上次上繪畫課，黃色＝上次上多媒材。
+         有方案的會員不用看這個，不顯示。這次又約體驗價的，後面加註「收原價」。 */
+      (function(){
+        if(bkIsMember(b))return "";
+        var pv=bkPastVisits(b); if(!pv.length)return "";
+        var tip=pv.map(function(v){ return v.date+" "+bkVisitWho(v,b)+bkVisitItems(v) }).join("\n");
+        var lv=pv[0], paint=bkIsPainting(lv);
+        return '<span class="bk-tag '+(paint?"vp":"vm")+'" title="'+esc(tip)+'">二次體驗・上次 '+
+          esc(String(lv.date).slice(5))+' '+(paint?"繪畫":"多媒材")+'・'+esc(bkVisitWho(lv,b)+bkVisitItems(lv))+
+          (pv.length>1?'（來過 '+pv.length+' 次）':'')+
+          (bkIsTrial(b)?'<b class="bk-rt">收原價</b>':'')+'</span>';
+      })()+
       depTag+
       (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
         ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
@@ -3609,6 +3701,10 @@ css.textContent=
 ".bk-tag{display:inline-block;font-size:12.5px;padding:2.5px 9px;border-radius:99px;"+
   "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
 ".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
+".bk-tag.nc{background:#E8F5EC;color:#1F7A4D}"+
+".bk-tag.vp{background:#ECEEF2;color:#4A5568;font-weight:600}"+
+".bk-tag.vm{background:#FCEFC7;color:#7A5A00;font-weight:600}"+
+".bk-tag .bk-rt{margin-left:6px;padding:0 6px;border-radius:99px;background:#C9453B;color:#fff}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
 ".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
 /* 加開時段的實際時間。同一區裡混著 9:30 和 10:00 的人，要看得出來 */
