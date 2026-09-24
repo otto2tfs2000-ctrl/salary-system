@@ -239,7 +239,7 @@ function mbStats(){
     var seen = {};
     var l = m.ledger || {};
     Object.keys(l).forEach(function(k){
-      var r = l[k]; if (!r || !r.planName || !(+r.price)) return;
+      var r = l[k]; if (!r || !r.planName || !(+r.price) || r.backfill) return;
       var stamp = String(k).replace(/^(sell_\d+)_.*$/, '$1');
       if (seen[stamp]) return;
       seen[stamp] = 1;
@@ -704,7 +704,7 @@ function mbSell(phone){
     mbModal(h); return;
   }
 
-  h += '<div class="fg"><label>方案 *</label><select id="mb-s-plan" onchange="mbSellPreview(\'' + phone + '\')">' +
+  h += '<div class="fg"><label>方案 *</label><select id="mb-s-plan" onchange="mbSellBfFill();mbSellPreview(\'' + phone + '\')">' +
        '<option value="">請選擇</option>' +
        plans.map(function(p, i){
          var give = [];
@@ -714,6 +714,24 @@ function mbSell(phone){
          return '<option value="' + i + '">' + mbEsc(p.name) + '　$' + (+p.price || 0).toLocaleString() +
                 (give.length ? '　→ ' + give.join('、') : '') + '</option>';
        }).join('') + '</select></div>';
+  /* 補登：客人以前就買過（多半是夯客時代），但會員資料庫裡沒有。今天不收錢，
+     只是把他手上該有的點數／堂數／效期補進系統。不進當日營收、不發 LINE 通知，
+     數字可以手改（舊方案可能已經用掉一部分）。 */
+  h += '<label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:14px;cursor:pointer;' +
+       'background:var(--bg3);padding:10px 12px;border-radius:8px">' +
+       '<input type="checkbox" id="mb-s-bf" style="width:16px;height:16px;margin-top:3px" onchange="mbSellBfToggle(\'' + phone + '\')"> ' +
+       '<span><b>補登舊方案（今天不收錢）</b><br><span class="muted" style="font-size:12.5px">' +
+       '客人以前就買過、系統裡漏登。不算營收，點數堂數可自己改成客人實際剩下的數字。</span></span></label>';
+  h += '<div class="card" id="mb-s-bf-wrap" style="display:none;margin-bottom:12px">' +
+       '<div class="muted" style="font-size:12.5px;margin-bottom:8px">選了方案會自動帶入，請改成客人<b>現在實際剩下</b>的數字</div>' +
+       '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+       '<div class="fg" style="flex:1;min-width:110px"><label>點數</label><input id="mb-s-bf-pts" type="number" step="1" value="0" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+       '<div class="fg" style="flex:1;min-width:110px"><label>堂數</label><input id="mb-s-bf-ses" type="number" step="0.5" value="0" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+       '<div class="fg" style="flex:1;min-width:110px"><label>表框折價金</label><input id="mb-s-bf-vou" type="number" step="1" value="0" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+       '</div>' +
+       '<div class="fg" style="margin-bottom:0"><label>到期日（不填＝不設效期）</label><input id="mb-s-bf-exp" type="date" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+       '</div>';
+  h += '<div id="mb-s-normal">';
   var rnDef = mbIsRenewal(m), rnWhy = mbRenewWhy(m);
   h += '<div class="fg"><label>會員身分（決定回饋點數）</label>' +
        '<select id="mb-s-renew" onchange="mbSellPreview(\'' + phone + '\')">' +
@@ -745,10 +763,12 @@ function mbSell(phone){
   h += '<div class="fg"><label>付款方式</label><select id="mb-s-pay">' +
        ['現金','LINE Pay','刷卡','匯款'].map(function(w){ return '<option>' + w + '</option>' }).join('') +
        '</select></div>';
-  h += '<div class="fg"><label>備註</label><input id="mb-s-note" placeholder="選填，例：生日優惠"></div>';
+  h += '</div>';
+  h += '<div class="fg"><label>備註</label><input id="mb-s-note" placeholder="選填，例：生日優惠／補登：2024 年夯客買的"></div>';
   h += '<div class="card" id="mb-s-prev" style="margin-top:6px"><div class="muted" style="font-size:13.5px">選了方案會顯示明細</div></div>';
   /* 綁了 LINE 才給勾。沒綁的直接說明原因，免得行政以為勾了就會發。
      預設勾起來——入完方案本來就該讓客人知道自己有什麼。 */
+  h += '<div id="mb-s-notify-wrap">';
   h += m.lineUserId
     ? '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">' +
       '<input type="checkbox" id="mb-s-notify" checked style="width:16px;height:16px"> ' +
@@ -757,14 +777,62 @@ function mbSell(phone){
       '卡片會列出方案內容、拿到多少點數堂數、到期日，還有目前餘額。</div>'
     : '<div class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.7">' +
       '這位會員還沒綁定 LINE，售出後不會收到通知。等他自己用線上預約一次就會自動綁定。</div>';
+  h += '</div>';
   h += '<div class="row" style="margin-top:14px;gap:8px">' +
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
   mbModal(h);
 }
 
+/* 補登模式開關：收錢相關的欄位（身分、報名時機、共用、付款方式、LINE 通知）全部藏起來，
+   換成可以手改的點數／堂數／折價金／到期日。 */
+function mbSellIsBf(){ var c = document.getElementById('mb-s-bf'); return !!(c && c.checked) }
+function mbSellBfToggle(phone){
+  var on = mbSellIsBf();
+  ['mb-s-normal', 'mb-s-notify-wrap'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = on ? 'none' : '';
+  });
+  var bw = document.getElementById('mb-s-bf-wrap'); if (bw) bw.style.display = on ? '' : 'none';
+  var ok = document.getElementById('mb-s-ok'); if (ok) ok.textContent = on ? '確認補登' : '確認售出';
+  mbSellBfFill();
+  mbSellPreview(phone);
+}
+/* 依選的方案把預設值帶進補登欄位。效期從今天起算只是預設，舊方案通常要改成當初的到期日。 */
+function mbSellBfFill(){
+  if (!mbSellIsBf()) return;
+  var i = (document.getElementById('mb-s-plan') || {}).value;
+  var p = (i === '' || i == null) ? null : mbActivePlans()[+i];
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.value = v };
+  set('mb-s-bf-pts', p ? (+p.points || 0) + (+p.bonusPoints || 0) : 0);
+  set('mb-s-bf-ses', p ? (+p.sessions || 0) : 0);
+  set('mb-s-bf-vou', p ? (+p.voucher || 0) : 0);
+  set('mb-s-bf-exp', p ? mbExpiry(p.months) : '');
+}
+function mbSellBfVals(){
+  var n = function(id){ var v = +((document.getElementById(id) || {}).value); return isNaN(v) ? 0 : v };
+  return { pts: n('mb-s-bf-pts'), ses: n('mb-s-bf-ses'), vou: n('mb-s-bf-vou'),
+           exp: ((document.getElementById('mb-s-bf-exp') || {}).value || '').trim() };
+}
+
 function mbSellPreview(phone){
   var m = mbList.find(function(x){ return x.phone === phone });
+  if (m && mbSellIsBf()) {
+    var bv = mbSellBfVals();
+    var bi = document.getElementById('mb-s-plan').value;
+    var bp = bi === '' ? null : mbActivePlans()[+bi];
+    var bh = '<div style="font-size:14.5px;line-height:2">' +
+      '<span style="background:var(--bg3);color:var(--text2);padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:700">補登・不收錢</span>' +
+      '<br>方案 ' + mbEsc(bp ? bp.name : '（沒選，記成「舊方案補登」）');
+    if (bv.pts) bh += '<br>點數 +' + bv.pts.toLocaleString();
+    if (bv.ses) bh += '<br>堂數 +' + bv.ses;
+    if (bv.vou) bh += '<br>表框折價金 +$' + bv.vou.toLocaleString();
+    bh += '<br><span class="muted">' + (bv.exp ? '效期至 ' + bv.exp : '不設效期') + '</span>';
+    bh += '<hr style="border:0;border-top:1px solid var(--border);margin:8px 0">' +
+      '補登後：<strong style="color:var(--gold2)">' + (m.points + bv.pts).toLocaleString() + '</strong> 點' +
+      '　<strong>' + (m.sessions + bv.ses) + '</strong> 堂</div>';
+    document.getElementById('mb-s-prev').innerHTML = bh;
+    return;
+  }
   /* 報名時機選單的顯示/隱藏不能等到選了方案才更新——行政常常是先切「新客/續約」
      身分，方案還沒選，如果把這段放在下面「沒選方案」的 early return 之後，
      切身分當下選單不會跟著出現/消失，要選了方案才生效，會被誤以為沒做這個功能。 */
@@ -817,6 +885,7 @@ function mbSellPreview(phone){
 }
 
 async function mbSellSave(phone){
+  if (mbSellIsBf()) return mbSellBfSave(phone);
   var m = mbList.find(function(x){ return x.phone === phone });
   var i = document.getElementById('mb-s-plan').value;
   if (i === '' || !m) { alert('請先選擇方案'); return; }
@@ -986,6 +1055,60 @@ async function mbSellSave(phone){
         (split.on && peerBody ? '\n' + split.name + '（' + split.phone + '）另外分到 ' + peerPts.toLocaleString() + ' 點' : '') +
         (notified === true  ? '\n\nLINE 通知已送出。' : '') +
         (notified === false ? '\n\n⚠ LINE 通知沒送出去，方案已經入好了。要補通知請再賣一次是不行的，請直接用 LINE 手動告知客人。' : ''));
+}
+
+/* 補登舊方案：寫進會員明細，但不寫 planSales（不算營收、不進現金流），也不發 LINE。
+   ledger 仍帶 planName 與 price（方案原價），這樣：
+   ・會員判斷、續約判斷都認得他買過方案
+   ・銷課時算每堂單價（bkSessionUnit）還是有依據
+   ・backfill:true 讓經營數字的「本月方案收入」跳過這筆，不會灌水 */
+async function mbSellBfSave(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var i = document.getElementById('mb-s-plan').value;
+  var p = i === '' ? null : mbActivePlans()[+i];
+  var v = mbSellBfVals();
+  var note = document.getElementById('mb-s-note').value.trim();
+  if (!v.pts && !v.ses && !v.vou) { alert('點數、堂數、折價金至少要填一個'); return; }
+  if (v.pts < 0 || v.ses < 0 || v.vou < 0) { alert('補登不能填負數。要扣餘額請用會員頁的「調整餘額」'); return; }
+  var planName = p ? p.name : '舊方案補登';
+  if (!confirm('確認補登？（今天不收錢，不算營收）\n\n' + (m.name || phone) + '\n方案：' + planName + '\n' +
+      (v.pts ? '點數 +' + v.pts.toLocaleString() + '\n' : '') +
+      (v.ses ? '堂數 +' + v.ses + '\n' : '') +
+      (v.vou ? '表框折價金 +$' + v.vou.toLocaleString() + '\n' : '') +
+      (v.exp ? '效期至 ' + v.exp : '不設效期') + (note ? '\n備註：' + note : ''))) return;
+
+  var btn = document.getElementById('mb-s-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '處理中…'; }
+  var now = mbNow();
+  var stamp = now.replace(/[-:.TZ]/g, '').slice(0, 14);
+  var reason = planName + '（補登舊方案，未收款）' + (note ? '・' + note : '');
+  var base = { at: now, by: mbWho(), planName: planName, pay: '補登', backfill: true, src: 'backfill',
+               reason: reason };
+  if (p && +p.price) base.price = +p.price;
+  if (v.exp) base.expiry = v.exp;
+  var writes = [];
+  if (v.pts) writes.push({ key: 'sell_' + stamp + '_bfp', body: Object.assign({}, base, { delta: v.pts, type: 'points' }) });
+  if (v.ses) writes.push({ key: 'sell_' + stamp + '_bfs', body: Object.assign({}, base, { delta: v.ses, type: 'sessions' }) });
+  if (v.vou) writes.push({ key: 'sell_' + stamp + '_bfv', body: Object.assign({}, base, { delta: v.vou, type: 'voucher' }) });
+  try {
+    for (var w = 0; w < writes.length; w++) {
+      await fetch(mbf('/members/' + phone + '/ledger/' + writes[w].key + '.json'), { method:'PUT',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(writes[w].body) });
+      m.ledger[writes[w].key] = writes[w].body;
+    }
+    var sum = mbSum(m.ledger);
+    await fetch(mbf('/members/' + phone + '/cache.json'), { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(sum) });
+    m.points = sum.points; m.sessions = sum.sessions; m.bonus = sum.bonus;
+  } catch(e) {
+    alert('寫入失敗：' + e.message + '\n請重新確認會員餘額是否正確');
+    if (btn) { btn.disabled = false; btn.textContent = '確認補登' }
+    return;
+  }
+  mbClose();
+  renderMember();
+  alert('已補登：' + planName + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂');
 }
 
 /* 把方案收入寫進 salesData，月報與當日營收讀得到 */
@@ -1970,7 +2093,8 @@ var MB_SRC = [
   { k:'comp',     n:'補償',     bg:'#A33A32' },
   { k:'transfer', n:'轉讓',     bg:'#4A5568' },
   { k:'fix',      n:'校正',     bg:'#566072' },
-  { k:'legacy',   n:'夯客帶入', bg:'#5A6478' }
+  { k:'legacy',   n:'夯客帶入', bg:'#5A6478' },
+  { k:'backfill', n:'補登舊方案', bg:'#6B5B95' }
 ];
 function mbSrcInfo(k){
   for (var i = 0; i < MB_SRC.length; i++) if (MB_SRC[i].k === k) return MB_SRC[i];
