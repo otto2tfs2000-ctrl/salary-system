@@ -670,8 +670,15 @@ async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.e
 async function bkLoad(){
   var all=await jget(bkf("/bookings.json"))||{};
   var d=ds(bkDate);
-  var arr=Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o })
-    .filter(function(b){ return b.status!=="cancelled" && b.status!=="expired" });
+  var raw=Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o });
+  /* 客人自己取消、還沒有人按「知道了」的，全部留著顯示在今日排課最上面。
+     以前只跳一次桌面通知、卡片直接消失，沒注意到就等於沒發生過（2026-09-26 老闆回報）。
+     已經過了上課日的就不用再提醒了。 */
+  var todayK=ds(new Date());
+  bkCustCancels=raw.filter(function(b){
+    return b.status==="cancelled"&&b.cancelledBy==="customer"&&!b.cancelAck&&String(b.date||"")>=todayK })
+    .sort(function(a,c){ return String(a.date+a.slot).localeCompare(String(c.date+c.slot)) });
+  var arr=raw.filter(function(b){ return b.status!=="cancelled" && b.status!=="expired" });
   /* 每一天有幾組幾位。反正整包都抓回來了，順手算一算，
      日期月曆才有東西可以顯示，不用再跑一次資料庫。 */
   bkByDate={};
@@ -746,6 +753,21 @@ function bkVisitItems(v){
    有幾筆。用 ts（送出時間的 ISO 字串）比字典序就能判斷先後，
    不用額外存 id 對照表。 */
 var bkAllWeb=[];
+var bkCustCancels=[];
+function bkCancelBannerHtml(){
+  if(!bkCustCancels.length)return "";
+  return '<div class="bk-cxbar"><div class="bk-cxh">⚠️ 客人自己取消了 '+bkCustCancels.length+
+    ' 筆預約，確認過（材料、老師人力調整好）再按「知道了」</div>'+
+    bkCustCancels.map(function(b){
+      var dp=String(b.date||"").split("/"), d=new Date(+dp[0],(+dp[1]||1)-1,+dp[2]||1);
+      var at=b.cancelledAt?new Date(b.cancelledAt):null;
+      return '<div class="bk-cxrow"><span><b>'+esc((b.customer&&b.customer.name)||"客人")+'</b>　'+
+        esc(b.date)+'（'+WD[d.getDay()]+'）'+esc(b.actualTime||b.slot||"")+'　'+(+b.people||"?")+' 位'+
+        (at?'<small>取消於 '+(at.getMonth()+1)+'/'+at.getDate()+' '+
+          ("0"+at.getHours()).slice(-2)+':'+("0"+at.getMinutes()).slice(-2)+'</small>':'')+
+        '</span><button class="bk-cxok" data-cxok="'+esc(b.id)+'">知道了</button></div>';
+    }).join("")+'</div>';
+}
 var BK_SEEN_KEY="otto2_bk_lastSeenTs";
 function bkIsNewWeb(b){
   return !!(b&&(b.source==="web"||b.source==="ai-chat")&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
@@ -809,6 +831,8 @@ function bkHandleSSE(e){
     var nm=(known&&known.customer&&known.customer.name)||"客人";
     var when=known?(known.date+"　"+(known.actualTime||known.slot)):"";
     bkList=bkList.filter(function(x){ return x.id!==cancelId });
+    if(known&&!bkCustCancels.some(function(x){ return x.id===cancelId }))
+      bkCustCancels.push(Object.assign({},known,data));
     bkNotifyCancelDesktop(nm,when);
     var todayTab2=document.querySelector('.tab[data-tab="today"]');
     if(todayTab2&&todayTab2.classList.contains("active")&&!bkBusy)bkRender();
@@ -1354,6 +1378,7 @@ async function bkRender(){
 
   root.innerHTML=
    bkNotifBannerHtml()+
+   bkCancelBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
      '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
@@ -1441,6 +1466,14 @@ async function bkRender(){
    })()+
    (bkList.length?"":'<div class="bk-empty">這天沒有預約</div>');
 
+  root.querySelectorAll("[data-cxok]").forEach(function(el){ el.onclick=async function(){
+    el.disabled=true; el.textContent="…";
+    var id=el.dataset.cxok;
+    await bkPatch("/bookings/"+id+".json",{cancelAck:true,cancelAckAt:new Date().toISOString(),
+      cancelAckBy:(typeof ME!=="undefined"&&ME&&ME.displayName)||""});
+    bkCustCancels=bkCustCancels.filter(function(x){ return x.id!==id });
+    bkRender();
+  } });
   var nOn=document.getElementById("bkNotifOn");
   if(nOn)nOn.onclick=function(){ Notification.requestPermission().then(function(){ bkRender() }) };
   var nX=document.getElementById("bkNotifX");
@@ -3675,6 +3708,14 @@ css.textContent=
 ".bk-notifbtn{background:var(--bkNavy);color:#fff;border:0;border-radius:8px;"+
   "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
 ".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
+".bk-cxbar{background:#FDECEA;border:1.5px solid #E7A39C;border-radius:12px;padding:12px 15px;"+
+  "margin-bottom:16px;color:#8E2A22;font-size:13.5px;line-height:1.5}"+
+".bk-cxh{font-weight:700;margin-bottom:6px}"+
+".bk-cxrow{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px dashed #F0C4BF}"+
+".bk-cxrow span{flex:1;min-width:0}"+
+".bk-cxrow small{display:block;color:#A8625B;font-size:12px}"+
+".bk-cxok{flex:0 0 auto;background:#C9453B;color:#fff;border:0;border-radius:8px;"+
+  "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
 ".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
   "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
