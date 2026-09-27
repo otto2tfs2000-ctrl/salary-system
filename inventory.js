@@ -2186,8 +2186,13 @@ async function computeUpcomingShortages(days) {
 
   var all;
   try {
-    var res = await fetch(SHORTAGE_FC_BK_URL+"/bookings.json");
-    all = await res.json();
+    // 今日排課（booking.js 的 bkLoad）剛抓過的話直接用那份，不重複下載整包預約
+    var snap = window.bkBookingsSnap;
+    if (snap && Date.now() - snap.at < 30000) all = snap.all;
+    else {
+      var res = await fetch(SHORTAGE_FC_BK_URL+"/bookings.json");
+      all = await res.json();
+    }
   } catch(e){ return { error: e.message||"讀取預約失敗", dates:dates, shortages:[], bookingCount:0, missCourses:[] }; }
   all = all || {};
 

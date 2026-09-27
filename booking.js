@@ -668,7 +668,11 @@ async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.e
 
 /* ── 載入 ── */
 async function bkLoad(){
-  var all=await jget(bkf("/bookings.json"))||{};
+  var got=await jget(bkf("/bookings.json"));
+  /* 留一份給 inventory.js 的備料預警用，它剛好在畫完排課板後馬上要同一包預約，
+     不用再下載一次（整包 400 多 KB，手機上很有感）。抓失敗就不留，讓它自己抓。 */
+  if(got)window.bkBookingsSnap={at:Date.now(),all:got};
+  var all=got||{};
   var d=ds(bkDate);
   var raw=Object.keys(all).map(function(k){ var o=all[k]; o.id=k; return o });
   /* 客人自己取消、還沒有人按「知道了」的，全部留著顯示在今日排課最上面。
@@ -1355,12 +1359,21 @@ async function bkMember(phone){
 }
 
 /* ── 畫面 ── */
-async function bkRender(){
+/* noReload=true：只是收合/展開這類純畫面切換，資料沒變，不用重抓 430KB 的整包預約。 */
+var bkDrawnDate="";
+async function bkRender(noReload){
   var root=document.getElementById("bkRoot"); if(!root)return;
-  if(!bkBusy){ bkBusy=true; root.innerHTML='<div class="bk-empty">載入中…</div>';
+  if(!bkBusy&&!(noReload===true&&bkDrawnDate)){ bkBusy=true;
+    /* 以前每次重抓都先把整塊清成「載入中…」再畫回來，手機上看起來就是閃一下。
+       已經畫過排課板的話，舊畫面留著等新資料直接換上去；
+       只有換日期（舊畫面是別天的）才淡化，免得誤看成這天的資料。 */
+    if(!root.querySelector("#bkPrev"))root.innerHTML='<div class="bk-empty">載入中…</div>';
+    else if(bkDrawnDate!==ds(bkDate))root.style.opacity=".45";
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses()]); bkBusy=false; }
+    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses()]); }
+    finally{ bkBusy=false; root.style.opacity=""; } }
+  bkDrawnDate=ds(bkDate);
   var d=bkDate, today=ds(new Date())===ds(d);
   var dsNow=ds(d);
   var tOn=bkTeachersOn(dsNow), tOnPM=bkTeachersOnPM(dsNow), tSet=!!(bkSched&&bkSched[dsNow]!=null);
@@ -1472,12 +1485,12 @@ async function bkRender(){
     await bkPatch("/bookings/"+id+".json",{cancelAck:true,cancelAckAt:new Date().toISOString(),
       cancelAckBy:(typeof ME!=="undefined"&&ME&&ME.displayName)||""});
     bkCustCancels=bkCustCancels.filter(function(x){ return x.id!==id });
-    bkRender();
+    bkRender(true);
   } });
   var nOn=document.getElementById("bkNotifOn");
-  if(nOn)nOn.onclick=function(){ Notification.requestPermission().then(function(){ bkRender() }) };
+  if(nOn)nOn.onclick=function(){ Notification.requestPermission().then(function(){ bkRender(true) }) };
   var nX=document.getElementById("bkNotifX");
-  if(nX)nX.onclick=function(){ localStorage.setItem(BK_NOTIF_DISMISS_KEY,"1"); bkRender() };
+  if(nX)nX.onclick=function(){ localStorage.setItem(BK_NOTIF_DISMISS_KEY,"1"); bkRender(true) };
   var dpEl=document.getElementById("bkDatePick");
   if(dpEl)dpEl.onclick=bkDatePick;
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
@@ -1501,7 +1514,7 @@ async function bkRender(){
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     var k=el.dataset.slk;
-    bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender();
+    bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender(true);
   } });
   root.querySelectorAll("[data-closebtn]").forEach(function(el){ el.onclick=function(e){
     e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
@@ -1515,7 +1528,7 @@ async function bkRender(){
   } });
   root.querySelectorAll("[data-cardtoggle]").forEach(function(el){ el.onclick=function(e){
     e.stopPropagation(); /* 不要連帶觸發外層時段收合 */
-    bkSeatDetailOpen[el.dataset.cardtoggle]=!bkSeatDetailOpen[el.dataset.cardtoggle]; bkRender();
+    bkSeatDetailOpen[el.dataset.cardtoggle]=!bkSeatDetailOpen[el.dataset.cardtoggle]; bkRender(true);
   } });
   bkSeatBind(root);
   root.querySelectorAll("[data-at]").forEach(function(el){ el.onclick=function(){
@@ -1924,7 +1937,9 @@ async function bkCache(phone,type,delta){
   c[type]=(+c[type]||0)+delta;
   await bkPatch("/members/"+phone+"/cache.json",c);
 }
-async function bkRefresh(){ bkMembers=null; bkSchedAt=0; await bkLoad(); bkRender() }
+/* bkRender 自己就會重抓預約；以前這裡先 bkLoad() 再 bkRender()，同一包預約抓兩次。
+   只有剛好另一次 bkRender 正在載入（bkBusy，它不會再抓）時才需要自己補抓。 */
+async function bkRefresh(){ bkMembers=null; bkSchedAt=0; if(bkBusy)await bkLoad(); return bkRender() }
 
 /* ══ 班表設定（獨立分頁・月曆）════════════════════════
    一格 = 一天。中間大字是可開課老師數，下面是該時段名額。
