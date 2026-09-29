@@ -897,6 +897,527 @@ function bkHoldSheet(holdId){
   };
 }
 
+/* ══ 寄送（2026-09-30）══════════════════════════════════
+   有些客人的作品要用寄的（畫還沒乾、住外縣市）。老師當下就要能把
+   收件資料記下來、拍作品照片，之後不管哪位老師去寄，對著照片都不會寄錯人。
+
+   資料放 otto2-2026（跟訂金、核銷同一個資料庫）：
+   ・/shipments/{id}    一筆寄送（純文字，很小）
+   ・/shipPhotos/{id}   那筆的照片（壓縮過的 JPEG），只有打開那一筆才讀
+   照片刻意跟寄送資料分開放，更不能塞進 salaryData——庫存照片放在
+   salaryData 裡已經讓整個系統開頁變慢（1.3MB），寄送照片只會越積越多。
+
+   狀態：pending（待寄）→ shipped（已寄出）→ done（客人收到了）；作廢＝voided。
+   運費選「已收」會同時寫一筆 /manual（財務的手動補登，算商品營收），
+   現金流才對得上；之後改金額或改成沒收，那筆補登跟著改／作廢。 */
+var SHIP_WAYS=[
+  {k:"home", n:"宅配",        addr:true, carrier:""},
+  {k:"711",  n:"7-11 店到店",            carrier:"7-11 交貨便"},
+  {k:"fami", n:"全家店到店",             carrier:"全家店到店"},
+  {k:"post", n:"郵局",        addr:true, carrier:"中華郵政"},
+  {k:"other",n:"其他",        addr:true, carrier:""}
+];
+var SHIP_FEES=[
+  {k:"paid",  n:"已收"},
+  {k:"unpaid",n:"還沒收"},
+  {k:"cod",   n:"貨到付款"},
+  {k:"shop",  n:"店家吸收"}
+];
+/* 運費收款方式：只給會進現金流的四種，扣點扣堂不適用 */
+var SHIP_FEEWAYS=["cash","linepay","card","transfer"];
+var SHIP_KINDS=[{k:"work",n:"作品照"},{k:"pack",n:"打包照"},{k:"label",n:"託運單"}];
+function shipWay(k){ return SHIP_WAYS.filter(function(x){ return x.k===k })[0]||null }
+function shipWayName(k){ var w=shipWay(k); return w?w.n:"未選" }
+function shipIsAddr(k){ var w=shipWay(k); return !w||!!w.addr }
+function shipKindName(k){ var x=SHIP_KINDS.filter(function(v){ return v.k===k })[0]; return x?x.n:"照片" }
+function shipWho(){ return (typeof ME!=="undefined"&&ME&&ME.displayName)||"" }
+function shipDayDiff(a,b){
+  var pa=String(a).split("/"), pb=String(b).split("/");
+  return Math.round((new Date(+pb[0],+pb[1]-1,+pb[2])-new Date(+pa[0],+pa[1]-1,+pa[2]))/86400000);
+}
+function shipAddDays(n){ var d=new Date(); d.setDate(d.getDate()+n); return ds(d) }
+function shipFeeText(s){
+  var f=+s.fee||0;
+  if(s.feeStatus==="paid")return f?'・運費 $'+f.toLocaleString()+' 已收':'';
+  if(s.feeStatus==="unpaid")return '・<b class="bk-shred">運費'+(f?' $'+f.toLocaleString():'')+' 還沒收</b>';
+  if(s.feeStatus==="cod")return '・運費貨到付款';
+  return "";
+}
+function shipJSON(method,body){
+  return {method:method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
+}
+
+var bkShips=[];            /* 最近 300 筆寄送（含已完成，給寄送紀錄搜尋用） */
+var bkShipSentOpen=false;  /* 「已寄出」那段要不要展開 */
+async function bkLoadShips(){
+  try{
+    /* 用 $key 排序取最後 300 筆：push 產生的 key 本身就照時間排，不用另外設索引 */
+    var r=await fetch(salf("/shipments.json?orderBy="+encodeURIComponent('"$key"')+"&limitToLast=300"));
+    if(!r.ok)return;
+    var all=await r.json()||{};
+    bkShips=Object.keys(all).map(function(k){ var o=all[k]; if(o)o.id=k; return o }).filter(Boolean);
+  }catch(e){ /* 抓失敗就留著上次的清單，不要整塊消失讓人以為沒有要寄的 */ }
+}
+function bkShipOfBooking(bid){
+  return bkShips.filter(function(s){ return s.bookingId===bid&&!s.voided })[0]||null;
+}
+
+/* 今日排課最上面的待寄清單（不管看哪一天都顯示），跟待約訂金同一種做法 */
+function bkShipBannerHtml(){
+  var live=bkShips.filter(function(s){ return !s.voided&&s.status!=="done" });
+  if(!live.length)return "";
+  var today=ds(new Date());
+  var pend=live.filter(function(s){ return s.status!=="shipped" })
+    .sort(function(a,c){ return String(a.expectDate||"9").localeCompare(String(c.expectDate||"9")) });
+  var sent=live.filter(function(s){ return s.status==="shipped" })
+    .sort(function(a,c){ return String(c.shippedDate||"").localeCompare(String(a.shippedDate||"")) });
+  function who(s){ return '<b>'+esc(s.recipient||s.customer||"客人")+'</b>' }
+  var h='<div class="bk-shbar"><span class="bk-shhist" data-shhist="1">寄送紀錄 ›</span>';
+  if(pend.length){
+    h+='<div class="bk-shbh">📦 待寄送：'+pend.length+' 件</div>'+pend.map(function(s){
+      var late=(s.expectDate&&s.expectDate<today)?shipDayDiff(s.expectDate,today):0;
+      var when=!s.expectDate?"":(late?'<b class="bk-shred">逾期 '+late+' 天</b>'
+        :(s.expectDate===today?'<b class="bk-shtdy">今天要寄</b>'
+          :'<span class="bk-shwhen">預計 '+esc(s.expectDate.slice(5))+' 寄</span>'));
+      var nP=Object.keys(s.photos||{}).length;
+      return '<div class="bk-shrow"><span>'+who(s)+'　'+when+
+        '<small>'+esc(shipWayName(s.way))+(s.dest?'・'+esc(s.dest):'')+
+          (s.items?'・'+esc(s.items):'')+(nP?'・📷 '+nP+' 張':'・<b class="bk-shred">還沒拍照</b>')+
+          shipFeeText(s)+(s.createdBy?'・'+esc(s.createdBy)+' 登記':'')+'</small></span>'+
+        '<button class="bk-shedit" data-shed="'+esc(s.id)+'">查看</button>'+
+        '<button class="bk-shgo" data-shgo="'+esc(s.id)+'">已寄出</button></div>';
+    }).join("");
+  }
+  if(sent.length){
+    h+='<div class="bk-shsub" data-shsent="1">'+(bkShipSentOpen?"▼":"▶")+
+      ' 🚚 已寄出、等客人收到：'+sent.length+' 件</div>'+
+      (!bkShipSentOpen?"":sent.map(function(s){
+        return '<div class="bk-shrow"><span>'+who(s)+
+          '<small>'+esc(s.shippedDate?s.shippedDate.slice(5):"")+' 寄出・'+esc(shipWayName(s.way))+
+            (s.trackingNo?'・單號 '+esc(s.trackingNo):'')+
+            (s.shippedBy?'・'+esc(s.shippedBy)+' 寄':'')+
+            (s.notified?'・已傳 LINE':'')+shipFeeText(s)+'</small></span>'+
+          '<button class="bk-shedit" data-shed="'+esc(s.id)+'">查看</button>'+
+          '<button class="bk-shgo bk-shok" data-shdone="'+esc(s.id)+'">完成</button></div>';
+      }).join(""));
+  }
+  return h+'</div>';
+}
+function bkShipBind(root){
+  root.querySelectorAll("[data-shed]").forEach(function(el){ el.onclick=function(){ bkShipSheet(el.dataset.shed) } });
+  root.querySelectorAll("[data-shgo]").forEach(function(el){ el.onclick=function(){ bkShipSend(el.dataset.shgo) } });
+  root.querySelectorAll("[data-shdone]").forEach(function(el){ el.onclick=function(){ bkShipDone(el.dataset.shdone) } });
+  root.querySelectorAll("[data-shsent]").forEach(function(el){ el.onclick=function(){ bkShipSentOpen=!bkShipSentOpen; bkRender(true) } });
+  root.querySelectorAll("[data-shhist]").forEach(function(el){ el.onclick=bkShipHistory });
+  var add=document.getElementById("bkAddShip"); if(add)add.onclick=function(){ bkShipSheet() };
+  root.querySelectorAll("[data-sh]").forEach(function(el){ el.onclick=function(){
+    var s=bkShipOfBooking(el.dataset.sh);
+    if(s)bkShipSheet(s.id); else bkShipSheet(null,el.dataset.sh);
+  } });
+}
+
+/* 照片壓到長邊 1000px、JPEG 0.7，一張大約 80~150KB。
+   要看得出是哪一幅畫、託運單上的字，不用到原圖畫質。 */
+function shipCompress(file){
+  return new Promise(function(resolve,reject){
+    var rd=new FileReader();
+    rd.onerror=function(){ reject(new Error("照片讀取失敗")) };
+    rd.onload=function(e){
+      var img=new Image();
+      img.onerror=function(){ reject(new Error("照片格式無法解析")) };
+      img.onload=function(){
+        var w=img.width,h=img.height,max=1000;
+        if(w>max||h>max){ var r=Math.min(max/w,max/h); w=Math.round(w*r); h=Math.round(h*r) }
+        var c=document.createElement("canvas"); c.width=w; c.height=h;
+        c.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(c.toDataURL("image/jpeg",0.7));
+      };
+      img.src=e.target.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+function shipNewKey(){ return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6) }
+
+/* 找這位客人的 LINE：預約單上的 > 會員檔案上的（預約電話、收件電話都試） */
+async function shipFindUid(s,b){
+  if(s&&s.lineUserId)return s.lineUserId;
+  if(b&&b.line&&b.line.userId)return b.line.userId;
+  var phones=[b&&(b.memberPhone||(b.customer&&b.customer.phone)),s&&s.custPhone,s&&s.phone]
+    .map(mbPhone).filter(function(p,i,a){ return p&&a.indexOf(p)===i });
+  for(var i=0;i<phones.length;i++){
+    var m=await bkMember(phones[i]);
+    if(m&&m.lineUserId)return m.lineUserId;
+  }
+  return "";
+}
+
+/* 照片存檔：新的 PUT、刪掉的 DELETE，最後把「有哪些照片」的清單寫回寄送那筆
+   （清單只有種類跟時間，沒有圖，待寄清單才能顯示張數又不用讀圖） */
+async function shipSavePhotos(id,photos){
+  var meta={};
+  for(var i=0;i<photos.length;i++){
+    var p=photos[i], path=salf("/shipPhotos/"+id+"/"+p.key+".json");
+    if(p.del){ if(!p.isNew){ var rd=await fetch(path,{method:"DELETE"}); if(!rd.ok)throw new Error("刪照片 HTTP "+rd.status) } continue }
+    if(p.isNew){
+      var r=await fetch(path,shipJSON("PUT",{kind:p.kind,data:p.data,at:new Date().toISOString(),by:shipWho()}));
+      if(!r.ok)throw new Error("上傳照片 HTTP "+r.status);
+      p.isNew=false;
+    }
+    meta[p.key]={kind:p.kind};
+  }
+  var r2=await fetch(salf("/shipments/"+id+"/photos.json"),shipJSON("PUT",Object.keys(meta).length?meta:null));
+  if(!r2.ok)throw new Error("照片清單 HTTP "+r2.status);
+  photos.splice(0,photos.length,...photos.filter(function(p){ return !p.del }));
+  return meta;
+}
+
+/* 運費跟現金流同步：已收＝寫／改一筆 /manual；不是已收＝把舊的那筆作廢。回傳補登 id */
+async function shipSyncFee(id,rec,old){
+  var mid=(old&&old.feeManualId)||"";
+  if(rec.feeStatus==="paid"&&rec.fee>0){
+    var body={date:rec.feeDate,cat:"goods",amount:rec.fee,way:rec.feeWay,
+      note:"運費・"+(rec.recipient||""),dept:"4F",shipId:id,voided:false};
+    var r;
+    if(mid)r=await fetch(salf("/manual/"+mid+".json"),shipJSON("PATCH",body));
+    else{
+      body.by=shipWho(); body.at=new Date().toISOString();
+      r=await fetch(salf("/manual.json"),shipJSON("POST",body));
+      if(r.ok)mid=(await r.json()).name;
+    }
+    if(!r.ok)throw new Error("運費記帳 HTTP "+r.status);
+  }else if(mid){
+    var r3=await fetch(salf("/manual/"+mid+".json"),shipJSON("PATCH",
+      {voided:true,voidAt:new Date().toISOString(),voidBy:shipWho()}));
+    if(!r3.ok)throw new Error("撤掉運費記帳 HTTP "+r3.status);
+    mid="";
+  }
+  return mid;
+}
+
+/* 新增或查看／修改一筆寄送。
+   shipId 有帶＝打開既有的；沒帶、帶 bookingId＝從預約卡片開新的（姓名電話自動帶入）；
+   兩個都沒帶＝沒有預約的寄送（網路訂單、補寄）。 */
+async function bkShipSheet(shipId,bookingId){
+  var s=shipId?bkShips.filter(function(x){ return x.id===shipId })[0]:null;
+  if(shipId&&!s)return;
+  var bid=s?s.bookingId:(bookingId||"");
+  var b=bid?bkList.filter(function(x){ return x.id===bid })[0]:null;
+  var cust=(b&&b.customer)||{};
+  var way=(s&&s.way)||"home", fee=(s&&s.feeStatus)||"unpaid", feeWay=(s&&s.feeWay)||"cash";
+  var photos=[]; /* {key,kind,data,isNew,del} */
+  var sent=s&&(s.status==="shipped"||s.status==="done");
+  var stTxt=!s?"":(s.voided?"已作廢":(s.status==="done"?"✅ 完成（客人收到了）":
+    (s.status==="shipped"?"🚚 已寄出":"📦 待寄送")));
+  bkSheet(
+   '<h3>'+(s?"寄送資料":"寄送登記")+'</h3>'+
+   '<div class="bk-sh2">'+(s
+     ?stTxt+(s.createdBy?'・'+esc(s.createdBy)+' 登記':'')+(s.shippedBy?'・'+esc(s.shippedBy)+' 寄出':'')
+     :(b?'來自 '+esc(b.date)+' '+esc(b.slot||"")+' '+esc(cust.name||"")+' 的預約・':'')+
+       '填好收件資料、拍作品照片，之後哪位老師寄都對得起來')+'</div>'+
+   (s?"":'<div class="bk-shmsg" style="margin:-10px 0 14px"><span class="bk-shhist2" id="shHist">🔍 查以前的寄送紀錄</span></div>'+
+     '<label class="bk-shocr"><input type="file" accept="image/*" id="shOcr" style="display:none">'+
+     '📷 客人傳了地址？截圖上傳，AI 自動填</label><div id="shOcrMsg" class="bk-shmsg"></div>')+
+   '<div class="bk-f2"><div class="bk-f"><label>收件人 *</label><input id="shName" value="'+
+       esc(s?s.recipient:(cust.name||""))+'"></div>'+
+     '<div class="bk-f"><label>收件人電話 *</label><input id="shPhone" inputmode="tel" value="'+
+       esc(s?s.phone:(cust.phone||""))+'"></div></div>'+
+   '<div class="bk-f"><label>寄送方式</label><div class="bk-ways" id="shWays"></div></div>'+
+   '<div class="bk-f"><label id="shDestL">地址</label><input id="shDest" value="'+esc(s&&s.dest||"")+'"></div>'+
+   '<div class="bk-f"><label>寄什麼</label><input id="shItems" placeholder="例：油畫 30×40 一幅、黏土公仔 2 個" value="'+
+     esc(s&&s.items||"")+'"></div>'+
+   '<div class="bk-f"><label>預計寄出日</label><div class="bk-shdate">'+
+     '<input id="shDate" type="date" value="'+String((s&&s.expectDate)||ds(new Date())).replace(/\//g,"-")+'">'+
+     '<span data-shd="0">今天</span><span data-shd="3">3 天後</span><span data-shd="7">1 週後</span></div></div>'+
+   '<div class="bk-f"><label>運費</label><div class="bk-shfee">'+
+     '<input id="shFee" inputmode="numeric" placeholder="金額" value="'+(s&&+s.fee?+s.fee:"")+'">'+
+     '<div class="bk-ways" id="shFees"></div></div>'+
+     '<div id="shFeeWayBox" style="display:none;margin-top:8px"><div class="bk-ways" id="shFeeWays"></div>'+
+     '<div class="bk-shmsg">收了會自動記進現金流（財務的手動補登），不用另外記</div></div></div>'+
+   (sent?'<div class="bk-f2"><div class="bk-f"><label>物流</label><input id="shCarrier" value="'+esc(s.carrier||"")+'"></div>'+
+     '<div class="bk-f"><label>單號</label><input id="shTrk" value="'+esc(s.trackingNo||"")+'"></div></div>':'')+
+   '<div class="bk-f"><label>照片（對照用，不會寄給客人）</label>'+
+     '<div class="bk-shpbtns">'+SHIP_KINDS.map(function(k){
+       return '<label class="bk-shpadd">＋'+k.n+'<input type="file" accept="image/*" multiple data-kind="'+k.k+
+         '" style="display:none"></label>' }).join("")+'</div>'+
+     '<div id="shPhotos" class="bk-shphotos">'+(s&&s.photos?'<div class="bk-shmsg">照片載入中…</div>':'')+'</div></div>'+
+   '<div class="bk-f"><label>備註（內部看的）</label><textarea id="shNote" rows="2" placeholder="例：畫還沒乾，週五後再寄">'+
+     esc(s&&s.note||"")+'</textarea></div>'+
+   '<div id="shBig" class="bk-shbig" style="display:none"><img id="shBigImg" alt=""><div>點一下關閉</div></div>'+
+   '<div class="bk-act">'+
+     (s&&!s.voided?'<button class="bk-cancel" id="shDel">作廢</button>':'')+
+     '<button class="bk-cancel" id="shX">關閉</button>'+
+     (s&&!s.voided&&s.status==="pending"?'<button class="bk-save bk-shsendbtn" id="shSend">已寄出 →</button>':'')+
+     (s&&s.voided?'':'<button class="bk-save" id="shOK">'+(s?"儲存修改":"登記寄送")+'</button>')+'</div>');
+  document.getElementById("shX").onclick=bkClose;
+  var hl=document.getElementById("shHist"); if(hl)hl.onclick=bkShipHistory;
+
+  function drawWays(){
+    document.getElementById("shWays").innerHTML=SHIP_WAYS.map(function(w){
+      return '<div class="bk-way'+(way===w.k?" on":"")+'" data-w="'+w.k+'">'+w.n+'</div>' }).join("");
+    document.querySelectorAll("#shWays [data-w]").forEach(function(el){
+      el.onclick=function(){ way=el.dataset.w; drawWays() } });
+    var addr=shipIsAddr(way);
+    document.getElementById("shDestL").textContent=addr?"地址":"取件門市（名稱＋店號）";
+    document.getElementById("shDest").placeholder=addr?"例：台中市南屯區干城街…":"例：南屯門市 123456";
+  }
+  function drawFees(){
+    document.getElementById("shFees").innerHTML=SHIP_FEES.map(function(f){
+      return '<div class="bk-way'+(fee===f.k?" on":"")+'" data-f="'+f.k+'">'+f.n+'</div>' }).join("");
+    document.querySelectorAll("#shFees [data-f]").forEach(function(el){
+      el.onclick=function(){ fee=el.dataset.f; drawFees() } });
+    document.getElementById("shFeeWayBox").style.display=fee==="paid"?"block":"none";
+    document.getElementById("shFeeWays").innerHTML=SHIP_FEEWAYS.map(function(k){
+      return '<div class="bk-way'+(feeWay===k?" on":"")+'" data-fw="'+k+'">'+bkWayName(k)+'</div>' }).join("");
+    document.querySelectorAll("#shFeeWays [data-fw]").forEach(function(el){
+      el.onclick=function(){ feeWay=el.dataset.fw; drawFees() } });
+  }
+  function drawPhotos(){
+    var box=document.getElementById("shPhotos"); if(!box)return;
+    var vis=photos.filter(function(p){ return !p.del });
+    box.innerHTML=vis.length?vis.map(function(p){
+      return '<div class="bk-shph"><img src="'+p.data+'" data-big="'+p.key+'" alt="">'+
+        '<span>'+shipKindName(p.kind)+'</span><b data-rm="'+p.key+'">×</b></div>' }).join("")
+      :'<div class="bk-shmsg">還沒有照片。建議至少拍一張作品照，寄的時候對照才不會寄錯人。</div>';
+    box.querySelectorAll("[data-big]").forEach(function(el){ el.onclick=function(){
+      var p=photos.filter(function(x){ return x.key===el.dataset.big })[0]; if(!p)return;
+      document.getElementById("shBigImg").src=p.data;
+      document.getElementById("shBig").style.display="flex";
+    } });
+    box.querySelectorAll("[data-rm]").forEach(function(el){ el.onclick=function(){
+      var p=photos.filter(function(x){ return x.key===el.dataset.rm })[0]; if(!p)return;
+      if(!p.isNew&&!confirm("刪掉這張照片？按「儲存修改」後才會真的刪。"))return;
+      p.del=true; drawPhotos();
+    } });
+  }
+  drawWays(); drawFees();
+  if(!s||!s.photos)drawPhotos();
+  document.getElementById("shBig").onclick=function(){ this.style.display="none" };
+  document.querySelectorAll("[data-shd]").forEach(function(el){ el.onclick=function(){
+    document.getElementById("shDate").value=shipAddDays(+el.dataset.shd).replace(/\//g,"-") } });
+  document.querySelectorAll(".bk-shpadd input").forEach(function(inp){ inp.onchange=async function(){
+    var files=[].slice.call(this.files||[]), kind=this.dataset.kind; this.value="";
+    for(var i=0;i<files.length;i++){
+      try{ photos.push({key:shipNewKey(),kind:kind,data:await shipCompress(files[i]),isNew:true}) }
+      catch(e){ alert(e.message) }
+    }
+    drawPhotos();
+  } });
+  /* 舊照片另外讀，表單先出來，不用等圖 */
+  if(s&&s.photos){
+    try{
+      var pr=await fetch(salf("/shipPhotos/"+s.id+".json")); var all=pr.ok?(await pr.json()||{}):{};
+      Object.keys(all).sort().forEach(function(k){ var v=all[k]; if(v&&v.data)photos.push({key:k,kind:v.kind,data:v.data}) });
+    }catch(e){}
+    drawPhotos();
+  }
+
+  var ocr=document.getElementById("shOcr");
+  if(ocr)ocr.onchange=async function(){
+    var file=this.files&&this.files[0]; this.value=""; if(!file)return;
+    var msg=document.getElementById("shOcrMsg");
+    msg.style.color="#9A7433"; msg.textContent="⏳ 辨識中…";
+    try{
+      var j=await claudeOCR([await fileToOCRBase64(file)],"shipping");
+      var x=j.shipping||{}, filled=[];
+      function put(id,v,label){ if(v){ document.getElementById(id).value=v; filled.push(label) } }
+      put("shName",x.name,"收件人"); put("shPhone",x.phone,"電話");
+      if(x.way&&shipWay(x.way)){ way=x.way; drawWays(); filled.push("寄送方式") }
+      put("shDest",shipIsAddr(way)?(x.address||x.store):(x.store||x.address),shipIsAddr(way)?"地址":"門市");
+      put("shItems",x.items,"物品");
+      if(x.note){ var n=document.getElementById("shNote"); if(!n.value){ n.value=x.note; filled.push("備註") } }
+      msg.style.color=filled.length?"#12805C":"#C9453B";
+      msg.textContent=filled.length?"✅ 已帶入："+filled.join("、")+"。AI 可能抓錯字，送出前請再看一次"
+        :"⚠️ 這張截圖沒抓到收件資料，請手動填寫";
+    }catch(e){ msg.style.color="#C9453B"; msg.textContent="❌ 辨識失敗："+e.message+"，請手動填寫" }
+  };
+
+  var del=document.getElementById("shDel");
+  if(del)del.onclick=async function(){
+    if(!confirm("作廢這筆寄送？"+(s.feeManualId?"\n運費那筆現金流也會一起撤掉。":"")+"\n登記錯、或客人改成自己來拿才按。"))return;
+    this.disabled=true;
+    try{
+      if(s.feeManualId)await shipSyncFee(s.id,{feeStatus:"void"},s);
+      var r=await fetch(salf("/shipments/"+s.id+".json"),shipJSON("PATCH",
+        {voided:true,voidAt:new Date().toISOString(),voidBy:shipWho(),feeManualId:""}));
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      bkClose(); await bkLoadShips(); bkRender(true);
+    }catch(e){ alert("作廢失敗："+e.message); this.disabled=false }
+  };
+
+  async function save(){
+    var g=function(id){ var el=document.getElementById(id); return el?String(el.value||"").trim():"" };
+    if(!g("shName")){ alert("收件人必填"); return null }
+    if(!g("shPhone")){ alert("收件人電話必填（超商取件、宅配都會用到）"); return null }
+    if(!g("shDest")&&!confirm((shipIsAddr(way)?"地址":"取件門市")+"還沒填，先存起來之後再補？"))return null;
+    var feeAmt=Math.round(+g("shFee")||0);
+    if(fee==="paid"&&!(feeAmt>0)){ alert("運費選了「已收」，請填金額"); return null }
+    var rec={recipient:g("shName"),phone:g("shPhone"),way:way,wayName:shipWayName(way),dest:g("shDest"),
+      items:g("shItems"),expectDate:g("shDate").replace(/-/g,"/"),
+      fee:feeAmt,feeStatus:fee,feeWay:fee==="paid"?feeWay:"",
+      feeDate:(fee==="paid")?((s&&s.feeStatus==="paid"&&s.feeDate)||ds(new Date())):"",
+      note:g("shNote")};
+    if(sent){ rec.carrier=g("shCarrier"); rec.trackingNo=g("shTrk") }
+    var id;
+    if(s){
+      id=s.id;
+      rec.editedAt=new Date().toISOString(); rec.editedBy=shipWho();
+      var r=await fetch(salf("/shipments/"+id+".json"),shipJSON("PATCH",rec));
+      if(!r.ok)throw new Error("HTTP "+r.status);
+    }else{
+      rec.bookingId=bid; rec.classDate=b?b.date:""; rec.slot=b?(b.slot||""):"";
+      rec.customer=cust.name||rec.recipient;
+      rec.custPhone=(b&&(b.memberPhone||cust.phone))||"";
+      rec.lineUserId=await shipFindUid(null,b)||"";
+      if(!rec.lineUserId){ var m=await bkMember(mbPhone(rec.phone)); if(m&&m.lineUserId)rec.lineUserId=m.lineUserId }
+      rec.status="pending"; rec.voided=false;
+      rec.createdBy=shipWho(); rec.createdAt=new Date().toISOString();
+      var r2=await fetch(salf("/shipments.json"),shipJSON("POST",rec));
+      if(!r2.ok)throw new Error("HTTP "+r2.status);
+      id=(await r2.json()).name;
+    }
+    /* 照片、運費記帳失敗不能當成整筆失敗——寄送資料本身已經存好了，
+       要講清楚是哪一段沒成功，不然又變成沒人知道的靜默失敗 */
+    var warn=[];
+    try{ await shipSavePhotos(id,photos) }catch(e){ warn.push("照片沒存成功（"+e.message+"），請打開這筆重新加照片") }
+    try{
+      var mid=await shipSyncFee(id,rec,s);
+      if(mid!==((s&&s.feeManualId)||""))await fetch(salf("/shipments/"+id+".json"),shipJSON("PATCH",{feeManualId:mid}));
+    }catch(e){ warn.push("運費沒記進現金流（"+e.message+"），請到財務手動補登") }
+    if(warn.length)alert("寄送資料已經存好了，但是：\n・"+warn.join("\n・"));
+    await bkLoadShips();
+    return id;
+  }
+  var ok=document.getElementById("shOK");
+  if(ok)ok.onclick=async function(){
+    var btn=this; btn.disabled=true; btn.textContent="存檔中…";
+    try{ var id=await save(); if(!id){ btn.disabled=false; btn.textContent=s?"儲存修改":"登記寄送"; return }
+      bkClose(); bkRender(true) }
+    catch(e){ alert("存檔失敗："+e.message); btn.disabled=false; btn.textContent=s?"儲存修改":"登記寄送" }
+  };
+  var go=document.getElementById("shSend");
+  if(go)go.onclick=async function(){
+    var btn=this; btn.disabled=true; btn.textContent="存檔中…";
+    try{ var id=await save(); if(!id){ btn.disabled=false; btn.textContent="已寄出 →"; return }
+      bkShipSend(id) }
+    catch(e){ alert("存檔失敗："+e.message); btn.disabled=false; btn.textContent="已寄出 →" }
+  };
+}
+
+/* 按「已寄出」：填單號（可以拍託運單讓 AI 抓）、傳 LINE 通知客人 */
+async function bkShipSend(id){
+  var s=bkShips.filter(function(x){ return x.id===id })[0]; if(!s)return;
+  var b=s.bookingId?bkList.filter(function(x){ return x.id===s.bookingId })[0]:null;
+  var w=shipWay(s.way), label=null;
+  bkSheet(
+   '<h3>已寄出：'+esc(s.recipient||"")+'</h3>'+
+   '<div class="bk-sh2">'+esc(shipWayName(s.way))+(s.dest?'・'+esc(s.dest):'')+(s.items?'・'+esc(s.items):'')+'</div>'+
+   (Object.keys(s.photos||{}).length?'<div class="bk-shmsg" style="margin-bottom:12px">📷 寄之前可以先按「查看」對一下作品照片</div>':'')+
+   '<label class="bk-shocr"><input type="file" accept="image/*" id="ssOcr" style="display:none">'+
+     '📷 拍託運單／寄件單（AI 自動抓單號，照片也會存起來）</label><div id="ssOcrMsg" class="bk-shmsg"></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>物流</label><input id="ssCarrier" placeholder="黑貓、新竹物流…" value="'+
+       esc(s.carrier||(w&&w.carrier)||"")+'"></div>'+
+     '<div class="bk-f"><label>單號</label><input id="ssTrk" value="'+esc(s.trackingNo||"")+'"></div></div>'+
+   '<div class="bk-f"><label>寄出日期</label><input id="ssDate" type="date" value="'+ds(new Date()).replace(/\//g,"-")+'"></div>'+
+   '<div id="ssNotify" class="bk-shmsg">查詢客人的 LINE…</div>'+
+   '<div class="bk-act"><button class="bk-cancel" id="ssX">關閉</button>'+
+     '<button class="bk-save" id="ssOK">確認已寄出</button></div>');
+  document.getElementById("ssX").onclick=bkClose;
+  var uid=await shipFindUid(s,b);
+  var nb=document.getElementById("ssNotify"); if(!nb)return;
+  nb.innerHTML=uid
+    ?'<label style="display:flex;align-items:center;gap:7px;font-size:14.5px;color:#333">'+
+      '<input type="checkbox" id="ssTell" checked style="width:16px;height:16px"> 傳 LINE 通知客人（含單號）</label>'
+    :'<div class="bk-warn">⚠ 這位客人沒綁 LINE，不會收到寄出通知，記得用別的方式把單號給他。</div>';
+  nb.className="";
+  document.getElementById("ssOcr").onchange=async function(){
+    var file=this.files&&this.files[0]; this.value=""; if(!file)return;
+    var msg=document.getElementById("ssOcrMsg");
+    msg.style.color="#9A7433"; msg.textContent="⏳ 辨識中…";
+    try{
+      label={key:shipNewKey(),kind:"label",data:await shipCompress(file),isNew:true};
+      var j=await claudeOCR([await fileToOCRBase64(file)],"shipping");
+      var x=j.shipping||{};
+      if(x.trackingNo)document.getElementById("ssTrk").value=x.trackingNo;
+      msg.style.color=x.trackingNo?"#12805C":"#C9453B";
+      msg.textContent=x.trackingNo?"✅ 抓到單號，請跟託運單對一下":"⚠️ 沒抓到單號，請手動輸入（照片還是會存起來）";
+    }catch(e){ msg.style.color="#C9453B"; msg.textContent="❌ 辨識失敗："+e.message+"，請手動輸入單號" }
+  };
+  document.getElementById("ssOK").onclick=async function(){
+    var g=function(k){ return String(document.getElementById(k).value||"").trim() };
+    var trk=g("ssTrk"), d=g("ssDate").replace(/-/g,"/");
+    if(!d){ alert("請填寄出日期"); return }
+    if(!trk&&!confirm("還沒填單號，客人收到的通知裡就不會有單號。確定先這樣寄出嗎？"))return;
+    var tell=document.getElementById("ssTell"), wantTell=!!(uid&&tell&&tell.checked);
+    var btn=this; btn.disabled=true; btn.textContent="處理中…";
+    try{
+      var upd={status:"shipped",shippedDate:d,shippedAt:new Date().toISOString(),shippedBy:shipWho(),
+        trackingNo:trk,carrier:g("ssCarrier"),notified:false};
+      if(uid)upd.lineUserId=uid;
+      var r=await fetch(salf("/shipments/"+id+".json"),shipJSON("PATCH",upd));
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      var warn=[];
+      if(label){
+        try{
+          var pr=await fetch(salf("/shipPhotos/"+id+"/"+label.key+".json"),
+            shipJSON("PUT",{kind:"label",data:label.data,at:new Date().toISOString(),by:shipWho()}));
+          if(!pr.ok)throw new Error("HTTP "+pr.status);
+          await fetch(salf("/shipments/"+id+"/photos/"+label.key+".json"),shipJSON("PUT",{kind:"label"}));
+        }catch(e){ warn.push("託運單照片沒存成功（"+e.message+"）") }
+      }
+      if(wantTell){
+        try{
+          var nr=await fetch(NOTIFY+"/notify/shipment",shipJSON("POST",{lineUserId:uid,
+            recipient:s.recipient,wayName:shipWayName(s.way),isStore:!shipIsAddr(s.way),dest:s.dest,
+            items:s.items,trackingNo:trk,carrier:upd.carrier,shippedDate:d}));
+          var nj=await nr.json().catch(function(){ return {} });
+          if(!nr.ok||!nj.ok)throw new Error(nj.error||nj.skip||("HTTP "+nr.status));
+          await fetch(salf("/shipments/"+id+".json"),shipJSON("PATCH",{notified:true,notifiedAt:new Date().toISOString()}));
+        }catch(e){ warn.push("LINE 通知沒送出去（"+e.message+"），請用 LINE 手動把單號傳給客人") }
+      }
+      if(warn.length)alert("已經標成寄出了，但是：\n・"+warn.join("\n・"));
+      bkClose(); await bkLoadShips(); bkRender(true);
+    }catch(e){ alert("存檔失敗："+e.message); btn.disabled=false; btn.textContent="確認已寄出" }
+  };
+}
+
+async function bkShipDone(id){
+  var s=bkShips.filter(function(x){ return x.id===id })[0]; if(!s)return;
+  if(!confirm((s.recipient||"這位客人")+" 已經收到了？\n按確定就從清單上拿掉（寄送紀錄裡還查得到）。"))return;
+  try{
+    var r=await fetch(salf("/shipments/"+id+".json"),shipJSON("PATCH",
+      {status:"done",doneAt:new Date().toISOString(),doneBy:shipWho()}));
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    await bkLoadShips(); bkRender(true);
+  }catch(e){ alert("存檔失敗："+e.message) }
+}
+
+/* 寄送紀錄：姓名、電話、單號都能搜，查「某某寄了沒」用 */
+function bkShipHistory(){
+  var st={pending:"待寄",shipped:"已寄出",done:"完成"};
+  bkSheet('<h3>寄送紀錄</h3><div class="bk-sh2">最近 300 筆，點一筆看詳細和照片</div>'+
+    '<div class="bk-f"><input id="shQ" placeholder="搜尋姓名、電話、單號、地址"></div>'+
+    '<div id="shList"></div>'+
+    '<div class="bk-act"><button class="bk-cancel" id="shHX">關閉</button></div>');
+  document.getElementById("shHX").onclick=bkClose;
+  function draw(){
+    var q=String(document.getElementById("shQ").value||"").trim().toLowerCase();
+    var rows=bkShips.filter(function(s){ return !s.voided }).filter(function(s){
+      if(!q)return true;
+      return [s.recipient,s.customer,s.phone,s.custPhone,s.trackingNo,s.dest,s.items].join(" ").toLowerCase().indexOf(q)>=0;
+    }).sort(function(a,c){ return String(c.createdAt||"").localeCompare(String(a.createdAt||"")) });
+    document.getElementById("shList").innerHTML=rows.length?rows.map(function(s){
+      return '<div class="bk-shhrow" data-shh="'+esc(s.id)+'"><span class="bk-shst '+esc(s.status)+'">'+
+        (st[s.status]||"")+'</span><div><b>'+esc(s.recipient||"")+'</b>　'+esc(s.phone||"")+
+        '<small>'+(s.createdAt?esc(ds(new Date(s.createdAt)).slice(5))+' 登記・':'')+esc(shipWayName(s.way))+
+        (s.trackingNo?'・單號 '+esc(s.trackingNo):'')+(s.items?'・'+esc(s.items):'')+'</small></div></div>' }).join("")
+      :'<div class="bk-empty" style="padding:24px">找不到符合的寄送</div>';
+    document.querySelectorAll("[data-shh]").forEach(function(el){ el.onclick=function(){ bkShipSheet(el.dataset.shh) } });
+  }
+  document.getElementById("shQ").oninput=draw;
+  draw();
+}
+
 var BK_SEEN_KEY="otto2_bk_lastSeenTs";
 function bkIsNewWeb(b){
   return !!(b&&(b.source==="web"||b.source==="ai-chat")&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
@@ -1496,7 +2017,7 @@ async function bkRender(noReload){
     else if(bkDrawnDate!==ds(bkDate))root.style.opacity=".45";
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds()]); }
+    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds(), bkLoadShips()]); }
     finally{ bkBusy=false; root.style.opacity=""; } }
   bkDrawnDate=ds(bkDate);
   var d=bkDate, today=ds(new Date())===ds(d);
@@ -1518,6 +2039,7 @@ async function bkRender(noReload){
    bkNotifBannerHtml()+
    bkCancelBannerHtml()+
    bkHoldBannerHtml()+
+   bkShipBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
      '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
@@ -1547,7 +2069,8 @@ async function bkRender(noReload){
    (overDetail.length?'<div class="bk-over">⚠️ '+overDetail.join("、")+
      ' 超過表定上限，請確認人手。</div>':"")+
    '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
-     '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button></div>'+
+     '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button>'+
+     '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送（沒有預約的）</button></div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
@@ -1642,6 +2165,7 @@ async function bkRender(noReload){
   document.getElementById("bkAddHold").onclick=function(){ bkHoldSheet() };
   root.querySelectorAll("[data-hded]").forEach(function(el){ el.onclick=function(){ bkHoldSheet(el.dataset.hded) } });
   root.querySelectorAll("[data-hdgo]").forEach(function(el){ el.onclick=function(){ bkManual(null,null,el.dataset.hdgo) } });
+  bkShipBind(root);
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     var k=el.dataset.slk;
     bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender(true);
@@ -2052,6 +2576,10 @@ function bkCard(b){
          新的登記表單，日期先幫忙抓下週同一天，行政確認沒問題再送出，
          不用整組資料重打一次。 */
       '<button class="bk-b" data-rp="'+b.id+'">約下次</button>'+
+      /* 作品要寄的：按這顆直接帶姓名電話開寄送登記；已經登記過就打開那一筆 */
+      (function(){ var sh=bkShipOfBooking(b.id);
+        return '<button class="bk-b shp'+(sh?" on":"")+'" data-sh="'+b.id+'">'+
+          (!sh?"寄送":(sh.status==="pending"?"📦 待寄":(sh.status==="done"?"寄送 ✓":"🚚 已寄")))+'</button>' })()+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
@@ -3903,6 +4431,52 @@ css.textContent=
 ".bk-addrow{display:flex;gap:8px;flex-wrap:wrap}"+
 ".bk-addrow .bk-add{flex:1 1 200px}"+
 ".bk-add.bk-add-hold{background:#C99A3B}"+
+".bk-add.bk-add-ship{background:#3E7C74}"+
+/* 寄送清單＋寄送彈窗。彈窗不在 #bkRoot 底下，顏色一律寫死，不用 var(--bk…) */
+".bk-shbar{position:relative;background:#EAF4F2;border:1.5px solid #9CC9C1;border-radius:12px;padding:12px 15px;"+
+  "margin-bottom:16px;color:#1F5A52;font-size:13.5px;line-height:1.5}"+
+".bk-shbh{font-weight:700;margin-bottom:6px;padding-right:80px}"+
+".bk-shhist{position:absolute;right:14px;top:12px;font-size:12.5px;color:#3E7C74;cursor:pointer;text-decoration:underline}"+
+".bk-shhist2{color:#3E7C74;cursor:pointer;text-decoration:underline}"+
+".bk-shsub{font-weight:600;padding:8px 0 4px;border-top:1px dashed #B9DAD4;cursor:pointer;user-select:none}"+
+".bk-shrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed #B9DAD4}"+
+".bk-shrow span{flex:1;min-width:0}"+
+".bk-shrow small{display:block;color:#4E7F78;font-size:12px}"+
+".bk-shred{color:#C9453B}.bk-shtdy{color:#B7791F}.bk-shwhen{color:#4E7F78;font-size:12.5px}"+
+".bk-shgo,.bk-shedit{flex:0 0 auto;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;"+
+  "cursor:pointer;font-family:inherit}"+
+".bk-shgo{background:#3E7C74;color:#fff;border:0}"+
+".bk-shgo.bk-shok{background:#12805C}"+
+".bk-shedit{background:#fff;color:#3E7C74;border:1px solid #9CC9C1}"+
+".bk-b.shp{background:#EAF4F2;color:#2F6B63;font-weight:600}"+
+".bk-b.shp.on{background:#3E7C74;color:#fff}"+
+".bk-shocr{display:block;text-align:center;padding:11px;border:1.5px dashed #9CC9C1;border-radius:10px;"+
+  "color:#2F6B63;background:#F4FAF9;cursor:pointer;font-size:14.5px;margin-bottom:6px}"+
+".bk-shmsg{font-size:12.5px;color:#8A90A0;min-height:4px;margin-bottom:10px}"+
+".bk-shdate{display:flex;gap:6px;align-items:center;flex-wrap:wrap}"+
+".bk-shdate input{flex:1 1 150px}"+
+".bk-shdate span,.bk-shpadd{padding:8px 11px;border:1px solid #E3E6EC;border-radius:8px;font-size:13.5px;"+
+  "cursor:pointer;color:#5B6272;background:#FBFCFD}"+
+".bk-shfee input{margin-bottom:8px}"+
+".bk-shpbtns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}"+
+".bk-shpadd{color:#2F6B63;border-color:#9CC9C1;background:#F4FAF9;font-weight:600}"+
+".bk-shphotos{display:flex;gap:8px;flex-wrap:wrap}"+
+".bk-shph{position:relative;width:96px}"+
+".bk-shph img{width:96px;height:96px;object-fit:cover;border-radius:8px;display:block;cursor:zoom-in;border:1px solid #E3E6EC}"+
+".bk-shph span{display:block;font-size:11.5px;color:#5B6272;text-align:center;margin-top:2px}"+
+".bk-shph b{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:#C9453B;"+
+  "color:#fff;font-size:14px;line-height:22px;text-align:center;cursor:pointer}"+
+".bk-shbig{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.85);flex-direction:column;"+
+  "align-items:center;justify-content:center;gap:10px;color:#fff;font-size:13px;cursor:zoom-out}"+
+".bk-shbig img{max-width:94vw;max-height:84vh;border-radius:6px}"+
+".bk-shsendbtn{background:#3E7C74 !important}"+
+".bk-shhrow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-top:1px solid #EEF0F3;cursor:pointer}"+
+".bk-shhrow:hover{background:#F7F9FA}"+
+".bk-shhrow div{flex:1;min-width:0;font-size:14px;color:#232936}"+
+".bk-shhrow small{display:block;color:#8A90A0;font-size:12px}"+
+".bk-shst{flex:0 0 auto;font-size:12px;font-weight:600;border-radius:99px;padding:2px 9px;background:#F2F3F6;color:#5F6577}"+
+".bk-shst.pending{background:#FFF1D6;color:#8A6400}.bk-shst.shipped{background:#EAF4F2;color:#2F6B63}"+
+".bk-shst.done{background:#E6F4EC;color:#12805C}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
 ".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
   "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
