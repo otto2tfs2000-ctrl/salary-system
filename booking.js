@@ -1688,7 +1688,8 @@ function bkBuildIndex(j){
     bkIndex[k]=p;
     var m=j[p]||{}, c=m.cache||{};
     var t=m.tickets||[]; if(!Array.isArray(t))t=Object.keys(t).map(function(x){return t[x]});
-    var tkt=t.filter(function(x){ return x&&+x.qty>0&&!(x.expiry&&x.expiry<today) })
+    /* 扭蛋活動抽到的券（src:"gacha"）不算——新客抽到一張折價券不代表他是會員 */
+    var tkt=t.filter(function(x){ return x&&x.src!=="gacha"&&+x.qty>0&&!(x.expiry&&x.expiry<today) })
       .reduce(function(s,x){ return s+(+x.qty||0) },0);
     bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt};
   });

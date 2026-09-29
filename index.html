@@ -61,6 +61,7 @@
   <div class="tab" data-tab="sched" onclick="switchTab('sched')">🗓️ 班表設定</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
+  <div class="tab" data-tab="gacha" onclick="switchTab('gacha')">🎰 扭蛋活動</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" data-tab="finance" onclick="switchTab('finance')">💵 報表</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
@@ -104,6 +105,11 @@
 </div>
 
 <div id="tab-finance" class="page"><div id="fnRoot"></div></div>
+
+<div id="tab-gacha" class="page">
+  <h2>🎰 扭蛋活動</h2>
+  <div id="gacha-body"></div>
+</div>
 
 <div id="tab-monthly" class="page">
   <div class="store-tabs">
@@ -454,16 +460,17 @@
 </div>
 
 <script src="auth.js?v=20260911a"></script>
-<script src="app.js?v=20260914a"></script>
+<script src="app.js?v=20260930a"></script>
 <script src="consumables.js?v=20260922a"></script>
 <script src="inventory.js?v=20260927a"></script>
-<script src="booking.js?v=20260930a"></script>
+<script src="booking.js?v=20260930b"></script>
 <script src="member.js?v=20260924a"></script>
 <script src="recipe.js?v=20260901a"></script>
 <script src="quote.js?v=20260914d"></script>
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20260814a"></script>
-<script src="staff.js?v=20260808c"></script>
+<script src="staff.js?v=20260930a"></script>
+<script src="gacha.js?v=20260930a"></script>
 <script>
 /* 手機上點完分頁就把側欄收起來，不然選單會一直擋住內容 */
 document.querySelectorAll('.tabs .tab').forEach(function(el){
