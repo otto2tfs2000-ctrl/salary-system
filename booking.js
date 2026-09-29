@@ -772,6 +772,131 @@ function bkCancelBannerHtml(){
         '</span><button class="bk-cxok" data-cxok="'+esc(b.id)+'">知道了</button></div>';
     }).join("")+'</div>';
 }
+/* ══ 先收訂金、時間待約（2026-09-29）════════════════════
+   家長常常先付訂金、之後才決定哪天來。以前沒有日期就沒辦法登記，
+   錢收了卻沒有任何紀錄。
+
+   不另開新資料表：直接寫進現金流本來就在讀的 otto2-2026/deposits，
+   多標一個 hold:true、bookingId 留空。這樣收款那天的現金流馬上就對，
+   不用等排好時間。之後按「排時間」開一般的登記表單，登記完把
+   bookingId 補上，預約單的 deposit 也標成已收，核銷時照常扣抵。
+   刻意不在 /bookings 建一筆沒有日期的預約——客服機器人、提醒推播、
+   容量計算都是讀那一包，塞一筆沒日期的進去不知道哪邊會壞。 */
+var bkHolds=[];
+async function bkLoadHolds(){
+  try{
+    var r=await fetch(salf("/deposits.json")); if(!r.ok)return;
+    var all=await r.json()||{};
+    bkHolds=Object.keys(all).map(function(k){ var o=all[k]; if(o)o.id=k; return o })
+      .filter(function(o){ return o&&o.hold&&!o.bookingId&&!o.voided })
+      .sort(function(a,c){ return String(a.date||"").localeCompare(String(c.date||"")) });
+  }catch(e){ /* 抓失敗就留著上次的清單，不要整塊消失讓人以為錢不見了 */ }
+}
+function bkHoldBannerHtml(){
+  if(!bkHolds.length)return "";
+  return '<div class="bk-hdbar"><div class="bk-hdh">💰 已收訂金、還沒約時間：'+bkHolds.length+' 位</div>'+
+    bkHolds.map(function(h){
+      var ppl=(+h.adults||0)+(+h.kids||0);
+      return '<div class="bk-hdrow"><span><b>'+esc(h.customer||"客人")+'</b>'+
+        (h.phone?'　'+esc(h.phone):'')+
+        '<small>訂金 $'+(+h.amount||0).toLocaleString()+'・'+esc(bkWayName(h.way))+
+          (h.last5?'（末五碼 '+esc(h.last5)+'）':'')+'・'+esc(h.date||"")+' 收'+
+          (ppl?'・'+ppl+' 位':'')+(h.by?'・'+esc(h.by)+' 登記':'')+
+          (h.note?'<br>'+esc(h.note):'')+'</small></span>'+
+        '<button class="bk-hdedit" data-hded="'+esc(h.id)+'">修改</button>'+
+        '<button class="bk-hdgo" data-hdgo="'+esc(h.id)+'">排時間</button></div>';
+    }).join("")+'</div>';
+}
+/* 新增或修改一筆待約訂金。holdId 沒帶就是新增 */
+function bkHoldSheet(holdId){
+  var h=holdId?bkHolds.filter(function(x){ return x.id===holdId })[0]:null;
+  if(holdId&&!h)return;
+  var way=(h&&h.way)||"linepay";
+  var ways=PAYWAYS.filter(function(p){ return !p.member });
+  function needsLast5(w){ return w==="linepay"||w==="transfer" }
+  var today=ds(new Date()).replace(/\//g,"-");
+  bkSheet(
+   '<h3>'+(h?"修改待約訂金":"先收訂金（還沒約時間）")+'</h3>'+
+   '<div class="bk-sh2">錢先記進現金流，之後在今日排課最上面按「排時間」補上日期時段就好</div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="hdName" value="'+esc(h&&h.customer||"")+'"></div>'+
+     '<div class="bk-f"><label>電話</label><input id="hdPhone" inputmode="tel" value="'+esc(h&&h.phone||"")+'"></div></div>'+
+   '<div class="bk-f2"><div class="bk-f"><label>大人（知道的話）</label>'+
+       '<input id="hdAdult" inputmode="numeric" value="'+(h?(+h.adults||0):1)+'"></div>'+
+     '<div class="bk-f"><label>小孩</label><input id="hdKid" inputmode="numeric" value="'+(h?(+h.kids||0):0)+'"></div></div>'+
+   '<div class="bk-f"><label>訂金金額 *</label><input id="hdAmt" inputmode="numeric" value="'+(h?(+h.amount||0):DEPOSIT_AMT)+'"></div>'+
+   '<div class="bk-f"><label>實際收款方式</label><div class="bk-ways" id="hdWays"></div></div>'+
+   '<div class="bk-f" id="hdLast5Wrap" style="display:none"><label id="hdLast5Label">末五碼</label>'+
+     '<input id="hdLast5" inputmode="numeric" maxlength="5" placeholder="例如 12345" value="'+esc(h&&h.last5||"")+'"></div>'+
+   '<div class="bk-f"><label>收款日期</label>'+
+     '<input id="hdDate" type="date" value="'+(h&&h.date?String(h.date).replace(/\//g,"-"):today)+'"></div>'+
+   '<div class="bk-f"><label>備註</label><textarea id="hdNote" rows="2" placeholder="例：想上兒童課，大概下個月，週末">'+
+     esc(h&&h.note||"")+'</textarea></div>'+
+   '<div class="bk-act">'+
+     (h?'<button class="bk-cancel" id="hdDel">作廢</button>':'')+
+     '<button class="bk-cancel" id="hdX">關閉</button>'+
+     '<button class="bk-save" id="hdOK">'+(h?"儲存修改":"確認已收")+'</button></div>');
+  document.getElementById("hdX").onclick=bkClose;
+  function drawWays(){
+    document.getElementById("hdWays").innerHTML=ways.map(function(p){
+      return '<div class="bk-way'+(way===p.k?" on":"")+'" data-w="'+p.k+'">'+p.n+'</div>' }).join("");
+    document.querySelectorAll("#hdWays [data-w]").forEach(function(el){
+      el.onclick=function(){ way=el.dataset.w; drawWays() } });
+    var wrap=document.getElementById("hdLast5Wrap");
+    if(needsLast5(way)){
+      wrap.style.display="block";
+      document.getElementById("hdLast5Label").textContent=bkWayName(way)+" 末五碼";
+    }else wrap.style.display="none";
+  }
+  drawWays();
+  var del=document.getElementById("hdDel");
+  if(del)del.onclick=async function(){
+    if(!confirm("作廢這筆訂金？現金流那邊會一起撤掉（等於沒收過）。\n客人真的退款、或是登記錯了才按。"))return;
+    this.disabled=true;
+    try{
+      var r=await fetch(salf("/deposits/"+h.id+".json"),{method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({voided:true,voidAt:new Date().toISOString(),
+          voidBy:(typeof ME!=="undefined"&&ME&&ME.displayName)||""})});
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      bkClose(); await bkLoadHolds(); bkRender(true);
+    }catch(e){ alert("作廢失敗："+e.message); this.disabled=false }
+  };
+  document.getElementById("hdOK").onclick=async function(){
+    var g=function(id){ return String(document.getElementById(id).value||"").trim() };
+    var a=Math.round(+g("hdAmt")||0), d=g("hdDate");
+    if(!g("hdName")){ alert("姓名必填"); return }
+    if(!(a>0)){ alert("訂金金額要大於 0"); return }
+    if(!d){ alert("請填收款日期"); return }
+    var dstr=d.replace(/-/g,"/");
+    if(dstr>ds(new Date())&&!confirm("收款日期比今天還晚，確定嗎？"))return;
+    var btn=this; btn.disabled=true; btn.textContent="處理中…";
+    var rec={date:dstr,bookingId:"",hold:true,dept:"4F",kind:"deposit",
+      customer:g("hdName"),phone:g("hdPhone"),
+      adults:+g("hdAdult")||0,kids:+g("hdKid")||0,note:g("hdNote"),
+      amount:a,way:way,wayName:bkWayName(way),last5:needsLast5(way)?g("hdLast5"):"",
+      classDate:"",slot:"",voided:false};
+    try{
+      var r;
+      if(h){
+        rec.editedAt=new Date().toISOString();
+        rec.editedBy=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
+        r=await fetch(salf("/deposits/"+h.id+".json"),{method:"PATCH",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+      }else{
+        rec.by=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
+        rec.at=new Date().toISOString();
+        r=await fetch(salf("/deposits.json"),{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+      }
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      bkClose(); await bkLoadHolds(); bkRender(true);
+    }catch(e){
+      alert("存檔失敗："+e.message);
+      btn.disabled=false; btn.textContent=h?"儲存修改":"確認已收";
+    }
+  };
+}
+
 var BK_SEEN_KEY="otto2_bk_lastSeenTs";
 function bkIsNewWeb(b){
   return !!(b&&(b.source==="web"||b.source==="ai-chat")&&String(b.ts||"")>(localStorage.getItem(BK_SEEN_KEY)||""));
@@ -1371,7 +1496,7 @@ async function bkRender(noReload){
     else if(bkDrawnDate!==ds(bkDate))root.style.opacity=".45";
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses()]); }
+    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds()]); }
     finally{ bkBusy=false; root.style.opacity=""; } }
   bkDrawnDate=ds(bkDate);
   var d=bkDate, today=ds(new Date())===ds(d);
@@ -1392,6 +1517,7 @@ async function bkRender(noReload){
   root.innerHTML=
    bkNotifBannerHtml()+
    bkCancelBannerHtml()+
+   bkHoldBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
      '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
@@ -1420,7 +1546,8 @@ async function bkRender(noReload){
    '</div>'+
    (overDetail.length?'<div class="bk-over">⚠️ '+overDetail.join("、")+
      ' 超過表定上限，請確認人手。</div>':"")+
-   '<button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
+   '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
+     '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button></div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
@@ -1512,6 +1639,9 @@ async function bkRender(noReload){
   /* 不能直接掛 bkManual：onclick 會把事件物件當成第一個參數傳進去，
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
+  document.getElementById("bkAddHold").onclick=function(){ bkHoldSheet() };
+  root.querySelectorAll("[data-hded]").forEach(function(el){ el.onclick=function(){ bkHoldSheet(el.dataset.hded) } });
+  root.querySelectorAll("[data-hdgo]").forEach(function(el){ el.onclick=function(){ bkManual(null,null,el.dataset.hdgo) } });
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     var k=el.dataset.slk;
     bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender(true);
@@ -2919,7 +3049,7 @@ async function bkCancel(id){
 }
 
 /* ══ 手動登記（代客人預約）══ */
-async function bkManual(editId,repeatId){
+async function bkManual(editId,repeatId,holdId){
   /* 帶 editId 就是改一筆既有的。手動登記常常打錯人數或選錯時段，
      原本只能取消重開，客人的 LINE 通知會再發一次。 */
   var eb=editId?bkList.filter(function(x){return x.id===editId})[0]:null;
@@ -2929,7 +3059,12 @@ async function bkManual(editId,repeatId){
      下週同一天，金額用目前的課程單價重算，避免用到舊報價。 */
   var rp=(!eb&&repeatId)?bkList.filter(function(x){return x.id===repeatId})[0]:null;
   if(repeatId&&!eb&&!rp)return;
-  var tmpl=eb||rp;
+  /* 帶 holdId 是「先收了訂金、現在才排時間」：資料從待約訂金帶進來，
+     日期預設畫面正在看的那天，登記完訂金自動掛到這筆預約上。 */
+  var hd=(!eb&&!rp&&holdId)?bkHolds.filter(function(x){return x.id===holdId})[0]:null;
+  if(holdId&&!eb&&!rp&&!hd)return;
+  var tmpl=eb||rp||(hd?{date:ds(bkDate),adults:(+hd.adults||0)||((+hd.kids||0)?0:1),kids:+hd.kids||0,
+    customer:{name:hd.customer||"",phone:hd.phone||"",note:hd.note||""}}:null);
   var initDateIso=ds(bkDate).replace(/\//g,"-");
   if(tmpl){
     initDateIso=String(tmpl.date).replace(/\//g,"-");
@@ -2944,9 +3079,10 @@ async function bkManual(editId,repeatId){
      地方搜）→日期時段→課程→備註。課程／加購原本收合過，大熊說
      「這不用對折，直接大開就好」，改回一律展開；底下 qty/amt/addons
      那一整套 mDraw／mRecalc 邏輯完全沒動，只是外層不再包收合容器。 */
-  bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":"手動登記預約"))+'</h3><div class="bk-sh2">'+
-   (eb?"改完會直接覆蓋，不會重發通知":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
-   (eb?'':'<div class="bk-f" id="mPhotoBox">'+
+  bkSheet('<h3>'+(eb?"修改預約":(rp?"約下次上課":(hd?"排上課時間（已收訂金）":"手動登記預約")))+'</h3><div class="bk-sh2">'+
+   (eb?"改完會直接覆蓋，不會重發通知":hd?"已收訂金 $"+(+hd.amount||0).toLocaleString()+"（"+esc(bkWayName(hd.way))+"，"+esc(hd.date||"")+
+     " 收），選好日期時段按登記，訂金會自動掛到這筆預約，核銷時扣抵":(rp?"已經帶入這筆的資料，日期先抓下週同一天，金額用目前課程價格重算，確認沒問題再送出":"代客人預約、現場加開"))+'</div>'+
+   (eb||hd?'':'<div class="bk-f" id="mPhotoBox">'+
      '<label>📷 有客人的對話截圖嗎？上傳試著自動抓姓名/電話/時段，上課內容會放進下面備註（選填，AI 抓完一定要再檢查一次）</label>'+
      '<input type="file" id="mPhotoInput" accept="image/*" style="font-size:13px">'+
      '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#8A90A0)"></div></div>')+
@@ -2984,7 +3120,7 @@ async function bkManual(editId,repeatId){
      '<button class="bk-save" id="mOK">'+(eb?"儲存修改":"登記")+'</button>'+
      /* 收訂金只對「新登記」有意義——改既有預約通常訂金早就處理過了，
         混進編輯流程反而容易讓人搞混是要改訂金還是改預約內容。 */
-     (eb?"":'<button class="bk-save bk-save-gold" id="mOKDep">登記＋收訂金</button>')+
+     (eb||hd?"":'<button class="bk-save bk-save-gold" id="mOKDep">登記＋收訂金</button>')+
      '</div>');
   document.getElementById("mX").onclick=bkClose;
   var picked=null, pickedUid=null;
@@ -3414,6 +3550,7 @@ async function bkManual(editId,repeatId){
     if(rpMatch){ picked=rpMatch; renderPickCard() }
     showNotify();
   }
+  if(hd){ tryPhoneMatch(); showNotify() }
   /* ══ 電話自動比對會員（2026-09-22）══════════════════════════
      大熊指出：以前打電話欄跟「找會員」是兩條互不相通的路——直接把
      電話打進電話欄，系統完全不會去比對是不是舊會員，要另外點開
@@ -3619,6 +3756,28 @@ async function bkManual(editId,repeatId){
         var rr=await (await fetch(bkf("/bookings.json"),{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)})).json();
         newId=rr&&rr.name;
+        if(hd&&newId){
+          /* 把待約訂金掛到這筆預約上。預約本身已經存好了，這段失敗
+             不能讓人以為整筆登記失敗，單獨警告、講清楚要手動補什麼。 */
+          try{
+            var now=new Date().toISOString(), who=(typeof ME!=="undefined"&&ME&&ME.displayName)||"";
+            var r1=await bkPatch("/bookings/"+newId+"/deposit.json",{
+              method:hd.way,name:bkWayName(hd.way),amount:+hd.amount||0,
+              status:"paid",paidWay:hd.way,paidDate:hd.date,paidAt:hd.at||now,
+              last5:hd.last5||"",by:hd.by||who,logId:hd.id});
+            if(!r1.ok)throw new Error("HTTP "+r1.status);
+            var r2=await fetch(salf("/deposits/"+hd.id+".json"),{method:"PATCH",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({bookingId:newId,classDate:d,slot:useSlots[0]||"",
+                scheduledAt:now,scheduledBy:who})});
+            if(!r2.ok)throw new Error("HTTP "+r2.status);
+            bkHolds=bkHolds.filter(function(x){ return x.id!==hd.id });
+          }catch(hdErr){
+            alert("預約已經登記成功，但訂金沒有掛上去（"+hdErr.message+"）。\n"+
+                  "請在這筆預約按「收訂金」手動補登 $"+(+hd.amount||0)+"，"+
+                  "補完再把上面「待約訂金」那筆按「修改」→「作廢」，不然現金流會重複算。");
+          }
+        }
       }
       if(pickedUid&&wantNotify&&wantNotify.checked){
         fetch(NOTIFY+"/notify/booking",{method:"POST",
@@ -3731,6 +3890,19 @@ css.textContent=
 ".bk-cxrow small{display:block;color:#A8625B;font-size:12px}"+
 ".bk-cxok{flex:0 0 auto;background:#C9453B;color:#fff;border:0;border-radius:8px;"+
   "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
+".bk-hdbar{background:#FFF6E3;border:1.5px solid #E8C77A;border-radius:12px;padding:12px 15px;"+
+  "margin-bottom:16px;color:#7A5410;font-size:13.5px;line-height:1.5}"+
+".bk-hdh{font-weight:700;margin-bottom:6px}"+
+".bk-hdrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed #EBD29B}"+
+".bk-hdrow span{flex:1;min-width:0}"+
+".bk-hdrow small{display:block;color:#9A7433;font-size:12px}"+
+".bk-hdgo,.bk-hdedit{flex:0 0 auto;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;"+
+  "cursor:pointer;font-family:inherit}"+
+".bk-hdgo{background:#C99A3B;color:#fff;border:0}"+
+".bk-hdedit{background:#fff;color:#9A7433;border:1px solid #E8C77A}"+
+".bk-addrow{display:flex;gap:8px;flex-wrap:wrap}"+
+".bk-addrow .bk-add{flex:1 1 200px}"+
+".bk-add.bk-add-hold{background:#C99A3B}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
 ".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
   "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
