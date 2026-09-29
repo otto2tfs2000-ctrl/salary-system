@@ -2071,7 +2071,7 @@ async function bkRender(noReload){
      ' 超過表定上限，請確認人手。</div>':"")+
    '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
      '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button>'+
-     '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送（沒有預約的）</button></div>'+
+     '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送</button></div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
