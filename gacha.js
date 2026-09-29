@@ -318,8 +318,15 @@ function gcSettingsHtml(){
         '這幾天每個人多一次機會，而且每一次都一定中。多個日期用逗號隔開，格式 2026-10-31') +
     row('測試電話', '<textarea rows="3" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcSetC(\'testPhones\',this.value)">' +
         gcEsc((c.testPhones || []).join('\n')) + '</textarea>',
-        '一行一支。活動開始前，這些電話綁定的 LINE 就能先玩。<b>抽到的紅利和票券是真的會入帳</b>，測完記得到會員分頁把紅利調回來') +
+        '一行一支。活動開始前，這些電話綁定的 LINE 可以先測試。<b>員工名單裡的人不用加</b>，用自己的 LINE 打開預約頁就自動是測試模式') +
     '</div>';
+
+  if (gcData.today < c.start) h += '<div class="card"><div class="card-title">活動開始前的測試</div>' +
+    '<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:12px">' +
+    '活動開始前，員工和上面的測試電話可以<b>無限次</b>玩，每轉一次算集滿一天（方便測到集章保底）。<br>' +
+    '測試期間抽到的紅利、票券<b>都不會入帳</b>，也不會扣限量獎品的數量。<br>' +
+    '正式開始前按下面這顆，把所有測試紀錄清掉（綁好的電話會留著）。</div>' +
+    '<button class="btn btn-del" onclick="gcResetTest()">🧹 清空所有測試紀錄</button></div>';
 
   h += '<div class="card"><div class="card-title">集章保底</div>' +
     '<div class="muted" style="font-size:12.5px;margin-bottom:10px">累積玩滿幾天（不用連續）就自動送，不算在紅利上限裡。</div>';
@@ -348,4 +355,13 @@ function gcSetM(i, k, v){
   if (k === 'd' || k === 'v') v = +v || 0;
   m[k] = v;
   if (k === 'type') { if (v === 'bonus' && !m.v) m.v = 3; if (v === 'ticket' && !m.kind) m.kind = 'goods'; renderGacha() }
+}
+
+async function gcResetTest(){
+  if (!confirm('要清空所有測試紀錄嗎？\n\n會清掉：測試遊玩紀錄、中獎紀錄、限量獎品的已送出數量、活動開始前玩過的次數。\n不會動：綁好的電話、已經寫進會員明細的紅利。')) return;
+  try {
+    var j = await staffApi('/staff/gacha/reset-test', {});
+    alert('已清空：' + j.players + ' 位玩家的次數、' + j.logs + ' 筆測試紀錄');
+    await gcReload();
+  } catch(e) { alert('清空失敗：' + e.message) }
 }
