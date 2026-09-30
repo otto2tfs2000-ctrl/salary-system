@@ -403,12 +403,17 @@ function gcGamesHtml(){
     '<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">萬聖節那天扭蛋機換成橘紫色、小黑熊戴南瓜帽，南瓜熊比較容易抽到。多個日期用逗號隔開，格式 2026-10-31</div>' +
     '<div style="text-align:right;margin-top:12px"><button class="btn btn-gold" onclick="gcSave()">💾 儲存開關</button></div></div>';
 
+  var lvN = [0,0,0,0,0]; gcQuiz.forEach(function(q){ lvN[+q.lv || 1]++ });
+  var pct = function(n){ return gcQuiz.length ? Math.round(n / gcQuiz.length * 100) + '%' : '0%' };
   h += '<div class="card"><div class="card-title">藝術小問答題庫（' + gcQuiz.length + ' 題）</div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">每天照順序輪一題。點選項前面的圓圈設定正確答案。' +
+    '<div style="font-size:13px;margin-bottom:8px">簡單 <b>' + lvN[1] + '</b>（' + pct(lvN[1]) + '）・中等 <b>' + lvN[2] + '</b>（' + pct(lvN[2]) + '）・有難度 <b>' + lvN[3] + '</b>（' + pct(lvN[3]) + '）・超難 <b>' + lvN[4] + '</b>（' + pct(lvN[4]) + '）</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">每個人每天隨機抽一題，抽過的不會再出現；選項順序會自動打亂。點選項前面的圓圈設定正確答案。' +
     (gcData.quizDefault ? '<br>目前是內建的預設題庫，存過一次之後就以這裡為準。' : '') + '</div>';
   gcQuiz.forEach(function(q, i){
     h += '<div style="border-top:1px solid var(--border);padding:10px 0">' +
       '<div style="display:flex;gap:8px;align-items:center"><b style="width:28px;color:var(--text3)">' + (i + 1) + '</b>' +
+      '<select style="padding:5px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" onchange="gcQuiz[' + i + '].lv=+this.value;renderGacha()">' +
+      [[1,'簡單'],[2,'中等'],[3,'有難度'],[4,'超難']].map(function(o){ return '<option value="' + o[0] + '"' + ((+q.lv || 1) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>' }).join('') + '</select>' +
       '<input value="' + gcEsc(q.q) + '" placeholder="題目" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13.5px" onchange="gcQuiz[' + i + '].q=this.value">' +
       '<button class="btn btn-del btn-sm" onclick="gcQuiz.splice(' + i + ',1);renderGacha()">刪除</button></div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 0 36px">' +
@@ -419,7 +424,7 @@ function gcGamesHtml(){
       }).join('') + '</div>' +
       '<input value="' + gcEsc(q.t || '') + '" placeholder="答完顯示的小知識（選填）" style="margin:6px 0 0 36px;width:calc(100% - 36px);padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" onchange="gcQuiz[' + i + '].t=this.value"></div>';
   });
-  h += '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="gcQuiz.push({q:\'\',o:[\'\',\'\',\'\',\'\'],a:0,t:\'\'});renderGacha()">＋ 新增一題</button>' +
+  h += '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="gcQuiz.push({lv:1,q:\'\',o:[\'\',\'\',\'\',\'\'],a:0,t:\'\'});renderGacha()">＋ 新增一題</button>' +
     '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcQuiz=JSON.parse(JSON.stringify(gcData.quiz||[]));renderGacha()">放棄修改</button>' +
     '<button class="btn btn-gold" onclick="gcSaveQuiz()">💾 儲存題庫</button></div></div>';
   return h;
