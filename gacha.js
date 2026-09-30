@@ -18,7 +18,8 @@ function gcEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
 var GC_WHO = { all:'所有人', mem:'只有會員', new:'只有新客' };
 var GC_TYPE = { bonus:'紅利', ticket:'票券／贈品', none:'銘謝惠顧' };
-var GC_WHY = { daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底' };
+var GC_WHY = { daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試' };
+var gcQuiz = null;
 var GC_KIND = { cash:'現金抵用', goods:'實體贈品', bundle:'贈課券', other:'其他' };
 
 async function gcLoad(){
@@ -26,6 +27,7 @@ async function gcLoad(){
   try {
     gcData = await staffApi('/staff/gacha', {});
     gcDraft = JSON.parse(JSON.stringify(gcData.cfg));
+    gcQuiz = JSON.parse(JSON.stringify(gcData.quiz || []));
   } finally { gcLoading = false }
 }
 
@@ -36,13 +38,13 @@ async function renderGacha(){
     el.innerHTML = '<div class="empty">載入扭蛋資料中…</div>';
     try { await gcLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到扭蛋資料：' + gcEsc(e.message) + '</div>'; return }
   }
-  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['settings','活動設定']];
+  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定']];
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (gcTab === t[0] ? ' active' : '') + '" onclick="gcSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="gcReload()">↻ 重新讀取</button></div>';
   if (gcData.isDefault) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完獎品或活動設定按「儲存」之後，就會以這裡的為準。</div>';
-  h += gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
+  h += gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
   el.innerHTML = h;
   if (gcTab === 'log') {
     var sb = document.getElementById('gc-search');
@@ -87,6 +89,17 @@ function gcOverviewHtml(){
     gcStat(bonus, '累計送出紅利', '含集章保底') +
     gcStat(tkt, '累計送出票券', '') +
     '</div>';
+  var pls = gcData.players || {}, qN = 0, qOk = 0, memN = 0, colN = 0;
+  Object.keys(pls).forEach(function(ph){
+    var d = ((pls[ph] || {}).days || {})[today] || {};
+    if (d.quiz) { qN++; if (d.quiz.ok) qOk++ }
+    if (d.memory) memN++;
+    if ((pls[ph] || {}).collected) colN++;
+  });
+  h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">' +
+    gcStat(qN, '今天答題的人', '答對 ' + qOk + ' 人') +
+    gcStat(memN, '今天翻牌過關', '') +
+    gcStat(colN, '黑熊圖鑑集滿', '累計') + '</div>';
   if (all.some(function(x){ return x.test })) h += '<div class="muted" style="font-size:12px;margin-top:10px">上面數字不含活動開始前測試名單玩的紀錄。</div>';
   h += '</div>';
 
@@ -364,4 +377,55 @@ async function gcResetTest(){
     alert('已清空：' + j.players + ' 位玩家的次數、' + j.logs + ' 筆測試紀錄');
     await gcReload();
   } catch(e) { alert('清空失敗：' + e.message) }
+}
+
+/* ── 小遊戲：開關、題庫 ── */
+function gcGamesHtml(){
+  var g = gcDraft.games || (gcDraft.games = { quiz:true, memory:true, collect:true });
+  var sw = function(k, label, note){
+    return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border);font-size:13.5px;cursor:pointer">' +
+      '<input type="checkbox" ' + (g[k] ? 'checked' : '') + ' onchange="gcDraft.games.' + k + '=this.checked" style="margin-top:3px">' +
+      '<span><b>' + label + '</b><br><span class="muted" style="font-size:12.5px;line-height:1.7">' + note + '</span></span></label>';
+  };
+  var cr = gcDraft.collectReward || (gcDraft.collectReward = { type:'ticket', kind:'goods', nm:'23cm 流動熊（圖鑑集滿禮）' });
+  var h = '<div class="card"><div class="card-title">小遊戲開關</div>' +
+    sw('quiz', '🎨 每日藝術小問答', '每天一題（大家同一題），答對當天多一次扭蛋。題目在下面題庫改') +
+    sw('memory', '🃏 翻牌配對', '60 秒內配完 6 對小黑熊，當天多一次扭蛋（一天只算一次）') +
+    sw('collect', '📖 黑熊圖鑑', '每轉一次扭蛋另外送一隻造型小黑熊，一共 ' + (gcDraft.bears || []).length + ' 款，集滿送下面的圖鑑禮') +
+    '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-top:12px;font-size:13.5px">' +
+    '<label style="color:var(--text2)">圖鑑集滿禮</label><input value="' + gcEsc(cr.nm) + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcDraft.collectReward.nm=this.value">' +
+    '<label style="color:var(--text2)">萬聖節造型日期</label><input value="' + gcEsc((gcDraft.halloweenDays || []).join(', ')) + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" ' +
+    'onchange="gcDraft.halloweenDays=this.value.split(/[,，\\s]+/).map(function(x){return x.trim().replace(/\\//g,\'-\')}).filter(Boolean)"></div>' +
+    '<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">萬聖節那天扭蛋機換成橘紫色、小黑熊戴南瓜帽，南瓜熊比較容易抽到。多個日期用逗號隔開，格式 2026-10-31</div>' +
+    '<div style="text-align:right;margin-top:12px"><button class="btn btn-gold" onclick="gcSave()">💾 儲存開關</button></div></div>';
+
+  h += '<div class="card"><div class="card-title">藝術小問答題庫（' + gcQuiz.length + ' 題）</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">每天照順序輪一題。點選項前面的圓圈設定正確答案。' +
+    (gcData.quizDefault ? '<br>目前是內建的預設題庫，存過一次之後就以這裡為準。' : '') + '</div>';
+  gcQuiz.forEach(function(q, i){
+    h += '<div style="border-top:1px solid var(--border);padding:10px 0">' +
+      '<div style="display:flex;gap:8px;align-items:center"><b style="width:28px;color:var(--text3)">' + (i + 1) + '</b>' +
+      '<input value="' + gcEsc(q.q) + '" placeholder="題目" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13.5px" onchange="gcQuiz[' + i + '].q=this.value">' +
+      '<button class="btn btn-del btn-sm" onclick="gcQuiz.splice(' + i + ',1);renderGacha()">刪除</button></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0 0 36px">' +
+      [0,1,2,3].map(function(k){
+        return '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="radio" name="gcqa' + i + '" ' + (+q.a === k ? 'checked' : '') +
+          ' onchange="gcQuiz[' + i + '].a=' + k + '"><input value="' + gcEsc((q.o || [])[k] || '') + '" placeholder="選項 ' + "ABCD"[k] + '" style="flex:1;padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:13px' +
+          (+q.a === k ? ';background:#e3f4ea' : '') + '" onchange="gcQuiz[' + i + '].o[' + k + ']=this.value"></label>';
+      }).join('') + '</div>' +
+      '<input value="' + gcEsc(q.t || '') + '" placeholder="答完顯示的小知識（選填）" style="margin:6px 0 0 36px;width:calc(100% - 36px);padding:5px 7px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" onchange="gcQuiz[' + i + '].t=this.value"></div>';
+  });
+  h += '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="gcQuiz.push({q:\'\',o:[\'\',\'\',\'\',\'\'],a:0,t:\'\'});renderGacha()">＋ 新增一題</button>' +
+    '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcQuiz=JSON.parse(JSON.stringify(gcData.quiz||[]));renderGacha()">放棄修改</button>' +
+    '<button class="btn btn-gold" onclick="gcSaveQuiz()">💾 儲存題庫</button></div></div>';
+  return h;
+}
+async function gcSaveQuiz(){
+  if (!confirm('儲存題庫？每天會照這份的順序輪流出題。')) return;
+  try {
+    var j = await staffApi('/staff/gacha/quiz', { quiz:gcQuiz });
+    gcData.quiz = j.quiz; gcData.quizDefault = false; gcQuiz = JSON.parse(JSON.stringify(j.quiz));
+    alert('題庫已儲存（' + j.quiz.length + ' 題）');
+    renderGacha();
+  } catch(e) { alert('儲存失敗：' + e.message) }
 }
