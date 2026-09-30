@@ -99,7 +99,7 @@ function gcOverviewHtml(){
   h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">' +
     gcStat(qN, '今天答題的人', '答對 ' + qOk + ' 人') +
     gcStat(memN, '今天翻牌過關', '') +
-    gcStat(colN, '黑熊圖鑑集滿', '累計') + '</div>';
+    gcStat(colN, '黑熊圖鑑集滿', '集滿禮已送 ' + (+(gcData.stock || {}).collect || 0) + '／' + (gcData.cfg.collectLimit == null ? 5 : gcData.cfg.collectLimit)) + '</div>';
   if (all.some(function(x){ return x.test })) h += '<div class="muted" style="font-size:12px;margin-top:10px">上面數字不含活動開始前測試名單玩的紀錄。</div>';
   h += '</div>';
 
@@ -325,6 +325,8 @@ function gcSettingsHtml(){
     row('開始日期', inp('start', c.start, 'date'), '這天之前，只有下面「測試電話」可以玩') +
     row('結束日期', inp('end', c.end, 'date')) +
     row('紅利上限', inp('cap', c.cap, 'number', 90) + ' 點', '每個人整個活動期間，每日扭蛋最多拿幾點。集章保底另外算。拿滿之後改送抽獎券') +
+    row('每天最多轉', inp('maxDaily', c.maxDaily == null ? 5 : c.maxDaily, 'number', 90) + ' 次', '不管拿到幾種加碼（上課、預約、問答、翻牌、加碼日），一天最多轉幾次') +
+    row('每天最多中紅利', inp('bonusDaily', c.bonusDaily == null ? 2 : c.bonusDaily, 'number', 90) + ' 次', '中滿之後，當天剩下的扭蛋不會再出紅利，改送造型小黑熊') +
     row('票券期限', inp('expiry', c.expiry, 'date'), '抽到的票券到哪天前要用掉') +
     row('抽獎券名稱', inp('lotteryName', c.lotteryName, '', 220)) +
     row('加碼日', '<input value="' + gcEsc((c.doubleDays || []).join(', ')) + '" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcSetC(\'doubleDays\',this.value)">',
@@ -358,7 +360,7 @@ function gcSettingsHtml(){
   return h;
 }
 function gcSetC(k, v){
-  if (k === 'cap') v = +v || 0;
+  if (k === 'cap' || k === 'maxDaily' || k === 'bonusDaily') v = +v || 0;
   if (k === 'doubleDays') v = String(v).split(/[,，\s]+/).map(function(x){ return x.trim().replace(/\//g, '-') }).filter(Boolean);
   if (k === 'testPhones') v = String(v).split(/[\n,，\s]+/).map(function(x){ return x.replace(/\D/g, '') }).filter(Boolean);
   gcDraft[k] = v;
@@ -394,6 +396,8 @@ function gcGamesHtml(){
     sw('collect', '📖 黑熊圖鑑', '每轉一次扭蛋另外送一隻造型小黑熊，一共 ' + (gcDraft.bears || []).length + ' 款，集滿送下面的圖鑑禮') +
     '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-top:12px;font-size:13.5px">' +
     '<label style="color:var(--text2)">圖鑑集滿禮</label><input value="' + gcEsc(cr.nm) + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcDraft.collectReward.nm=this.value">' +
+    '<label style="color:var(--text2)">集滿禮限量</label><div><input type="number" min="0" value="' + (gcDraft.collectLimit == null ? 5 : gcDraft.collectLimit) + '" style="width:80px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcDraft.collectLimit=+this.value||0"> 名　' +
+    '<span class="muted" style="font-size:12px">已送出 ' + (+(gcData.stock || {}).collect || 0) + ' 名（0＝不限）</span></div>' +
     '<label style="color:var(--text2)">萬聖節造型日期</label><input value="' + gcEsc((gcDraft.halloweenDays || []).join(', ')) + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" ' +
     'onchange="gcDraft.halloweenDays=this.value.split(/[,，\\s]+/).map(function(x){return x.trim().replace(/\\//g,\'-\')}).filter(Boolean)"></div>' +
     '<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">萬聖節那天扭蛋機換成橘紫色、小黑熊戴南瓜帽，南瓜熊比較容易抽到。多個日期用逗號隔開，格式 2026-10-31</div>' +
