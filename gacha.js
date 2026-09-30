@@ -324,9 +324,11 @@ function gcSettingsHtml(){
     row('活動名稱', inp('title', c.title, '', 220)) +
     row('開始日期', inp('start', c.start, 'date'), '這天之前，只有下面「測試電話」可以玩') +
     row('結束日期', inp('end', c.end, 'date')) +
-    row('紅利上限', inp('cap', c.cap, 'number', 90) + ' 點', '每個人整個活動期間，每日扭蛋最多拿幾點。集章保底另外算。拿滿之後改送抽獎券') +
+    row('紅利上限', inp('cap', c.cap, 'number', 90) + ' 點', '會員整個活動期間，扭蛋最多拿幾點。集章保底另外算。拿滿之後改送抽獎券') +
     row('每天最多轉', inp('maxDaily', c.maxDaily == null ? 5 : c.maxDaily, 'number', 90) + ' 次', '不管拿到幾種加碼（上課、預約、問答、翻牌、加碼日），一天最多轉幾次') +
-    row('每天最多中紅利', inp('bonusDaily', c.bonusDaily == null ? 2 : c.bonusDaily, 'number', 90) + ' 次', '中滿之後，當天剩下的扭蛋不會再出紅利，改送造型小黑熊') +
+    row('每天最多中紅利', inp('bonusDaily', c.bonusDaily == null ? 2 : c.bonusDaily, 'number', 90) + ' 次（會員）　' +
+        inp('bonusDailyNew', c.bonusDailyNew == null ? 1 : c.bonusDailyNew, 'number', 70) + ' 次（新朋友）', '中滿之後，當天剩下的扭蛋不會再出紅利，改送造型小黑熊') +
+    row('新朋友紅利上限', inp('capNew', c.capNew == null ? 15 : c.capNew, 'number', 90) + ' 點', '沒有方案的新朋友，整個活動期間扭蛋最多拿幾點（上面的「紅利上限」是會員的）') +
     row('票券期限', inp('expiry', c.expiry, 'date'), '抽到的票券到哪天前要用掉') +
     row('抽獎券名稱', inp('lotteryName', c.lotteryName, '', 220)) +
     row('加碼日', '<input value="' + gcEsc((c.doubleDays || []).join(', ')) + '" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcSetC(\'doubleDays\',this.value)">',
@@ -360,7 +362,7 @@ function gcSettingsHtml(){
   return h;
 }
 function gcSetC(k, v){
-  if (k === 'cap' || k === 'maxDaily' || k === 'bonusDaily') v = +v || 0;
+  if (k === 'cap' || k === 'maxDaily' || k === 'bonusDaily' || k === 'bonusDailyNew' || k === 'capNew') v = +v || 0;
   if (k === 'doubleDays') v = String(v).split(/[,，\s]+/).map(function(x){ return x.trim().replace(/\//g, '-') }).filter(Boolean);
   if (k === 'testPhones') v = String(v).split(/[\n,，\s]+/).map(function(x){ return x.replace(/\D/g, '') }).filter(Boolean);
   gcDraft[k] = v;
