@@ -336,11 +336,11 @@ function gcSettingsHtml(){
         '一行一支。活動開始前，這些電話綁定的 LINE 可以先測試。<b>員工名單裡的人不用加</b>，用自己的 LINE 打開預約頁就自動是測試模式') +
     '</div>';
 
-  if (gcData.today < c.start) h += '<div class="card"><div class="card-title">活動開始前的測試</div>' +
+  h += '<div class="card"><div class="card-title">測試紀錄</div>' +
     '<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:12px">' +
     '活動開始前，員工和上面的測試電話可以<b>無限次</b>玩，每轉一次算集滿一天（方便測到集章保底）。<br>' +
     '測試期間抽到的紅利、票券<b>都不會入帳</b>，也不會扣限量獎品的數量。<br>' +
-    '正式開始前按下面這顆，把所有測試紀錄清掉（綁好的電話會留著）。</div>' +
+    '正式開始前按下面這顆，把所有測試紀錄清掉（綁好的電話會留著）。活動開始後也可以按，只會清測試的紀錄，不會動到正式玩家。</div>' +
     '<button class="btn btn-del" onclick="gcResetTest()">🧹 清空所有測試紀錄</button></div>';
 
   h += '<div class="card"><div class="card-title">集章保底</div>' +
