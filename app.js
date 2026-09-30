@@ -525,11 +525,28 @@ function migrateTombstoneKeys() {
 // 缺的東西時，會把 cloud 那份改之前的舊版本也當成「不一樣的新項目」塞回來，變成同一筆出現兩次
 // （一筆已撥款、一筆未撥款）。沒有 id 欄位的項目（例如核銷用料紀錄，本來就是只增不改的流水帳）
 // 才退回用整筆內容比對。
+// 整筆內容比對時要先「正規化」再 stringify：Firebase 讀回來的物件 key 一律按字母排序，
+// 還會把 null／空物件整個拿掉，跟本機剛 push 進去的那份（key 照程式碼寫的順序）
+// JSON.stringify 出來不一樣——2026-09-30 大熊回報：每日登記按「新增本次紀錄」後
+// 再按「儲存當日營收」，今日累計紀錄就多一條一模一樣的。原因是第二次存檔前補缺時，
+// 雲端那份（key 排過序）被當成不同的一筆塞回本機陣列。任何同一個分頁連存兩次的
+// 無 id 陣列（每日登記、核銷用料…）都會踩到，不只營收按鈕。
+function canonItem(v) {
+  if (v === null || v === undefined) return undefined;
+  if (Array.isArray(v)) return v.map(canonItem);
+  if (typeof v !== 'object') return v;
+  var out = {}, has = false;
+  Object.keys(v).sort().forEach(function(k){
+    var c = canonItem(v[k]);
+    if (c !== undefined) { out[k] = c; has = true; }
+  });
+  return has ? out : undefined;
+}
 function arrayItemKey(item) {
   if (item && typeof item === 'object' && !Array.isArray(item) && item.id !== undefined && item.id !== null) {
     return 'id:' + item.id;
   }
-  try { return JSON.stringify(item); } catch(e) { return String(item); }
+  try { return JSON.stringify(canonItem(item)); } catch(e) { return String(item); }
 }
 
 /* tombstoneMark/tombstonePath 的路徑、還有 arrayItemKey() 的回傳值（沒有 id 的項目
@@ -596,7 +613,9 @@ function fillMissingFromCloud(local, cloud, path) {
       var seen = {}; lVal.forEach(function(it){ seen[arrayItemKey(it)] = true; });
       cVal.forEach(function(it){
         var k = arrayItemKey(it);
-        if (!seen[k] && !tomb[fbSafeTombKey(k)]) { seen[k] = true; lVal.push(it); }
+        // 舊墓碑是改用正規化 key 之前寫的（直接 JSON.stringify），兩種格式都要認
+        var legacyK; try { legacyK = JSON.stringify(it); } catch(e) { legacyK = k; }
+        if (!seen[k] && !tomb[fbSafeTombKey(k)] && !tomb[fbSafeTombKey(legacyK)]) { seen[k] = true; lVal.push(it); }
       });
     } else if (cVal && typeof cVal === 'object' && !Array.isArray(cVal)
                && lVal && typeof lVal === 'object' && !Array.isArray(lVal)) {
