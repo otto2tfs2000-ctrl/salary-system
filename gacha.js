@@ -345,6 +345,10 @@ function gcSettingsHtml(){
     row('測試電話', '<textarea rows="3" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcSetC(\'testPhones\',this.value)">' +
         gcEsc((c.testPhones || []).join('\n')) + '</textarea>',
         '一行一支。活動開始前，這些電話綁定的 LINE 可以先測試。<b>員工名單裡的人不用加</b>，用自己的 LINE 打開預約頁就自動是測試模式') +
+    row('示範人員', '<label style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox"' + (c.demoStaff !== false ? ' checked' : '') + ' onchange="gcSetC(\'demoStaff\',this.checked)"> 員工名單裡的人自動無限次</label>' +
+        '<textarea rows="3" placeholder="其他要無限次的電話，一行一支" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcSetC(\'demoPhones\',this.value)">' +
+        gcEsc((c.demoPhones || []).join('\n')) + '</textarea>',
+        '<b>活動期間</b>給老師示範用：可以一直轉，抽到的紅利、票券<b>都不會入帳</b>，也不會扣限量獎品，紀錄跟「測試紀錄」放一起。不是員工但要示範的人，把他綁定的電話加在這裡') +
     '</div>';
 
   h += '<div class="card"><div class="card-title">測試紀錄</div>' +
@@ -373,7 +377,7 @@ function gcSettingsHtml(){
 function gcSetC(k, v){
   if (k === 'cap' || k === 'maxDaily' || k === 'bonusDaily' || k === 'bonusDailyNew' || k === 'capNew') v = +v || 0;
   if (k === 'doubleDays') v = String(v).split(/[,，\s]+/).map(function(x){ return x.trim().replace(/\//g, '-') }).filter(Boolean);
-  if (k === 'testPhones') v = String(v).split(/[\n,，\s]+/).map(function(x){ return x.replace(/\D/g, '') }).filter(Boolean);
+  if (k === 'testPhones' || k === 'demoPhones') v = String(v).split(/[\n,，\s]+/).map(function(x){ return x.replace(/\D/g, '') }).filter(Boolean);
   gcDraft[k] = v;
 }
 function gcSetM(i, k, v){
