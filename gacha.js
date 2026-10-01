@@ -302,7 +302,16 @@ function gcResetDraft(){ gcDraft = JSON.parse(JSON.stringify(gcData.cfg)); rende
 async function gcSave(){
   if (!confirm('儲存之後，客人下一次轉扭蛋就會用新的設定。確定嗎？')) return;
   try {
-    var j = await staffApi('/staff/gacha/config', { cfg:gcDraft });
+    /* 先拿雲端最新的設定，只把「這個畫面上真的有改」的欄位蓋上去。
+       避免頁面開很久沒重整，存檔時把別人（或程式）後來改的設定整包蓋回舊的。 */
+    var base = (gcData && gcData.cfg) || {};
+    var latest = (await staffApi('/staff/gacha', {})).cfg || {};
+    var out = JSON.parse(JSON.stringify(latest));
+    Object.keys(gcDraft).forEach(function(k){
+      if (JSON.stringify(gcDraft[k]) !== JSON.stringify(base[k])) out[k] = gcDraft[k];
+    });
+    var j = await staffApi('/staff/gacha/config', { cfg:out });
+    if (!gcData) gcData = { cfg:j.cfg, players:{}, log:{}, stock:{} };
     gcData.cfg = j.cfg; gcData.isDefault = false; gcDraft = JSON.parse(JSON.stringify(j.cfg));
     alert('已儲存');
     renderGacha();
