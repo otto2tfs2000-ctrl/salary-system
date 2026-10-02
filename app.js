@@ -765,6 +765,7 @@ function doSwitchTab(tab) {
   if (tab==='quote' && window.renderQuote) renderQuote();
   if (tab==='member') renderMember();
   if (tab==='gacha' && window.renderGacha) renderGacha();
+  if (tab==='xmas' && window.renderXmas) renderXmas();
   if (tab==='recipe') renderRecipe();
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();

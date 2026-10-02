@@ -62,6 +62,7 @@
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
   <div class="tab" data-tab="gacha" onclick="switchTab('gacha')">🎰 扭蛋活動</div>
+  <div class="tab" data-tab="xmas" onclick="switchTab('xmas')">🎄 聖誕走格子</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" data-tab="finance" onclick="switchTab('finance')">💵 報表</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
@@ -109,6 +110,11 @@
 <div id="tab-gacha" class="page">
   <h2>🎰 扭蛋活動</h2>
   <div id="gacha-body"></div>
+</div>
+
+<div id="tab-xmas" class="page">
+  <h2>🎄 聖誕走格子</h2>
+  <div id="xmas-body"></div>
 </div>
 
 <div id="tab-monthly" class="page">
@@ -471,6 +477,7 @@
 <script src="finance.js?v=20260814a"></script>
 <script src="staff.js?v=20260930a"></script>
 <script src="gacha.js?v=20261001b"></script>
+<script src="xmas.js?v=20261002a"></script>
 <script>
 /* 手機上點完分頁就把側欄收起來，不然選單會一直擋住內容 */
 document.querySelectorAll('.tabs .tab').forEach(function(el){

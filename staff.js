@@ -30,6 +30,7 @@ var STAFF_TABS = [
   { k:"daily",       n:"每日填寫" },
   { k:"member",      n:"會員" },
   { k:"gacha",       n:"扭蛋活動" },
+  { k:"xmas",        n:"聖誕走格子" },
   { k:"monthly",     n:"月報總覽" },
   { k:"finance",     n:"報表" },
   { k:"consumables", n:"耗材記帳" },
