@@ -201,6 +201,13 @@ async function bkGviz(sheet){
   try{ Object.defineProperty(out,"__head",{value:(j.table.cols||[]).map(function(c){return String((c&&(c.label||c.id))||"").trim()}),enumerable:false}) }catch(e){}
   return out;
 }
+/* 兩人價：同課同尺寸每兩位算一次兩人價，落單的那位照原價。
+   1800／兩人 3400 → 2 位 3400、3 位 5200。客人端 otto2artclub-booking
+   index.html 的 pairTotal 是同一條公式，改這裡要一起改。 */
+function bkPairTotal(unit,pair,qty){
+  qty=+qty||0;
+  return pair>0 ? Math.floor(qty/2)*pair+(qty%2)*unit : unit*qty;
+}
 function bkNum(v){
   var m=String(v==null?"":v).replace(/[^\d.]/g,"");
   return m?Math.round(parseFloat(m)):0;
@@ -212,8 +219,13 @@ async function bkLoadCourses(){
     /* 前十一欄照位置讀（沿用舊行為）；之後新增的欄位照標題找，
        這樣你在試算表要加在哪、順序怎麼排都不會弄壞。 */
     var head={}, first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
+    /* gviz 認得出標題列時，標題不在資料裡，改從 __head 找（兩人價這種後加的欄要靠它） */
+    if(first[0]!=="分類"&&rows.__head&&rows.__head[0]==="分類"){
+      ["佔位","計時","兩人價"].forEach(function(n){
+        var i=rows.__head.indexOf(n); if(i>=0)head[n]=i });
+    }
     if(first[0]==="分類"){
-      ["佔位","計時"].forEach(function(n){
+      ["佔位","計時","兩人價"].forEach(function(n){
         var i=first.indexOf(n); if(i>=0)head[n]=i });
       rows.shift();
     }
@@ -229,6 +241,8 @@ async function bkLoadCourses(){
            客人端已經在用，後台以前讀不到，所以單價會顯示 $0。 */
         seats:head["佔位"]!=null?bkNum(r[head["佔位"]]):0,
         hourly:head["計時"]!=null?bkNum(r[head["計時"]]):0,
+        /* 兩人價：大熊在課程表自己挑課填，同課同尺寸每兩位算一次，留空＝沒有同行優惠 */
+        pair:head["兩人價"]!=null?bkNum(r[head["兩人價"]]):0,
         label:name+(spec?"（"+spec+"）":"")});
     });
     bkCourses=out;
@@ -2998,7 +3012,9 @@ async function bkCheckout(id){
         return;
       }
       var c=bkCourses[+r.ci]; if(!c)return;
-      out.push({name:c.name,spec:c.spec,qty:+r.qty||1,price:+c.price||0});
+      var o={name:c.name,spec:c.spec,qty:+r.qty||1,price:+c.price||0};
+      if(+c.pair>0&&!(+c.hourly>0))o.pair=+c.pair;
+      out.push(o);
     });
     return out;
   }
@@ -3019,6 +3035,7 @@ async function bkCheckout(id){
                          :'<span class="bk-ipad"></span>')+
         '</div>'+
         (c?'<div class="bk-left bk-iinfo">單價 $'+(+c.price||0).toLocaleString()+
+            (+c.pair>0&&!(+c.hourly>0)?"・兩人 $"+(+c.pair).toLocaleString():"")+
             (c.dur?"　時長 "+esc(c.dur):"")+'</div>':'');
     }).join("");
     box.querySelectorAll("select[data-cf=ci]").forEach(function(el){
@@ -3862,7 +3879,7 @@ async function bkManual(editId,repeatId,holdId){
       bkCourses.forEach(function(c,i){
         if(ci<0&&c.name===it.name&&String(c.spec||"")===String(it.spec||""))ci=i });
       var qty=+it.qty||1, price=+it.price||0;
-      mItems.push({ ci: ci>=0?String(ci):"", qty:qty, amt:price*qty,
+      mItems.push({ ci: ci>=0?String(ci):"", qty:qty, amt:bkPairTotal(price,+it.pair||0,qty),
                     hours:+it.hours||0,
                     qtyManual:true, amtManual:false,
                     lostName: ci<0 ? (it.name||"") : "",
@@ -3880,7 +3897,7 @@ async function bkManual(editId,repeatId,holdId){
      mAddonsTotal 是下面才宣告的 function，函式宣告會整段 hoist，
      這裡先呼叫沒問題。 */
   if(rp) mItems.forEach(function(r){
-    if(r.ci!=="")r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+    if(r.ci!=="")r.amt=mRowCourse(r)+mAddonsTotal(r);
   });
 
   function mPplNow(){
@@ -3892,6 +3909,12 @@ async function bkManual(editId,repeatId,holdId){
     /* 計時課的單價＝每小時 × 時數 */
     if(+c.hourly>0)return (+c.hourly)*(+r.hours||BK_HOUR_MIN);
     return +c.price||0;
+  }
+  /* 這一列的課程費（不含加購）：有兩人價就每兩件算一次兩人價 */
+  function mRowCourse(r){
+    var c=r.ci===""?null:bkCourses[+r.ci];
+    var pair=(c&&!(+c.hourly>0))?(+c.pair||0):0;
+    return bkPairTotal(mRowPrice(r),pair,+r.qty||0);
   }
   /* 加購是一組客人加一次（不管幾位），不隨件數倍增，跟客人端算法一致 */
   function mAddonsTotal(r){
@@ -3927,7 +3950,7 @@ async function bkManual(editId,repeatId,holdId){
     if(mItems.length===1&&!mItems[0].qtyManual){
       mItems[0].qty=mPplNow()||1;
       if(mItems[0].ci!==""&&!mItems[0].amtManual)
-        mItems[0].amt=mRowPrice(mItems[0])*mItems[0].qty+mAddonsTotal(mItems[0]);
+        mItems[0].amt=mRowCourse(mItems[0])+mAddonsTotal(mItems[0]);
     }
     box.innerHTML=mItems.map(function(r,i){
       var c=r.ci===""?null:bkCourses[+r.ci];
@@ -3948,6 +3971,7 @@ async function bkManual(editId,repeatId,holdId){
             '　佔 '+(+c.seats||1)+' 個位子</div>'
           : "")+
         (c?'<div class="bk-left bk-iinfo">單價 $'+mRowPrice(r).toLocaleString()+
+            (+c.pair>0&&!(+c.hourly>0)?"・兩人 $"+(+c.pair).toLocaleString():"")+
             (c.dur?"　時長 "+esc(c.dur):"")+
             (+c.seats>0&&!(+c.hourly>0)?"　佔 "+(+c.seats)+" 個位子":"")+'</div>':'')+
         /* 加購：跟試算表「加購」分頁對到這門課的品項，複選，價格一次性加進小計，
@@ -3972,7 +3996,7 @@ async function bkManual(editId,repeatId,holdId){
         r.ci=el.value; r.lostName=""; r.amtManual=false; mItemsDirty=true;
         r.addons=[]; /* 換課程，舊課程的加購清單對不上了 */
         if(!r.qty) r.qty=mItems.length===1?(mPplNow()||1):1;
-        r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+        r.amt=mRowCourse(r)+mAddonsTotal(r);
         mDraw();
       };
     });
@@ -3980,7 +4004,7 @@ async function bkManual(editId,repeatId,holdId){
       el.oninput=function(){
         var r=mItems[+el.dataset.ir];
         r.hours=Math.max(BK_HOUR_MIN,Math.min(BK_HOUR_MAX,+el.value||BK_HOUR_MIN));
-        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+        if(!r.amtManual)r.amt=mRowCourse(r)+mAddonsTotal(r);
         mItemsDirty=true; mRecalc();
         var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
         if(ae&&!r.amtManual)ae.value=r.amt||"";
@@ -3992,7 +4016,7 @@ async function bkManual(editId,repeatId,holdId){
         var r=mItems[+el.dataset.ir];
         r.qty=+el.value||0; r.qtyManual=true; mItemsDirty=true;
         if(r.ci!==""&&!r.amtManual){
-          r.amt=mRowPrice(r)*r.qty+mAddonsTotal(r);
+          r.amt=mRowCourse(r)+mAddonsTotal(r);
           var ae=box.querySelector('input[data-f=amt][data-ir="'+el.dataset.ir+'"]');
           if(ae)ae.value=r.amt||"";
         }
@@ -4014,7 +4038,7 @@ async function bkManual(editId,repeatId,holdId){
         var idx=r.addons.findIndex(function(x){return x.name===a.name});
         if(idx>=0)r.addons.splice(idx,1); else r.addons.push({name:a.name,price:a.price});
         mItemsDirty=true;
-        if(!r.amtManual)r.amt=mRowPrice(r)*(+r.qty||0)+mAddonsTotal(r);
+        if(!r.amtManual)r.amt=mRowCourse(r)+mAddonsTotal(r);
         mDraw();
       };
     });
@@ -4042,6 +4066,7 @@ async function bkManual(editId,repeatId,holdId){
       if(r.ci==="")return;
       var c=bkCourses[+r.ci]; if(!c)return;
       var row={name:c.name,spec:c.spec,qty:+r.qty||1,price:mRowPrice(r)};
+      if(+c.pair>0&&!(+c.hourly>0))row.pair=+c.pair;
       if(+c.hourly>0)row.hours=+r.hours||BK_HOUR_MIN;
       if(+c.seats>0)row.seats=+c.seats;
       if(r.addons&&r.addons.length)row.addons=r.addons.map(function(a){return {name:a.name,price:a.price}});
