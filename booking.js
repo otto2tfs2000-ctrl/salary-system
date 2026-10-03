@@ -2559,6 +2559,8 @@ function bkCard(b){
           (bkIsTrial(b)?'<b class="bk-rt">收原價</b>':'')+'</span>';
       })()+
       depTag+
+      (b.fixed?'<span class="bk-tag fx" title="'+esc((b.fixed.dates||[]).join("、"))+'">固定 '+
+        (+b.fixed.i||1)+'/'+(+b.fixed.n||1)+'・預扣 '+(+b.fixed.pts||FIXED_PTS)+' 點</span>':'')+
       (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
         ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+
@@ -2566,6 +2568,8 @@ function bkCard(b){
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+
       (b.createdBy?'　<span class="bk-cap">'+esc(b.createdBy)+' 登記</span>':'')+'</div>'+
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
+    (b.fixed&&b.attend==="no"&&!c?'<div class="bk-warn">固定時段沒事先取消、未到：請按「核銷」扣 '+
+      (+b.fixed.pts||FIXED_PTS)+' 點</div>':'')+
     doneHtml+
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
@@ -2899,6 +2903,8 @@ async function bkCheckout(id){
   var payer=null;
   /* course: 課程本身；addons: 加價項目 */
   var course={amt:old?old.courseAmt:(b.total||0), way:old?old.coursePay:""};
+  /* 固定時段：每次就是扣預扣的那 800 點，第一次核銷直接帶好 */
+  if(!old&&b.fixed){ course.amt=+b.fixed.pts||FIXED_PTS; course.way="points" }
   /* 牌價要另外留一份。堂數扣抵時「課程費用」會歸零——那堂課的錢
      客人買方案時就付了，今天沒收現金，收了就是同一堂課收兩次。
      但業績認列還是要有個底：查得到方案單價就用單價，查不到才退回牌價，
@@ -3365,6 +3371,7 @@ async function bkCheckout(id){
     if(ownPhone)autoMatched=true;
   }
   await setPayer(ownPhone);
+  if(!old&&b.fixed&&!payer){ course.way=""; drawWays(); calc() }
   if(old&&old.payerPhone&&old.payerPhone!==ownPhone){
     document.getElementById("ckProxy").checked=true;
     document.getElementById("ckProxy").dispatchEvent(new Event("change"));
@@ -3594,6 +3601,39 @@ async function bkCancel(id){
   bkRefresh();
 }
 
+/* ══ 固定時段（2026-10-03 老闆要求）══════════════════════
+   有些學生每週固定同一天同一時段上課，跟「約下次」一次只約一堂不同：
+   一次排好接下來最多一個月（4 次），每次預扣 800 點、最多 3,200 點。
+   「預扣」是排的當下先檢查點數夠不夠、卡片標上「預扣」，點數照舊等
+   核銷才真的扣（老闆選的做法），取消就不用退點，不會重複扣款。
+   沒事先取消、當天沒來，一樣核銷扣 800 點。
+   同一組存同一個 fixed.gid，每筆是獨立的預約，客人可以單獨取消其中一次。 */
+var FIXED_PTS=800, FIXED_MAX=4;
+function bkFixedDates(dateStr){
+  var d0=new Date(String(dateStr).replace(/\//g,"-")+"T00:00:00"), out=[];
+  for(var i=0;i<FIXED_MAX;i++){ var d=new Date(d0); d.setDate(d0.getDate()+7*i); out.push(ds(d)) }
+  return out;
+}
+function bkFixedMsg(name,dates,slots){
+  var wd=dates.length?WD[new Date(dates[0].replace(/\//g,"-")+"T00:00:00").getDay()]:"";
+  var n=dates.length, tot=FIXED_PTS*n;
+  return (name?name+" 您好！":"您好！")+"已為您保留固定上課時段：\n"+
+    "每週"+wd+"　"+slots.join("、")+"\n"+
+    "日期："+dates.map(function(x){ return x.slice(5) }).join("、")+"，共 "+n+" 次\n\n"+
+    "📌 固定時段說明\n"+
+    "・固定時段會先預扣點數，每次 "+FIXED_PTS+" 點，這次共 "+tot.toLocaleString()+" 點（最多一個月 "+FIXED_MAX+" 次、"+(FIXED_PTS*FIXED_MAX).toLocaleString()+" 點）。\n"+
+    "・如需請假，請在上課前事先告知小編，或從 LINE 預約頁自行取消，取消的那次不扣點。\n"+
+    "・沒有事先取消、當天未到課，該次仍會扣除 "+FIXED_PTS+" 點。\n"+
+    "期待每週見到您！";
+}
+/* 別天的名額：bkSlotInfo 只看畫面那天的 bkList，這裡拿 bkLoad 留的整包預約來算 */
+function bkSlotUsedOn(dateStr,slot){
+  var all=(window.bkBookingsSnap&&window.bkBookingsSnap.all)||{};
+  return Object.keys(all).reduce(function(s,k){ var b=all[k];
+    if(!b||b.date!==dateStr||b.status==="cancelled"||b.status==="expired"||!bkHitsSlot(b,slot))return s;
+    return s+(+b.people||0) },0);
+}
+
 /* ══ 手動登記（代客人預約）══ */
 async function bkManual(editId,repeatId,holdId){
   /* 帶 editId 就是改一筆既有的。手動登記常常打錯人數或選錯時段，
@@ -3654,6 +3694,7 @@ async function bkManual(editId,repeatId,holdId){
        '<div class="bk-f" id="mSlotOtherBox" style="display:none;margin-top:8px">'+
          '<input id="mSlotOther" placeholder="自訂時段，例如 09:00-13:00"></div>'+
        '<div class="bk-left" id="mLeft"></div></div></div>'+
+   (hd?'':'<div class="bk-f" id="mFixedBox"></div>')+
    '<div class="bk-f"><label>課程</label><div id="mItems"></div>'+
      '<button type="button" id="mAddItem" class="bk-additem">＋ 再加一門課</button>'+
      '<div class="bk-left" id="mItemSum"></div></div>'+
@@ -3715,7 +3756,7 @@ async function bkManual(editId,repeatId,holdId){
         var sl=el.dataset.sl, i=mSlots.indexOf(sl);
         if(i>=0)mSlots.splice(i,1); else mSlots.push(sl);
         mSlots=bkSortSlots(mSlots);
-        drawSlots(); showLeft(); syncNotifyDefault();
+        drawSlots(); showLeft(); syncNotifyDefault(); drawFixed();
       } });
     var moreBtn=box.querySelector("[data-moreslots]");
     if(moreBtn)moreBtn.onclick=function(){ mShowAllSlots=true; drawSlots(); };
@@ -3769,7 +3810,7 @@ async function bkManual(editId,repeatId,holdId){
   document.getElementById("mDate").onchange=async function(){
     /* 換日期要重抓那天的預約才算得準 */
     var keep=bkDate; bkDate=new Date(this.value+"T00:00:00");
-    await bkLoad(); bkDate=keep; drawSlots(); showLeft(); syncNotifyDefault();
+    await bkLoad(); bkDate=keep; drawSlots(); showLeft(); syncNotifyDefault(); drawFixed();
   };
   /* 日期欄改用整月月曆挑選（原生 <input type="date"> 的彈出視窗是瀏覽器
      自己畫的，網站的 CSS 完全套不上去，字體、對齊都調不動）。
@@ -4092,7 +4133,62 @@ async function bkManual(editId,repeatId,holdId){
       '</b>　紅利 <b>'+picked.bonus+'</b></div>'+
       (picked.name?"":'<div class="bk-warn">這位會員沒有姓名，請在下方補填，登記後會寫回會員檔案。</div>')+
       '</div>':"";
+    drawFixed();
   }
+  /* ── 固定時段 ── 表單日期就是第一次，往後每週同一天排到滿一個月 */
+  var fixedOn=false, fixedOff={};
+  function fixedPicked(){
+    var d=(document.getElementById("mDate").value||"").replace(/-/g,"/");
+    return bkFixedDates(d).filter(function(x,i){ return i===0||!fixedOff[x] });
+  }
+  function drawFixed(){
+    var box=document.getElementById("mFixedBox"); if(!box)return;
+    if(eb&&eb.fixed){
+      box.innerHTML='<div class="bk-fxinfo">📌 這筆是固定時段 '+(+eb.fixed.i||1)+'/'+(+eb.fixed.n||1)+
+        '（'+esc((eb.fixed.dates||[]).map(function(x){ return String(x).slice(5) }).join("、"))+
+        '），每次預扣 '+(+eb.fixed.pts||FIXED_PTS)+' 點。這裡改只會改這一次。</div>';
+      return;
+    }
+    if(!fixedOn){
+      box.innerHTML='<button type="button" class="bk-fxbtn" id="mFixedOn">📌 固定時段（每週同一時段，最多一個月）</button>';
+      document.getElementById("mFixedOn").onclick=function(){ fixedOn=true; drawFixed() };
+      return;
+    }
+    var d=(document.getElementById("mDate").value||"").replace(/-/g,"/");
+    var all=bkFixedDates(d), use=fixedPicked(), need=FIXED_PTS*use.length;
+    var h='<div class="bk-fx"><div class="bk-fxhd"><b>📌 固定時段</b>'+
+      '<button type="button" class="bk-fxx" id="mFixedOff">不要固定</button></div>'+
+      '<div class="bk-left" style="margin:0 0 8px">每週'+WD[new Date(d.replace(/\//g,"-")+"T00:00:00").getDay()]+
+      ' '+esc(mSlots.join("、")||"（先選時段）")+'，不要的那週點掉。第一次就是上面選的日期。</div>'+
+      '<div class="bk-ways">'+all.map(function(x,i){
+        return '<div class="bk-way'+(i===0||!fixedOff[x]?" on":"")+'" data-fx="'+x+'"'+(i===0?' style="cursor:default"':'')+'>'+
+          x.slice(5)+'（'+WD[new Date(x.replace(/\//g,"-")+"T00:00:00").getDay()]+'）</div>' }).join("")+'</div>'+
+      '<div style="margin-top:8px;font-size:14px">共 <b>'+use.length+'</b> 次，預扣 '+FIXED_PTS+' × '+use.length+
+        ' = <b>'+need.toLocaleString()+'</b> 點</div>';
+    /* 修改預約時 picked 是空的，用電話欄回頭找會員看點數 */
+    var who=picked;
+    if(!who&&bkMembers){
+      var pk=bkNorm((document.getElementById("mPhone").value||"")||(eb&&eb.memberPhone)||"");
+      who=pk?bkMembers.filter(function(m){ return bkNorm(m.phone)===pk })[0]:null;
+    }
+    if(who){
+      h+=who.points>=need
+        ?'<div class="bk-left">會員目前 '+who.points.toLocaleString()+' 點，夠用。點數等每次核銷才扣。</div>'
+        :'<div class="bk-warn">⚠ 會員目前只有 '+who.points.toLocaleString()+' 點，不夠 '+need.toLocaleString()+' 點，記得請家長先儲值。</div>';
+    }else{
+      h+='<div class="bk-warn">⚠ 還沒配對到會員，查不到點數。請先打電話或姓名配對會員。</div>';
+    }
+    var msg=bkFixedMsg((document.getElementById("mName").value||"").trim(),use,mSlots);
+    h+='<div class="bk-left" style="margin-top:10px">給家長的說明（有綁 LINE 會自動傳，沒綁可以複製去傳）：</div>'+
+      '<pre class="bk-fxmsg" id="mFixedMsg">'+esc(msg)+'</pre>'+
+      '<button type="button" class="bk-cancel" style="padding:5px 10px;font-size:12.5px" id="mFixedCopy">複製說明</button></div>';
+    box.innerHTML=h;
+    document.getElementById("mFixedOff").onclick=function(){ fixedOn=false; drawFixed() };
+    document.getElementById("mFixedCopy").onclick=function(){ stCopy(document.getElementById("mFixedMsg").textContent) };
+    box.querySelectorAll("[data-fx]").forEach(function(el,i){ if(i===0)return;
+      el.onclick=function(){ fixedOff[el.dataset.fx]=!fixedOff[el.dataset.fx]; drawFixed() } });
+  }
+  drawFixed();
   if(eb)showNotify();
   /* 「約下次」：來源那筆如果有綁會員，直接比照「找會員」點選的結果，
      不用行政再手動搜一次同一個人。找不到（例如電話格式對不起來）
@@ -4162,6 +4258,7 @@ async function bkManual(editId,repeatId,holdId){
   }
   var nameEl=document.getElementById("mName");
   nameEl.addEventListener("input",runNameSearch);
+  nameEl.addEventListener("input",function(){ if(fixedOn)drawFixed() });
   /* 有些來源（例如從 LINE 對話裡複製名字貼過來）貼上時不會照一般
      輸入觸發 input 事件，導致畫面看起來貼了名字卻沒有跳出點數，
      要行政再手動打一個字才會出現。貼上事件另外接一次，
@@ -4234,6 +4331,25 @@ async function bkManual(editId,repeatId,holdId){
                   "登記這筆 "+ppl+" 位之後會變成 "+(si.used+ppl)+" 位。\n確定要登記嗎？"))stop=true;
     });
     if(stop)return;
+    /* 固定時段：只勾一次就等於一般預約，不另外標 */
+    var fxDates=(fixedOn&&!(eb&&eb.fixed))?fixedPicked():[];
+    if(fxDates.length<2)fxDates=[];
+    if(fxDates.length){
+      var fxWarn=[];
+      fxDates.slice(1).forEach(function(dx){
+        useSlots.forEach(function(sl){
+          var sb=bkBase(sl); if(!sb)return;
+          if(bkIsClosed(dx,sb)){ fxWarn.push(dx.slice(5)+" "+sb+" 已關閉線上預約"); return }
+          var cap=bkCapOfSlot(dx,sb), used=bkSlotUsedOn(dx,sb);
+          if(cap>0&&used+ppl>cap)fxWarn.push(dx.slice(5)+" "+sb+" 已約 "+used+" 位，上限 "+cap+" 位");
+        });
+      });
+      if(!confirm("固定時段會一次登記 "+fxDates.length+" 次：\n"+
+          fxDates.map(function(x){ return x.slice(5) }).join("、")+"　"+useSlots.join("、")+"\n"+
+          "每次預扣 "+FIXED_PTS+" 點，共 "+(FIXED_PTS*fxDates.length).toLocaleString()+" 點（核銷時才扣）。"+
+          (fxWarn.length?"\n\n⚠ 這幾天會超過名額：\n"+fxWarn.join("\n"):"")+
+          "\n\n確定要登記嗎？"))return;
+    }
     /* 佔位＝同一時刻佔掉多少空間，跟件數是兩件事。
        一個人畫一整天做三件，他在每個時段還是只佔一個位子。
 
@@ -4283,6 +4399,12 @@ async function bkManual(editId,repeatId,holdId){
     }
     var wantNotify=document.getElementById("mNotify");
     if(pickedUid)rec.line={userId:pickedUid};
+    var fxBase=null;
+    if(fxDates.length){
+      rec.fixed={gid:"fx"+Date.now().toString(36),n:fxDates.length,i:1,pts:FIXED_PTS,dates:fxDates};
+      /* 後面幾週是全新的預約，要在下面 eb 分支刪掉 status/ts/createdBy 之前先留一份 */
+      fxBase=JSON.parse(JSON.stringify(rec));
+    }
     var btn=document.getElementById(alsoDeposit?"mOKDep":"mOK");
     var otherBtn=document.getElementById(alsoDeposit?"mOK":"mOKDep");
     var btnLabel=eb?"儲存修改":(alsoDeposit?"登記＋收訂金":"登記");
@@ -4333,7 +4455,30 @@ async function bkManual(editId,repeatId,holdId){
           }
         }
       }
-      if(pickedUid&&wantNotify&&wantNotify.checked){
+      /* 固定時段後面幾週。第一筆已經存好了，後面失敗只警告，不當成整筆失敗 */
+      var fxFail=[];
+      for(var fi=1;fi<fxDates.length;fi++){
+        try{
+          var fr=await fetch(bkf("/bookings.json"),{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify(Object.assign({},fxBase,{date:fxDates[fi],ts:new Date().toISOString(),
+              fixed:Object.assign({},fxBase.fixed,{i:fi+1})}))});
+          if(!fr.ok)throw new Error("HTTP "+fr.status);
+        }catch(fxErr){ fxFail.push(fxDates[fi].slice(5)) }
+      }
+      if(fxFail.length)alert("第一次已經登記好，但這幾週沒登記成功："+fxFail.join("、")+
+        "\n請在那幾天用「手動登記」補登（不用再勾固定時段）。");
+      /* 固定時段的說明一定要傳給家長（老闆要求），取代一般的預約確認，
+         不然家長會同時收到一張確認加一張說明。沒綁 LINE 或沒送出去，
+         下面會跳出說明文字讓行政複製去傳。 */
+      var fxMsg=fxDates.length?bkFixedMsg(g("mName"),fxDates,useSlots):"", fxSent=false;
+      if(fxDates.length&&pickedUid){
+        try{
+          var nr=await fetch(NOTIFY+"/notify/fixed",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({line:{userId:pickedUid},name:g("mName"),dates:fxDates,slots:useSlots,
+              items:outItems,people:ppl,pts:FIXED_PTS})});
+          fxSent=nr.ok&&!!(await nr.json()).ok;
+        }catch(nErr){}
+      }else if(pickedUid&&wantNotify&&wantNotify.checked){
         fetch(NOTIFY+"/notify/booking",{method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify(Object.assign({},rec,{
@@ -4380,7 +4525,15 @@ async function bkManual(editId,repeatId,holdId){
          bkDeposit(newId) 才查得到人——跟訂金分頁點單筆預約收訂金
          是同一支函式，不用另外寫一份收訂金邏輯。 */
       await bkRefresh();
-      if(alsoDeposit&&newId)bkDeposit(newId);
+      if(fxDates.length&&!fxSent){
+        bkSheet('<h3>把固定時段說明傳給家長</h3><div class="bk-sh2">'+
+          (pickedUid?"LINE 沒有傳送成功":"這位家長沒綁 LINE")+'，請複製下面這段，用 LINE 或簡訊傳給家長。</div>'+
+          '<pre class="bk-fxmsg" id="fxMsgOut">'+esc(fxMsg)+'</pre>'+
+          '<div class="bk-act"><button class="bk-cancel" id="fxMsgX">關閉</button>'+
+          '<button class="bk-save" id="fxMsgCp">複製說明</button></div>');
+        document.getElementById("fxMsgX").onclick=bkClose;
+        document.getElementById("fxMsgCp").onclick=function(){ stCopy(fxMsg) };
+      }else if(alsoDeposit&&newId)bkDeposit(newId);
     }catch(e){ alert((eb?"儲存":"登記")+"失敗："+e.message);
       btn.disabled=false; btn.textContent=btnLabel;
       if(otherBtn)otherBtn.disabled=false;
@@ -4616,6 +4769,14 @@ css.textContent=
 ".bk-tag .bk-rt{margin-left:6px;padding:0 6px;border-radius:99px;background:#C9453B;color:#fff}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
 ".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+".bk-tag.fx{background:#EEF0FB;color:#3B4A8C;font-weight:600}"+
+/* 固定時段區塊在彈窗裡，不在 #bkRoot 底下，顏色一律寫死 */
+".bk-fxbtn{width:100%;padding:11px;border:1.5px dashed #6B7BC4;border-radius:10px;background:#F6F7FD;color:#3B4A8C;font-size:14.5px;font-weight:600;cursor:pointer}"+
+".bk-fx{border:1.5px solid #C9CFEE;border-radius:12px;padding:12px 14px;background:#F8F9FE}"+
+".bk-fxhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;color:#3B4A8C;font-size:15px}"+
+".bk-fxx{border:0;background:none;color:#8A90A0;font-size:13px;cursor:pointer;text-decoration:underline}"+
+".bk-fxmsg{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;background:#fff;border:1px solid #E3E6F0;border-radius:8px;padding:10px;margin:6px 0 8px;color:#333}"+
+".bk-fxinfo{font-size:13.5px;color:#3B4A8C;background:#F6F7FD;border-radius:10px;padding:10px 12px}"+
 /* 加開時段的實際時間。同一區裡混著 9:30 和 10:00 的人，要看得出來 */
 ".bk-tag.t{background:#EEF3FB;color:#3A5A96;font-variant-numeric:tabular-nums}"+
 ".bk-mgrp{margin-bottom:11px}"+
