@@ -1807,7 +1807,8 @@ async function mbSaveInfo(phone){
       m.name = name; m.note = note;
     } else {
       /* 整包搬家：先把原始資料抓下來，改掉 phone，寫到新 key */
-      var full = await (await fetch(mbf('/members/' + phone + '.json'))).json() || {};
+      var full = await staffMember(phone);
+      if (!full) throw new Error('讀不到原本的會員資料，先不搬家');
       full.phone = np; full.name = name; full.note = note;
       full.phoneHistory = (full.phoneHistory || []).concat([
         { from: phone, to: np, at: mbNow(), by: mbWho() }
@@ -2071,7 +2072,7 @@ async function mbDelLedger(phone, key){
                  : '') +
                '\n\n刪掉後餘額會跟著變，這個動作不能復原。')) return;
   try {
-    var log = await (await fetch(mbf('/members/' + phone + '/deletedLog.json'))).json() || [];
+    var log = ((await staffMember(phone)) || {}).deletedLog || [];
     log = (Array.isArray(log) ? log : []).concat([
       { key: key, body: r, deletedAt: mbNow(), deletedBy: mbWho() }
     ]);

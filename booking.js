@@ -2014,7 +2014,7 @@ function bkSessionUnit(m){
 
 async function bkMember(phone){
   if(!phone)return null;
-  var m=await jget(bkf("/members/"+phone+".json"));
+  var m=null; try{ m=await staffMember(phone) }catch(e){}
   if(m)m.phone=phone;
   return m;
 }

@@ -131,6 +131,14 @@ async function staffMembers(shallow){
   return j.members || {};
 }
 
+/* 單一會員完整資料。members 的讀取規則已關閉（2026-10-04），一律走伺服器。
+   查不到回 null；連線失敗會丟錯，呼叫端不要把失敗當成「沒資料」去覆寫。 */
+async function staffMember(phone){
+  var j = await staffApi("/staff/member", { phone: phone });
+  if (!j || !j.ok) throw new Error((j && j.error) || "讀會員資料失敗");
+  return j.member || null;
+}
+
 /* 會員檔案沒有 lineUserId 時，請伺服器從 lineIndex／線上預約單找回來並補寫
    （新客第一次開預約頁時還沒建檔，LINE 沒寫進會員檔案，2026-10-04）。
    找不到或出錯都回空字串，畫面照舊顯示「還沒綁定」。 */
