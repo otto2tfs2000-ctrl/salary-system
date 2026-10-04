@@ -4276,6 +4276,7 @@ async function bkManual(editId,repeatId,holdId){
     }
     var m=await bkMember(mbPhone(ph));
     pickedUid=(m&&m.lineUserId)||(eb&&eb.line&&eb.line.userId)||null;
+    if(!pickedUid&&m)pickedUid=await staffMemberLine(mbPhone(ph))||null;
     if(!pickedUid){
       box.innerHTML='<div class="bk-warn">⚠ 這位會員還沒綁定 LINE，'+
         (eb?"改完":"登記後")+'不會收到通知。現場可以請他點下面的連結開一次就會自動綁定：'+

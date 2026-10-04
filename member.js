@@ -782,6 +782,18 @@ function mbSell(phone){
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
   mbModal(h);
+  /* 會員檔案沒寫 LINE，不代表客人沒用 LINE 開過預約頁——新客開頁時還沒建檔，
+     LINE 只記在別處。問伺服器找回來，找到就換成可勾的通知（2026-10-04）。 */
+  if (!m.lineUserId) staffMemberLine(phone).then(function(uid){
+    var w = document.getElementById('mb-s-notify-wrap');
+    if (!uid || !w) return;
+    m.lineUserId = uid;
+    w.innerHTML = '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer">' +
+      '<input type="checkbox" id="mb-s-notify" checked style="width:16px;height:16px"> ' +
+      '售出後傳 LINE 通知客人</label>' +
+      '<div class="muted" style="font-size:12.5px;margin-top:4px;line-height:1.7">' +
+      '卡片會列出方案內容、拿到多少點數堂數、到期日，還有目前餘額。</div>';
+  });
 }
 
 /* 補登模式開關：收錢相關的欄位（身分、報名時機、共用、付款方式、LINE 通知）全部藏起來，

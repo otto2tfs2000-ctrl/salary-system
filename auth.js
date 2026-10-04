@@ -131,6 +131,14 @@ async function staffMembers(shallow){
   return j.members || {};
 }
 
+/* 會員檔案沒有 lineUserId 時，請伺服器從 lineIndex／線上預約單找回來並補寫
+   （新客第一次開預約頁時還沒建檔，LINE 沒寫進會員檔案，2026-10-04）。
+   找不到或出錯都回空字串，畫面照舊顯示「還沒綁定」。 */
+async function staffMemberLine(phone){
+  try { var j = await staffApi("/staff/member-line", { phone: phone }); return (j && j.lineUserId) || "" }
+  catch(e){ return "" }
+}
+
 /* 每次開頁面重抓一次自己的權限。
    這樣管理員改完設定，對方重整就生效，不用叫他登出再登入。 */
 async function authRefreshStaff(){
