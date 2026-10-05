@@ -103,6 +103,7 @@ async function mbLoad(force){
                ledger: m.ledger || {}, createdAt: m.createdAt || '',
                tickets: Array.isArray(m.tickets) ? m.tickets : null,
                lineUserId: m.lineUserId || '',
+               islandOk: !!m.islandOk,
                archived: m.archived || null };
     });
   } catch(e) { mbList = []; }
@@ -454,7 +455,8 @@ function mbDetail(phone){
 
   var TYPE = { points: '點數', sessions: '堂數', bonus: '紅利', voucher: '折價金' };
   var h = '<h3 style="margin:0 0 2px">' + mbEsc(m.name || '（未填姓名）') + '</h3>' +
-    '<div class="muted" style="font-size:13.5px;margin-bottom:2px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') + '</div>';
+    '<div class="muted" style="font-size:13.5px;margin-bottom:2px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') +
+    (m.islandOk ? '　<span style="font-size:11.5px;background:#DCEFE0;color:#2E6B3A;padding:1px 7px;border-radius:99px">🏝 可進作品島</span>' : '') + '</div>';
   var lastSellD = mbLastSell(m);
   h += '<div class="muted" style="font-size:12.5px;margin-bottom:14px">' +
     (m.createdAt ? '入會 ' + mbFmtAt(m.createdAt) : '') +
@@ -1758,6 +1760,10 @@ function mbEditInfo(phone){
        '<input id="mb-e-name" value="' + mbEsc(m.name || '') + '"></div>';
   h += '<div class="fg" style="margin-bottom:12px"><label>備註</label>' +
        '<input id="mb-e-note" value="' + mbEsc(m.note || '') + '"></div>';
+  /* 作品島只開放給會員；沒有點數堂數的固定學員，勾這個也能搬進去（2026-10-05） */
+  h += '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px;font-size:14px;cursor:pointer">' +
+       '<input type="checkbox" id="mb-e-isl"' + (m.islandOk ? ' checked' : '') + ' style="margin-top:3px">' +
+       '<span>🏝 沒有點數／堂數也能進作品島<br><span class="muted" style="font-size:12.5px">固定學員用；不影響扭蛋獎池和點數</span></span></label>';
 
   h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">' +
        '<div class="fg"><label>換手機號碼（客人換號才填，平常留空）</label>' +
@@ -1780,6 +1786,7 @@ async function mbSaveInfo(phone){
   var name = (document.getElementById('mb-e-name') || {}).value || '';
   var note = (document.getElementById('mb-e-note') || {}).value || '';
   var np   = mbNorm((document.getElementById('mb-e-phone') || {}).value || '');
+  var isl  = !!(document.getElementById('mb-e-isl') || {}).checked;
   name = name.trim(); note = note.trim();
 
   if (np){
@@ -1804,12 +1811,16 @@ async function mbSaveInfo(phone){
         headers:{'Content-Type':'application/json'}, body: JSON.stringify(name) });
       await fetch(mbf('/members/' + phone + '/note.json'), { method:'PUT',
         headers:{'Content-Type':'application/json'}, body: JSON.stringify(note) });
-      m.name = name; m.note = note;
+      if (isl !== !!m.islandOk)
+        await fetch(mbf('/members/' + phone + '/islandOk.json'), { method:'PUT',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify(isl ? { by: mbWho(), at: mbNow() } : null) });
+      m.name = name; m.note = note; m.islandOk = isl;
     } else {
       /* 整包搬家：先把原始資料抓下來，改掉 phone，寫到新 key */
       var full = await staffMember(phone);
       if (!full) throw new Error('讀不到原本的會員資料，先不搬家');
       full.phone = np; full.name = name; full.note = note;
+      if (isl) full.islandOk = full.islandOk || { by: mbWho(), at: mbNow() }; else delete full.islandOk;
       full.phoneHistory = (full.phoneHistory || []).concat([
         { from: phone, to: np, at: mbNow(), by: mbWho() }
       ]);
