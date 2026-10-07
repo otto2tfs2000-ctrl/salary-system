@@ -766,6 +766,7 @@ function doSwitchTab(tab) {
   if (tab==='member') renderMember();
   if (tab==='gacha' && window.renderGacha) renderGacha();
   if (tab==='xmas' && window.renderXmas) renderXmas();
+  if (tab==='shop' && window.renderShop) renderShop();
   if (tab==='recipe') renderRecipe();
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
