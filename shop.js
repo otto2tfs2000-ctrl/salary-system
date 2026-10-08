@@ -35,6 +35,8 @@ async function renderShop(){
     return '<button class="store-btn' + (shTab === t[0] ? ' active' : '') + '" onclick="shSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="shReload()">↻ 重新讀取</button></div>';
   if (shData.cfg.open === false) h += '<div class="card" style="background:#fff0f0;border-color:#e8b4b4;font-size:13px;margin-bottom:14px">⚠️ 目前是「休息中」：客人點進選品館只會看到休息的提示（到「分類與臺詞」改回營業）。</div>';
+  var oa = shData.cfg.openAt;
+  if (oa && oa > new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16)) h += '<div class="card" style="background:#fff8e1;border-color:#e6cf8a;font-size:13px;margin-bottom:14px">⏳ 還沒開幕：<b>' + shEsc(oa.replace('T', ' ')) + '</b> 才開門。在這之前客人點店面只會看到「還沒開店」的店員（到「分類與臺詞」可改時間）。</div>';
   h += shTab === 'cfg' ? shCfgHtml() : shTab === 'redeems' ? shRedeemHtml() : (shEdit ? shFormHtml() : shListHtml());
   el.innerHTML = h;
   if (shTab === 'redeems') shLoadTkts();
@@ -172,6 +174,10 @@ function shCfgHtml(){
     shRow('店員說', shInp('shc-gr', c.greeting, 'text', 220), '客人點店面，店員對話框的大字。') +
     shRow('店員補一句', shInp('shc-gs', c.greetingSub, 'text', 320), '對話框的小字，可以換成活動訊息（例：十月限定，全館優惠中）。') +
     shRow('兌換券期限', shInp('shc-exp', c.expiryDays, 'number', 80) + ' 天', '客人兌換後，這張券幾天內要來店領取。') +
+    shRow('開幕時間', shInp('shc-openat', c.openAt || '', 'datetime-local', 220) + ' <button class="btn btn-outline btn-sm" type="button" onclick="document.getElementById(\'shc-openat\').value=\'\'">清除（馬上開）</button>',
+      '設定後，<b>到這個時間之前</b>客人點店面，會看到另一位店員說「還沒開店」，進不了商品頁；時間一到自動開門，不用再回來改。留空＝不限（照下面「營業中」）。') +
+    shRow('沒開店時說', shInp('shc-cl', c.closedLine, 'text', 220), '店員對話框的大字。') +
+    shRow('沒開店補一句', shInp('shc-cs', c.closedSub, 'text', 320), '小字。寫 <b>{openAt}</b> 會自動換成上面設定的開幕時間（例：10月16日 上午10:00）。') +
     shRow('營業中', '<label style="display:flex;gap:6px;align-items:center"><input id="shc-open" type="checkbox"' + (c.open !== false ? ' checked' : '') + '> 勾選＝營業；取消＝客人看到「暫時休息中」</label>') + '</div>';
   h += '<div class="card"><div class="card-title">商品分類</div><div class="muted" style="font-size:12.5px;margin-bottom:8px">客人在商品頁看到的分類標籤（前面固定有「全部」）。刪除分類不會刪商品，商品會變成「未分類」，只在「全部」裡看得到。</div>';
   (c.cats || []).forEach(function(x, i){
@@ -189,6 +195,7 @@ function shCfgCollect(){
   if (!g('shc-name')) return;
   c.name = g('shc-name').value; c.sub = g('shc-sub').value; c.greeting = g('shc-gr').value; c.greetingSub = g('shc-gs').value;
   c.expiryDays = g('shc-exp').value; c.open = g('shc-open').checked;
+  c.openAt = g('shc-openat').value; c.closedLine = g('shc-cl').value; c.closedSub = g('shc-cs').value;
   (c.cats || []).forEach(function(x, i){ var e = g('shc-cat-' + i); if (e) x.nm = e.value });
 }
 function shCatAdd(){ shCfgCollect(); shData.cfg.cats = (shData.cfg.cats || []).concat([{ id: 'c' + Date.now().toString(36), nm: '新分類' }]); renderShop() }
