@@ -16,6 +16,19 @@ function shRow(label, body, hint){
     '<div style="width:96px;flex:none;font-size:13.5px;padding-top:7px;color:var(--text2)">' + label + '</div>' +
     '<div style="flex:1 1 220px">' + body + (hint ? '<div class="muted" style="font-size:12px;margin-top:4px;line-height:1.6">' + hint + '</div>' : '') + '</div></div>';
 }
+/* 現金 → 紅利點數：每 yuanPerPt 元 = 1 點，四捨五入到 ptStep 的倍數（至少 1 個級距） */
+function shRate(){ var c = (shData && shData.cfg) || {}; return { y: Math.max(1, Number(c.yuanPerPt) || 7), s: [1, 5, 10].indexOf(Number(c.ptStep)) >= 0 ? Number(c.ptStep) : 5 } }
+function shCashToPts(cash){
+  var r = shRate(), n = Number(cash);
+  if (!(n > 0)) return '';
+  return Math.max(r.s, Math.round(n / r.y / r.s) * r.s);
+}
+function shCashFill(cashId, ptId, noteId){
+  var c = document.getElementById(cashId).value, p = shCashToPts(c);
+  if (p !== '') document.getElementById(ptId).value = p;
+  var n = document.getElementById(noteId);
+  if (n) n.textContent = p === '' ? '' : '→ 自動換算 ' + p + ' 點（可再手動改）';
+}
 function shCatName(id){
   var c = ((shData && shData.cfg.cats) || []).filter(function(x){ return x.id === id })[0];
   return c ? c.nm : '（未分類）';
@@ -40,6 +53,9 @@ async function renderShop(){
   h += shTab === 'cfg' ? shCfgHtml() : shTab === 'redeems' ? shRedeemHtml() : (shEdit ? shFormHtml() : shListHtml());
   el.innerHTML = h;
   if (shTab === 'redeems') shLoadTkts();
+  var cb = document.getElementById('sh-cash'), sb = document.getElementById('sh-sc');
+  if (cb) cb.oninput = function(){ shCashFill('sh-cash', 'sh-price', 'sh-cashn') };
+  if (sb) sb.oninput = function(){ shCashFill('sh-sc', 'sh-sp', 'sh-scn') };
 }
 function shSwitch(t){ shTab = t; shEdit = null; renderShop() }
 async function shReload(){ shData = null; shEdit = null; await renderShop() }
@@ -49,7 +65,7 @@ function shPriceTxt(p){
   var sl = p.sale, t = (shData && shData.today) || '';
   var on = sl && sl.from && sl.to && sl.from <= t && t <= sl.to;
   return on ? '<s style="color:#999">' + p.price + '</s> <b style="color:#d6453b">' + sl.price + '</b> 點（優惠到 ' + sl.to.slice(5).replace('-','/') + '）'
-    : '<b>' + p.price + '</b> 點' + (sl && sl.from ? '<span class="muted" style="font-size:12px">　優惠 ' + sl.price + ' 點：' + sl.from.slice(5).replace('-','/') + '～' + sl.to.slice(5).replace('-','/') + '</span>' : '');
+    : '<b>' + p.price + '</b> 點' + (p.cash ? '<span class="muted" style="font-size:12px">（現金 ' + p.cash + ' 元）</span>' : '') + (sl && sl.from ? '<span class="muted" style="font-size:12px">　優惠 ' + sl.price + ' 點：' + sl.from.slice(5).replace('-','/') + '～' + sl.to.slice(5).replace('-','/') + '</span>' : '');
 }
 function shListHtml(){
   var list = shData.products || [];
@@ -97,8 +113,10 @@ function shFormHtml(){
       '<div><input id="sh-file" type="file" accept="image/*" onchange="shPickImg(this)"><div id="sh-st" class="muted" style="font-size:12px;margin-top:4px"></div></div></div>' +
       '<div style="margin-top:6px">或貼圖片網址：' + shInp('sh-img', p.img, 'text', 300, 'https://…') + '</div>', '照片會自動縮小、傳到 Cloudinary。正方形的圖最好看。') +
     shRow('說明', shInp('sh-desc', p.desc, 'text', 320, '（選填，短短一句）')) +
-    shRow('原價紅利', shInp('sh-price', p.price, 'number', 90) + ' 點') +
-    shRow('限時優惠', '優惠價 ' + shInp('sh-sp', sl.price == null ? '' : sl.price, 'number', 80) + ' 點　<br style="display:none">從 ' + shInp('sh-sf', sl.from || '', 'date', 150) + ' 到 ' + shInp('sh-st2', sl.to || '', 'date', 150),
+    shRow('現金售價', shInp('sh-cash', p.cash || '', 'number', 90) + ' 元 <span id="sh-cashn" class="muted" style="font-size:12.5px"></span>',
+      '輸入這項商品的現金價格，下面的兌換點數會自動算出來（目前公式：每 <b>' + shRate().y + '</b> 元 = 1 點，進位到 ' + shRate().s + ' 的倍數；到「分類與臺詞」可以改）。') +
+    shRow('兌換點數', shInp('sh-price', p.price, 'number', 90) + ' 點', '客人實際要付的紅利點數。自動算出來後想調整可以直接改數字。') +
+    shRow('限時優惠', '優惠現金價 ' + shInp('sh-sc', sl.cash || '', 'number', 80) + ' 元 → 優惠點數 ' + shInp('sh-sp', sl.price == null ? '' : sl.price, 'number', 80) + ' 點 <span id="sh-scn" class="muted" style="font-size:12.5px"></span><br>從 ' + shInp('sh-sf', sl.from || '', 'date', 150) + ' 到 ' + shInp('sh-st2', sl.to || '', 'date', 150),
       '三格都填才會生效；期間過了自動恢復原價。不要優惠就全部留空。') +
     shRow('庫存', shInp('sh-stock', p.stock == null ? '' : p.stock, 'number', 90) + ' 件', '空白＝不限量。每兌換一次自動減 1，減到 0 客人看到「換完了」。') +
     shRow('每人限兌', shInp('sh-pp', p.perPerson || 0, 'number', 80) + ' 次', '0＝不限。') +
@@ -114,17 +132,17 @@ function shCollect(){
   var g = function(i){ return document.getElementById(i) };
   var p = shEdit;
   p.nm = g('sh-nm').value.trim(); p.cat = g('sh-cat').value; p.img = g('sh-img').value.trim(); p.desc = g('sh-desc').value.trim();
-  p.price = g('sh-price').value; p.stock = g('sh-stock').value === '' ? null : g('sh-stock').value;
+  p.cash = g('sh-cash').value; p.price = g('sh-price').value; p.stock = g('sh-stock').value === '' ? null : g('sh-stock').value;
   p.perPerson = g('sh-pp').value; p.order = g('sh-order').value; p.active = g('sh-act').checked;
   var sp = g('sh-sp').value, sf = g('sh-sf').value, st = g('sh-st2').value;
-  p.sale = (sp === '' && !sf && !st) ? null : { price: sp, from: sf, to: st };
+  p.sale = (sp === '' && !sf && !st) ? null : { price: sp, from: sf, to: st, cash: g('sh-sc').value };
 }
 async function shSaveProduct(){
   if (shBusy) return;
   shCollect();
   var p = shEdit;
   if (!p.nm) { alert('請填商品名稱'); return }
-  if (p.price === '' || isNaN(+p.price)) { alert('請填原價紅利（數字）'); return }
+  if (p.price === '' || isNaN(+p.price)) { alert('請填現金售價或兌換點數（數字）'); return }
   if (p.sale && (p.sale.price === '' || !p.sale.from || !p.sale.to)) { alert('限時優惠要把「優惠價、開始日、結束日」三格都填，或全部清空'); return }
   shBusy = true;
   try {
@@ -179,6 +197,13 @@ function shCfgHtml(){
     shRow('沒開店時說', shInp('shc-cl', c.closedLine, 'text', 220), '店員對話框的大字。') +
     shRow('沒開店補一句', shInp('shc-cs', c.closedSub, 'text', 320), '小字。寫 <b>{openAt}</b> 會自動換成上面設定的開幕時間（例：10月16日 上午10:00）。') +
     shRow('營業中', '<label style="display:flex;gap:6px;align-items:center"><input id="shc-open" type="checkbox"' + (c.open !== false ? ' checked' : '') + '> 勾選＝營業；取消＝客人看到「暫時休息中」</label>') + '</div>';
+  var r = shRate();
+  h += '<div class="card"><div class="card-title">兌換點數換算公式</div>' +
+    shRow('換算比例', '每 ' + shInp('shc-yen', r.y, 'number', 70) + ' 元 = 1 點　點數進位到 <select id="shc-step" style="padding:7px;border:1px solid var(--border);border-radius:6px;font-size:14px">' +
+      [1, 5, 10].map(function(n){ return '<option value="' + n + '"' + (r.s === n ? ' selected' : '') + '>' + n + '</option>' }).join('') + '</select> 的倍數',
+      '新增／編輯商品時，輸入現金售價就會用這個公式自動算兌換點數。<b>只影響後台填表，已上架的商品點數不會被改。</b><br>' +
+      '範例：' + [99, 199, 299, 599].map(function(n){ return n + ' 元 → <b>' + shCashToPts(n) + '</b> 點' }).join('　') +
+      '<br>（遊戲紅利是免費送的，每人每月大約最多 30 點，所以 20～30 點的商品玩家一個月內換得到；定越高越要靠真實消費累積。）') + '</div>';
   h += '<div class="card"><div class="card-title">商品分類</div><div class="muted" style="font-size:12.5px;margin-bottom:8px">客人在商品頁看到的分類標籤（前面固定有「全部」）。刪除分類不會刪商品，商品會變成「未分類」，只在「全部」裡看得到。</div>';
   (c.cats || []).forEach(function(x, i){
     h += '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border)">' +
@@ -195,6 +220,7 @@ function shCfgCollect(){
   if (!g('shc-name')) return;
   c.name = g('shc-name').value; c.sub = g('shc-sub').value; c.greeting = g('shc-gr').value; c.greetingSub = g('shc-gs').value;
   c.expiryDays = g('shc-exp').value; c.open = g('shc-open').checked;
+  c.yuanPerPt = g('shc-yen').value; c.ptStep = g('shc-step').value;
   c.openAt = g('shc-openat').value; c.closedLine = g('shc-cl').value; c.closedSub = g('shc-cs').value;
   (c.cats || []).forEach(function(x, i){ var e = g('shc-cat-' + i); if (e) x.nm = e.value });
 }
