@@ -19,7 +19,7 @@ function gcEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
 var GC_WHO = { all:'所有人', mem:'只有會員', new:'只有新客' };
 var GC_TYPE = { bonus:'紅利', ticket:'票券／贈品', none:'銘謝惠顧' };
-var GC_WHY = { daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試' };
+var GC_WHY = { gold:'黃金扭蛋', daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試' };
 var gcQuiz = null;
 var GC_KIND = { cash:'現金抵用', goods:'實體贈品', bundle:'贈課券', other:'其他' };
 
@@ -78,7 +78,7 @@ function gcStat(n, label, sub){
 function gcOverviewHtml(){
   var cfg = gcData.cfg, today = gcData.today, all = gcLogList();
   var real = all.filter(function(x){ return !x.test });
-  var spins = real.filter(function(x){ return x.why !== 'milestone' });
+  var spins = real.filter(function(x){ return x.why !== 'milestone' && x.why !== 'gold' });
   var todaySpins = spins.filter(function(x){ return x.date === today });
   var uniq = function(a){ var s = {}; a.forEach(function(x){ s[x.phone] = 1 }); return Object.keys(s).length };
   var bonus = real.filter(function(x){ return x.type === 'bonus' }).reduce(function(s, x){ return s + (+x.v || 0) }, 0);
@@ -468,7 +468,8 @@ async function gcSaveQuiz(){
    - 試抽：用目前填的機率模擬抽很多次，看實際分布；也能輸入方案金額看會落在哪一級
    - 手動補發金幣、金幣紀錄、收回還沒抽的金幣
    資料在 gacha/gold、gacha/goldcoins，一樣透過 /staff/gacha/gold* 讀寫。
-   ⚠ 客人端抽獎、買方案自動發金幣還沒接，目前這裡是設定＋試抽＋手動補發。
+   賣方案時（會員頁「賣方案」）會依方案金額自動發金幣；客人在遊樂島按金幣抽，中獎寫進「中獎紀錄・核銷」
+   （原因欄寫「黃金扭蛋」，票券到時候按「已使用」）。
    ══════════════════════════════════════════════════════════ */
 var gcgSim = null, gcgSimSel = { t:'', n:10000 };
 async function gcgLoad(){
@@ -496,7 +497,8 @@ function gcgSum(tid){ return Math.round(gcgDraft.prizes.reduce(function(s, p){ r
 function gcgHtml(){
   var g = gcgDraft, tiers = g.tiers, prizes = g.prizes;
   var h = '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;line-height:1.8">' +
-    '<b>目前進度：</b>這一頁可以設定等級、獎品、各級機率，也能試抽和手動補發金幣。<b>客人端還不能抽、買方案也還不會自動送金幣</b>，所以「開放」打開之後暫時不會有作用。</div>';
+    '<b>怎麼運作：</b>賣方案時，金額一模一樣落在某一級，系統就自動送那一級的金幣；金幣會出現在客人遊樂島左下角，按下去轉。' +
+    '<b>「開放」沒打開之前，客人看不到金幣、也不能抽</b>（金幣照常發，先放著）。抽到的紅利直接入帳，票券和贈品會出現在「中獎紀錄・核銷」，客人來領的時候按「已使用」。</div>';
 
   h += '<div class="card"><div class="card-title">🪙 黃金扭蛋</div>' +
     '<label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:6px 0"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcgDraft.enabled=this.checked"> 開放黃金扭蛋</label>' +
@@ -592,6 +594,7 @@ function gcgHtml(){
       '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
       '<span style="flex:1 1 150px"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
       '<span style="flex:1 1 150px">🪙 ' + gcEsc(x.tierNm || '') + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (x.src === 'manual' ? '手動補發' : '買方案') + '</span>' +
+      (x.src === 'plan' && x.planNm ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.planNm) + '</span>' : '') +
       (x.note ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.note) + '</span>' : '') + '</span>' +
       '<span style="width:130px;text-align:right;font-size:12px">' + (x.used
         ? '<span style="color:var(--text3)">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span>'

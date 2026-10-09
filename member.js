@@ -1033,6 +1033,14 @@ async function mbSellSave(phone){
     }
   }
 
+  /* 黃金扭蛋金幣：方案金額一模一樣落在「扭蛋活動→黃金扭蛋」某一級，就送那一級的金幣。
+     發幣失敗不擋流程（方案已經入好了），跳提醒請行政去手動補發 */
+  var goldN = 0, goldTier = '', goldErr = '';
+  try {
+    var gr = await staffApi('/staff/gacha/gold/plan-sold', { phone: phone, price: +p.price || 0, planName: p.name, saleKey: 'sell' + stamp });
+    if (gr && gr.issued) { goldN = gr.issued; goldTier = gr.tierNm || '' }
+  } catch(e) { goldErr = e.message || '連線失敗' }
+
   /* 方案收入記進當天業績，月報看得到 */
   mbLogSale(p, pay, m);
 
@@ -1052,9 +1060,9 @@ async function mbSellSave(phone){
           plan: { name: p.name, price: +p.price || 0, pay: pay,
                   months: +p.months || 0, expiry: exp || '', gift: p.gift || '' },
           add: split.on
-            ? { points: primaryPts, bonusPoints: 0, giftPoints: 0, sessions: addSes, voucher: addVou }
+            ? { points: primaryPts, bonusPoints: 0, giftPoints: 0, sessions: addSes, voucher: addVou, goldCoins: goldN }
             : { points: +p.points || 0, bonusPoints: +p.bonusPoints || 0,
-                giftPoints: giftPts, sessions: addSes, voucher: addVou },
+                giftPoints: giftPts, sessions: addSes, voucher: addVou, goldCoins: goldN },
           balance: { points: sum.points, sessions: sum.sessions,
                      bonus: sum.bonus, voucher: sum.voucher }
         }) });
@@ -1067,6 +1075,8 @@ async function mbSellSave(phone){
   renderMember();
   alert('已售出：' + p.name + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
         (split.on && peerBody ? '\n' + split.name + '（' + split.phone + '）另外分到 ' + peerPts.toLocaleString() + ' 點' : '') +
+        (goldN ? '\n\n🪙 已送黃金扭蛋金幣 ' + goldN + ' 枚（' + goldTier + '）' : '') +
+        (goldErr ? '\n\n⚠ 黃金扭蛋金幣沒發成功（' + goldErr + '）。方案已經入好了，請到「扭蛋活動→黃金扭蛋→手動補發金幣」補發。' : '') +
         (notified === true  ? '\n\nLINE 通知已送出。' : '') +
         (notified === false ? '\n\n⚠ LINE 通知沒送出去，方案已經入好了。要補通知請再賣一次是不行的，請直接用 LINE 手動告知客人。' : ''));
 }
