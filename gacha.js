@@ -494,11 +494,52 @@ function gcgInp(v, w, oc, type, ph){
 }
 function gcgLetter(i){ return i < 26 ? String.fromCharCode(65 + i) : String(i + 1) }
 function gcgSum(tid){ return Math.round(gcgDraft.prizes.reduce(function(s, p){ return s + (+((p.w || {})[tid]) || 0) }, 0) * 100) / 100 }
+/* 上線檢查：用「已經存到雲端」的設定檢查有沒有漏填，並列出方案設定裡每個方案賣出時會送哪一級（金額要一模一樣） */
+function gcgCheckHtml(){
+  var sv = gcgData.gold || {}, tiers = sv.tiers || [], prizes = sv.prizes || [], bad = [];
+  var dirty = JSON.stringify(gcgDraft) !== JSON.stringify(gcgData.gold || { enabled:false, expiry:'', tiers:[], prizes:[] });
+  var chk = function(ok, text, fix){ return '<div style="display:flex;gap:8px;font-size:13.5px;line-height:1.7;margin:3px 0"><span style="width:20px;color:' + (ok ? '#2e7d4f' : 'var(--red)') + '">' + (ok ? '✓' : '✗') + '</span><span>' + text + (!ok && fix ? '<span class="muted">　' + fix + '</span>' : '') + '</span></div>' };
+  var h = '<div class="card"><div class="card-title">上線檢查</div>';
+  if (dirty) h += '<div style="background:#fff8e6;border:1px solid #e8d49a;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px">畫面上有還沒儲存的修改，下面檢查的是<b>上次儲存</b>的內容。</div>';
+  var names = prizes.length && prizes.every(function(p){ return p.nm });
+  var sumsOk = tiers.length && prizes.length && tiers.every(function(t){ return Math.abs(prizes.reduce(function(a, p){ return a + (+((p.w || {})[t.id]) || 0) }, 0) - 100) < 0.01 });
+  var plansOk = tiers.length && tiers.every(function(t){ return (t.plans || []).length });
+  h += chk(tiers.length > 0 && prizes.length > 0, '已經儲存過等級和獎品（' + tiers.length + ' 級、' + prizes.length + ' 個獎品）', '請先按下面的儲存')
+    + chk(names, '每個獎品都有名稱')
+    + chk(sumsOk, '每一級的機率加起來都是 100%')
+    + chk(plansOk, '每一級都填了方案金額')
+    + chk(!!sv.enabled, '「開放黃金扭蛋」已打開', '沒打開之前客人看不到金幣、不能抽（金幣照常發）')
+    + chk(!sv.expiry || sv.expiry >= gcgData.today, sv.expiry ? '金幣期限 ' + sv.expiry + ' 還沒過' : '金幣沒有設期限', '期限已經過了，客人抽不到');
+  /* 方案對照 */
+  if (typeof mbActivePlans === 'function') {
+    var plans = []; try { plans = mbActivePlans() } catch(e) {}
+    var rows = plans.map(function(p){
+      var price = Math.round(+p.price || 0);
+      var t = tiers.filter(function(x){ return (x.plans || []).indexOf(price) >= 0 })[0];
+      return { nm: p.name || '（沒名稱）', price: price, t: t };
+    });
+    var near = function(price){
+      var all = []; tiers.forEach(function(t){ (t.plans || []).forEach(function(a){ all.push(a) }) });
+      return all.filter(function(a){ return price > 0 && Math.abs(a - price) <= Math.max(1000, a * 0.1) && a !== price })[0];
+    };
+    h += '<div style="margin-top:12px;font-weight:600;font-size:13.5px">方案設定裡的方案，賣出時會送什麼</div>' +
+      '<div class="muted" style="font-size:12px;margin:2px 0 6px">金額要跟等級裡填的一模一樣才會發金幣（賣方案時用的是方案設定的「價格」）。沒送金幣的方案如果本來該送，請檢查價格或等級的方案金額。</div>' +
+      (rows.length ? '<table style="border-collapse:collapse;font-size:13px;width:100%;max-width:560px">' + rows.map(function(r){
+        var n = r.t ? '' : near(r.price);
+        return '<tr style="border-top:1px solid var(--border)"><td style="padding:5px 4px">' + gcEsc(r.nm) + '</td><td style="text-align:right;padding:5px 8px;font-variant-numeric:tabular-nums">$' + r.price.toLocaleString() + '</td>' +
+          '<td style="padding:5px 4px;color:' + (r.t ? '#2e7d4f' : 'var(--text3)') + '">' + (r.t ? '🪙 ' + gcEsc(r.t.nm) + '，送 ' + (r.t.coins || 1) + ' 枚' : '不送金幣') +
+          (n ? ' <span style="color:var(--red)">（接近 ' + n.toLocaleString() + '，是不是價格差一點？）</span>' : '') + '</td></tr>';
+      }).join('') + '</table>' : '<div class="muted" style="font-size:13px">這個畫面讀不到方案清單（可能還沒載入），到「會員」頁看一下方案再回來。</div>');
+  }
+  return h + '</div>';
+}
 function gcgHtml(){
   var g = gcgDraft, tiers = g.tiers, prizes = g.prizes;
   var h = '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;line-height:1.8">' +
     '<b>怎麼運作：</b>賣方案時，金額一模一樣落在某一級，系統就自動送那一級的金幣；金幣會出現在客人遊樂島左下角，按下去轉。' +
     '<b>「開放」沒打開之前，客人看不到金幣、也不能抽</b>（金幣照常發，先放著）。抽到的紅利直接入帳，票券和贈品會出現在「中獎紀錄・核銷」，客人來領的時候按「已使用」。</div>';
+
+  h += gcgCheckHtml();
 
   h += '<div class="card"><div class="card-title">🪙 黃金扭蛋</div>' +
     '<label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:6px 0"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcgDraft.enabled=this.checked"> 開放黃金扭蛋</label>' +
