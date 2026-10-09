@@ -641,7 +641,7 @@ function gcgHtml(){
       (x.src === 'plan' && x.planNm ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.planNm) + '</span>' : '') +
       (x.note ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.note) + '</span>' : '') + '</span>' +
       '<span style="width:130px;text-align:right;font-size:12px">' + (x.used
-        ? '<span style="color:var(--text3)">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span>'
+        ? '<span style="color:var(--text3)">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span> <a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgUndoDraw(\'' + x._k + '\')">收回獎項</a>'
         : '<span style="color:#2e7d4f;margin-right:6px">未抽</span><a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</span></div>';
   }).join('');
   return h + '</div>';
@@ -705,9 +705,22 @@ function gcgWinnersHtml(){
       '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
       '<span style="flex:1 1 150px"><b>' + gcEsc(w.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(w.phone) + '</span></span>' +
       '<span style="flex:1 1 170px">' + gcEsc((w.ic || '') + ' ' + w.nm) + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + gcEsc(w.tier) + '</span></span>' +
-      '<span style="flex:0 1 230px;text-align:right">' + act + '</span></div>';
+      '<span style="flex:0 1 270px;text-align:right">' + act + ' <a style="cursor:pointer;text-decoration:underline;font-size:12px;color:var(--red);margin-left:6px" onclick="gcgUndoDraw(\'' + w.id + '\')">收回獎項</a></span></div>';
   }).join('');
   return h + '</div>';
+}
+async function gcgUndoDraw(id){
+  var c = (gcgData.coins || {})[id] || {};
+  var sv = gcgData.gold || {}, pz = (sv.prizes || []).filter(function(p){ return p.id === c.prizeId })[0] || {};
+  var type = c.prizeType || pz.type || 'ticket', v = c.prizeV || pz.v || 0;
+  var what = type === 'bonus' ? '會扣回紅利 ' + v + ' 點（會員明細會留一筆「作廢」反向紀錄）' : type === 'ticket' ? '會把他帳上那張券拿掉' : '（銘謝惠顧，沒有東西要收）';
+  if (!confirm('要收回「' + (c.name || c.phone) + '」抽到的「' + (c.prizeNm || '') + '」嗎？\n\n' + what + '，限量數量和中獎紀錄也會還原。')) return;
+  var delCoin = confirm('這枚金幣要怎麼處理？\n\n【確定】金幣一併收回（測試資料用這個）\n【取消】金幣還給客人，他可以再抽一次');
+  try {
+    var j = await staffApi('/staff/gacha/gold/undo-draw', { id:id, deleteCoin:delCoin });
+    alert('已收回：\n' + (j.done || []).join('\n'));
+    await gcgLoad(); gcData = null; renderGacha();
+  } catch(e) { alert('收回失敗：' + e.message) }
 }
 async function gcgTaken(id, undo){
   if (!undo && !confirm('確定客人已經把獎品拿走了嗎？')) return;
