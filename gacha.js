@@ -13,6 +13,7 @@
 
 var gcData = null, gcLoading = false, gcTab = 'overview', gcQuery = '', gcOnlyTkt = false;
 var gcTkts = {}, gcDraft = null, gcLotteryPick = null;
+var gcgData = null, gcgDraft = null, gcgCoinQ = '';
 
 function gcEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
@@ -38,13 +39,17 @@ async function renderGacha(){
     el.innerHTML = '<div class="empty">載入扭蛋資料中…</div>';
     try { await gcLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到扭蛋資料：' + gcEsc(e.message) + '</div>'; return }
   }
-  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定']];
+  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋']];
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (gcTab === t[0] ? ' active' : '') + '" onclick="gcSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="gcReload()">↻ 重新讀取</button></div>';
-  if (gcData.isDefault) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
+  if (gcData.isDefault && gcTab !== 'gold') h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完獎品或活動設定按「儲存」之後，就會以這裡的為準。</div>';
-  h += gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
+  if (gcTab === 'gold' && !gcgData) {
+    el.innerHTML = h + '<div class="empty">載入黃金扭蛋設定中…</div>';
+    try { await gcgLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到黃金扭蛋設定：' + gcEsc(e.message) + '</div>'; return }
+  }
+  h += gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
   el.innerHTML = h;
   if (gcTab === 'log') {
     var sb = document.getElementById('gc-search');
@@ -54,7 +59,7 @@ async function renderGacha(){
   }
 }
 function gcSwitch(t){ gcTab = t; renderGacha() }
-async function gcReload(){ gcData = null; gcTkts = {}; await renderGacha() }
+async function gcReload(){ gcData = null; gcgData = null; gcTkts = {}; await renderGacha() }
 
 function gcLogList(){
   var l = gcData.log || {};
@@ -452,4 +457,239 @@ async function gcSaveQuiz(){
     alert('題庫已儲存（' + j.quiz.length + ' 題）');
     renderGacha();
   } catch(e) { alert('儲存失敗：' + e.message) }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   🪙 黃金扭蛋（2026-10-09）
+   買方案送金幣，一枚金幣抽一次黃金扭蛋。這一頁管：
+   - 方案等級：登記的方案金額一模一樣才算進那一級（例如 11000、15000 是一級，18000、22000 是二級）
+   - 獎品清單：全部等級共用一份（A、B、C…），每個獎品「每一級各自填中獎機率」，每級加起來要 100%
+   - 試抽：用目前填的機率模擬抽很多次，看實際分布；也能輸入方案金額看會落在哪一級
+   - 手動補發金幣、金幣紀錄、收回還沒抽的金幣
+   資料在 gacha/gold、gacha/goldcoins，一樣透過 /staff/gacha/gold* 讀寫。
+   ⚠ 客人端抽獎、買方案自動發金幣還沒接，目前這裡是設定＋試抽＋手動補發。
+   ══════════════════════════════════════════════════════════ */
+var gcgSim = null, gcgSimSel = { t:'', n:10000 };
+async function gcgLoad(){
+  gcgData = await staffApi('/staff/gacha/gold', {});
+  gcgDraft = JSON.parse(JSON.stringify(gcgData.gold));
+  gcgFill();
+}
+/* 第一次打開（還沒存過）先擺好兩級、十格空的獎品，照大熊講的金額分級；名稱和機率要他自己填 */
+function gcgFill(){
+  var g = gcgDraft;
+  if (!g.tiers) g.tiers = [];
+  if (!g.prizes) g.prizes = [];
+  if (!g.tiers.length && !g.prizes.length) {
+    g.tiers = [{ id:'t1', nm:'一級', plans:[11000, 15000], coins:1 }, { id:'t2', nm:'二級', plans:[18000, 22000], coins:1 }];
+    for (var i = 0; i < 10; i++) g.prizes.push({ id:'g' + (i + 1), ic:'🎁', nm:'', sub:'', type:'ticket', kind:'goods', w:{} });
+  }
+}
+var GCG_TYPE = { bonus:'紅利點數', ticket:'票券／贈品', none:'銘謝惠顧' };
+function gcgInp(v, w, oc, type, ph){
+  return '<input ' + (type ? 'type="' + type + '" ' : '') + (ph ? 'placeholder="' + ph + '" ' : '') + (type === 'number' ? 'step="any" ' : '') + 'value="' + gcEsc(v == null ? '' : v) +
+    '" style="width:' + w + 'px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="' + oc + '">';
+}
+function gcgLetter(i){ return i < 26 ? String.fromCharCode(65 + i) : String(i + 1) }
+function gcgSum(tid){ return Math.round(gcgDraft.prizes.reduce(function(s, p){ return s + (+((p.w || {})[tid]) || 0) }, 0) * 100) / 100 }
+function gcgHtml(){
+  var g = gcgDraft, tiers = g.tiers, prizes = g.prizes;
+  var h = '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;line-height:1.8">' +
+    '<b>目前進度：</b>這一頁可以設定等級、獎品、各級機率，也能試抽和手動補發金幣。<b>客人端還不能抽、買方案也還不會自動送金幣</b>，所以「開放」打開之後暫時不會有作用。</div>';
+
+  h += '<div class="card"><div class="card-title">🪙 黃金扭蛋</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:6px 0"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcgDraft.enabled=this.checked"> 開放黃金扭蛋</label>' +
+    '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-top:10px;font-size:13.5px">' +
+    '<label style="color:var(--text2)">金幣使用期限</label><div><input type="date" value="' + gcEsc(g.expiry || '') + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="gcgDraft.expiry=this.value"> ' +
+    '<span class="muted" style="font-size:12px">空白＝不限期限</span></div></div></div>';
+
+  /* 方案等級 */
+  h += '<div class="card"><div class="card-title">方案等級</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">填「登記方案時的金額」，一模一樣才算進那一級，用逗號隔開，一個金額只能放在一級。買到那一級的方案就送那一級的金幣數。</div>';
+  tiers.forEach(function(t, ti){
+    h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px">' +
+      gcgInp(t.nm, 90, 'gcgSetT(' + ti + ',\'nm\',this.value)', '', '等級名稱') + ' 方案金額 ' +
+      '<input value="' + gcEsc((t.plans || []).join(', ')) + '" placeholder="例如 11000, 15000" style="width:200px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="gcgSetT(' + ti + ',\'plans\',this.value)"> 元，送 ' +
+      gcgInp(t.coins, 52, 'gcgSetT(' + ti + ',\'coins\',this.value)', 'number') + ' 枚金幣' +
+      '<button class="btn btn-del btn-sm" onclick="gcgDelT(' + ti + ')">刪除</button></div>';
+  });
+  h += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="btn btn-outline btn-sm" onclick="gcgAddT()">＋ 新增等級</button>' +
+    '<span style="flex:1"></span><span style="font-size:13px">查方案金額 ' + '<input id="gcg-amt" type="number" placeholder="例如 15000" style="width:100px;padding:5px 6px;border:1px solid var(--border);border-radius:6px" oninput="gcgWhich()"> → <b id="gcg-which">—</b></span></div></div>';
+
+  /* 獎品表：每級一欄機率 */
+  h += '<div class="card"><div class="card-title">獎品與各級中獎機率</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:12px">獎品是大家共用的同一份清單。右邊每一級各填一欄「中獎機率 %」，想讓某一級比較容易抽到某個獎品，就把那一格填大一點；<b>每一級那一欄加起來要剛好 100%</b>。' +
+    '機率填 0 代表那一級抽不到這個獎品。限量、每人上限是所有等級合計，空白代表不限。</div>' +
+    '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;min-width:' + (700 + tiers.length * 90) + 'px">' +
+    '<tr style="text-align:left;color:var(--text2)"><th style="padding:6px 4px;width:30px"></th><th>圖示</th><th>名稱</th><th>說明</th><th>類型</th><th>點數／性質</th><th>限量</th><th>每人上限</th>' +
+    tiers.map(function(t){ return '<th style="color:var(--gold2)">' + gcEsc(t.nm) + ' %</th>' }).join('') + '<th></th></tr>';
+  prizes.forEach(function(p, pi){
+    var f = 'gcgSetP(' + pi + ',';
+    var sel = function(k, v, opts){
+      return '<select style="padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="' + f + '\'' + k + '\',this.value)">' +
+        Object.keys(opts).map(function(o){ return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + opts[o] + '</option>' }).join('') + '</select>';
+    };
+    h += '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 4px;font-weight:600;color:var(--gold2)">' + gcgLetter(pi) + '</td>' +
+      '<td>' + gcgInp(p.ic, 40, f + '\'ic\',this.value)') + '</td>' +
+      '<td>' + gcgInp(p.nm, 130, f + '\'nm\',this.value)', '', '獎品名稱') + '</td><td>' + gcgInp(p.sub, 130, f + '\'sub\',this.value)') + '</td>' +
+      '<td>' + sel('type', p.type, GCG_TYPE) + '</td><td>' +
+      (p.type === 'bonus' ? gcgInp(p.v, 52, f + '\'v\',this.value)', 'number') + ' 點' : p.type === 'ticket' ? sel('kind', p.kind || 'goods', GC_KIND) : '<span class="muted">—</span>') + '</td>' +
+      '<td>' + gcgInp(p.qty, 52, f + '\'qty\',this.value)', 'number') + '</td><td>' + gcgInp(p.per, 52, f + '\'per\',this.value)', 'number') + '</td>' +
+      tiers.map(function(t){ return '<td>' + gcgInp((p.w || {})[t.id], 64, 'gcgSetW(' + pi + ',\'' + t.id + '\',this.value)', 'number') + '</td>' }).join('') +
+      '<td><button class="btn btn-del btn-sm" onclick="gcgDelP(' + pi + ')">刪除</button></td></tr>';
+  });
+  h += '<tr style="border-top:2px solid var(--border);font-weight:600"><td colspan="8" style="padding:8px 4px;text-align:right">合計（要 100%）</td>' +
+    tiers.map(function(t){ var s = gcgSum(t.id), ok = Math.abs(s - 100) < 0.01;
+      return '<td style="color:' + (ok ? '#2e7d4f' : 'var(--red)') + '">' + s + '%' + (ok ? ' ✓' : '') + '</td>' }).join('') + '<td></td></tr></table></div>' +
+    '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="gcgAddP()">＋ 新增獎品</button>' +
+    '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcgUndo()">放棄修改</button>' +
+    '<button class="btn btn-gold" onclick="gcgSave()">💾 儲存黃金扭蛋設定</button></div>';
+  if (gcgData.gold && gcgData.gold.updatedAt) h += '<div class="muted" style="font-size:12px;margin-top:8px;text-align:right">上次儲存：' +
+    gcEsc(String(gcgData.gold.updatedAt).slice(0, 16).replace('T', ' ')) + ' ' + gcEsc(gcgData.gold.updatedBy || '') + '</div>';
+  h += '</div>';
+
+  /* 試抽 */
+  h += '<div class="card"><div class="card-title">試抽看分布</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">用上面「現在畫面上填的機率」（不用先儲存）模擬抽很多次，不入帳、不扣限量，只是讓你看每一級實際會抽到什麼比例。</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13.5px"><select id="gcg-simtier" style="padding:7px;border:1px solid var(--border);border-radius:6px">' +
+    tiers.map(function(t){ return '<option value="' + gcEsc(t.id) + '"' + (gcgSimSel.t === t.id ? ' selected' : '') + '>' + gcEsc(t.nm) + '</option>' }).join('') + '</select>' +
+    '<select id="gcg-simn" style="padding:7px;border:1px solid var(--border);border-radius:6px">' + [100, 1000, 10000, 100000].map(function(n){ return '<option' + (gcgSimSel.n === n ? ' selected' : '') + '>' + n + '</option>' }).join('') + '</select> 次' +
+    '<button class="btn btn-gold btn-sm" onclick="gcgRunSim()">🎲 試抽</button></div>';
+  if (gcgSim) {
+    h += '<div style="margin-top:12px;font-size:13px"><b>' + gcEsc(gcgSim.tier) + '</b>　抽了 ' + gcgSim.n + ' 次</div>' +
+      '<table style="border-collapse:collapse;font-size:13px;margin-top:6px"><tr style="text-align:left;color:var(--text2)"><th style="padding:4px 8px 4px 0"></th><th style="padding-right:12px">獎品</th><th style="padding-right:12px;text-align:right">設定</th><th style="padding-right:12px;text-align:right">實際</th><th style="text-align:right">次數</th></tr>' +
+      gcgSim.rows.map(function(r){ return '<tr style="border-top:1px solid var(--border)"><td style="padding:4px 8px 4px 0;font-weight:600;color:var(--gold2)">' + r.l + '</td><td style="padding-right:12px">' + gcEsc(r.nm) +
+        '</td><td style="padding-right:12px;text-align:right">' + r.set + '%</td><td style="padding-right:12px;text-align:right">' + r.act + '%</td><td style="text-align:right">' + r.c + '</td></tr>' }).join('') + '</table>';
+  }
+  h += '</div>';
+
+  /* 手動補發 */
+  var saved = (gcgData.gold && gcgData.gold.tiers) || [];
+  h += '<div class="card"><div class="card-title">手動補發金幣</div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">等級要先儲存才選得到。補發的金幣會記在下面的金幣紀錄裡。</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13.5px">' +
+    '<input id="gcg-phone" placeholder="會員電話" style="width:130px;padding:7px 8px;border:1px solid var(--border);border-radius:6px">' +
+    '<select id="gcg-tier" style="padding:7px;border:1px solid var(--border);border-radius:6px">' +
+    (saved.length ? saved.map(function(t){ return '<option value="' + gcEsc(t.id) + '">' + gcEsc(t.nm) + '</option>' }).join('') : '<option value="">（還沒有等級）</option>') + '</select>' +
+    '<input id="gcg-n" type="number" min="1" max="20" value="1" style="width:56px;padding:7px 8px;border:1px solid var(--border);border-radius:6px"> 枚' +
+    '<input id="gcg-note" placeholder="備註（選填）" style="width:180px;padding:7px 8px;border:1px solid var(--border);border-radius:6px">' +
+    '<button class="btn btn-gold btn-sm" onclick="gcgGrant()">補發</button></div></div>';
+
+  /* 金幣紀錄 */
+  var coins = gcgData.coins || {};
+  var list = Object.keys(coins).map(function(k){ return Object.assign({ _k:k }, coins[k]) }).filter(function(x){ return x && x.at })
+    .sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
+  var q = gcgCoinQ.trim(), qd = q.replace(/\D/g, '');
+  var shown = list.filter(function(x){ return !q || (x.name && x.name.indexOf(q) >= 0) || (qd.length >= 3 && String(x.phone).indexOf(qd) >= 0) }).slice(0, 200);
+  var unused = list.filter(function(x){ return !x.used }).length;
+  h += '<div class="card"><div class="card-title">金幣紀錄　<span style="font-size:13px;color:var(--text2);font-weight:400">共 ' + list.length + ' 枚・還沒抽 ' + unused + ' 枚</span></div>' +
+    '<input placeholder="搜尋姓名或電話" value="' + gcEsc(gcgCoinQ) + '" onchange="gcgCoinQ=this.value;renderGacha()" style="width:100%;max-width:300px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:10px">';
+  if (!shown.length) h += '<div class="empty">還沒有金幣紀錄</div>';
+  else h += shown.map(function(x){
+    var t = String(x.at).slice(5, 16).replace('T', ' ').replace('-', '/');
+    return '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
+      '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
+      '<span style="flex:1 1 150px"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
+      '<span style="flex:1 1 150px">🪙 ' + gcEsc(x.tierNm || '') + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (x.src === 'manual' ? '手動補發' : '買方案') + '</span>' +
+      (x.note ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.note) + '</span>' : '') + '</span>' +
+      '<span style="width:130px;text-align:right;font-size:12px">' + (x.used
+        ? '<span style="color:var(--text3)">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span>'
+        : '<span style="color:#2e7d4f;margin-right:6px">未抽</span><a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</span></div>';
+  }).join('');
+  return h + '</div>';
+}
+function gcgSetT(ti, k, v){
+  var t = gcgDraft.tiers[ti]; if (!t) return;
+  if (k === 'coins') v = Math.max(1, Math.round(+v || 1));
+  if (k === 'plans') v = String(v).split(/[,，\s]+/).map(function(x){ return Math.round(+x.replace(/[^\d.]/g, '') || 0) }).filter(function(x){ return x > 0 });
+  t[k] = v;
+  if (k === 'nm' || k === 'plans') renderGacha();
+}
+function gcgSetP(pi, k, v){
+  var p = gcgDraft.prizes[pi]; if (!p) return;
+  if (k === 'v') v = Math.max(1, Math.round(+v || 1));
+  if (k === 'qty' || k === 'per') v = v === '' ? null : +v;
+  if (v === null) delete p[k]; else p[k] = v;
+  if (k === 'type' && v === 'ticket' && !p.kind) p.kind = 'goods';
+  if (k === 'type' && v === 'bonus' && !p.v) p.v = 1;
+  renderGacha();
+}
+function gcgSetW(pi, tid, v){
+  var p = gcgDraft.prizes[pi]; if (!p) return;
+  p.w = p.w || {};
+  p.w[tid] = v === '' ? 0 : Math.max(0, +v || 0);
+  renderGacha();
+}
+function gcgAddT(){
+  gcgDraft.tiers.push({ id:'t' + Date.now().toString(36), nm:'新等級', plans:[], coins:1 });
+  renderGacha();
+}
+function gcgDelT(ti){
+  if (!confirm('要刪除「' + gcgDraft.tiers[ti].nm + '」這一級嗎？（按儲存才會生效）')) return;
+  gcgDraft.tiers.splice(ti, 1); renderGacha();
+}
+function gcgAddP(){
+  gcgDraft.prizes.push({ id:'g' + Date.now().toString(36), ic:'🎁', nm:'', sub:'', type:'ticket', kind:'goods', w:{} });
+  renderGacha();
+}
+function gcgDelP(pi){
+  var p = gcgDraft.prizes[pi];
+  if (!confirm('要刪除獎品 ' + gcgLetter(pi) + (p.nm ? '「' + p.nm + '」' : '') + ' 嗎？（按儲存才會生效）')) return;
+  gcgDraft.prizes.splice(pi, 1); renderGacha();
+}
+function gcgUndo(){
+  gcgDraft = JSON.parse(JSON.stringify(gcgData.gold)); gcgFill(); gcgSim = null; renderGacha();
+}
+function gcgWhich(){
+  var a = Math.round(+document.getElementById('gcg-amt').value || 0), el = document.getElementById('gcg-which');
+  if (!a) { el.textContent = '—'; return }
+  var t = gcgDraft.tiers.filter(function(x){ return (x.plans || []).indexOf(a) >= 0 })[0];
+  el.textContent = t ? t.nm + '，送 ' + t.coins + ' 枚金幣' : '不在任何一級（不送金幣）';
+}
+function gcgRunSim(){
+  var tid = document.getElementById('gcg-simtier').value, n = +document.getElementById('gcg-simn').value || 1000;
+  gcgSimSel = { t:tid, n:n };
+  var t = gcgDraft.tiers.filter(function(x){ return x.id === tid })[0], ps = gcgDraft.prizes;
+  var tot = ps.reduce(function(s, p){ return s + (+((p.w || {})[tid]) || 0) }, 0);
+  if (!t || !tot) { alert('這一級還沒填任何機率'); return }
+  var cnt = ps.map(function(){ return 0 });
+  for (var i = 0; i < n; i++) {
+    var r = Math.random() * tot, k = 0;
+    for (; k < ps.length; k++) { r -= (+((ps[k].w || {})[tid]) || 0); if (r < 0) break }
+    cnt[Math.min(k, ps.length - 1)]++;
+  }
+  gcgSim = { tier:t.nm, n:n, rows:ps.map(function(p, k){
+    return { l:gcgLetter(k), nm:p.nm || '（還沒取名）', set:Math.round((+((p.w || {})[tid]) || 0) / tot * 10000) / 100, act:Math.round(cnt[k] / n * 10000) / 100, c:cnt[k] };
+  }) };
+  renderGacha();
+}
+async function gcgSave(){
+  if (!confirm('儲存黃金扭蛋設定？')) return;
+  try {
+    var j = await staffApi('/staff/gacha/gold/config', { gold:gcgDraft });
+    gcgData.gold = j.gold; gcgData.isDefault = false; gcgDraft = JSON.parse(JSON.stringify(j.gold));
+    alert('已儲存');
+    renderGacha();
+  } catch(e) { alert('儲存失敗：' + e.message) }
+}
+async function gcgGrant(){
+  var phone = document.getElementById('gcg-phone').value.replace(/\D/g, ''), tier = document.getElementById('gcg-tier').value,
+      n = +document.getElementById('gcg-n').value || 0, note = document.getElementById('gcg-note').value;
+  if (!phone) { alert('請填會員電話'); return }
+  if (!tier) { alert('請先新增並儲存一個等級'); return }
+  var tn = ((gcgData.gold.tiers || []).filter(function(t){ return t.id === tier })[0] || {}).nm || '';
+  if (!confirm('補發 ' + n + ' 枚「' + tn + '」金幣給 ' + phone + '？')) return;
+  try {
+    var j = await staffApi('/staff/gacha/gold/grant', { phone:phone, tier:tier, n:n, note:note });
+    alert('已補發 ' + j.granted + ' 枚給 ' + (j.name || phone));
+    await gcgLoad(); renderGacha();
+  } catch(e) { alert('補發失敗：' + e.message) }
+}
+async function gcgRevoke(key){
+  if (!confirm('要收回這枚還沒抽的金幣嗎？')) return;
+  try {
+    await staffApi('/staff/gacha/gold/revoke', { key:key });
+    await gcgLoad(); renderGacha();
+  } catch(e) { alert('收回失敗：' + e.message) }
 }
