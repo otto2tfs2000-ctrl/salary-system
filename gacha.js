@@ -472,6 +472,7 @@ async function gcSaveQuiz(){
    （原因欄寫「黃金扭蛋」，票券到時候按「已使用」）。
    ══════════════════════════════════════════════════════════ */
 var gcgSim = null, gcgSimSel = { t:'', n:10000 };
+var gcgWin = { prize:'', st:'', q:'' };
 async function gcgLoad(){
   gcgData = await staffApi('/staff/gacha/gold', {});
   gcgDraft = JSON.parse(JSON.stringify(gcgData.gold));
@@ -592,6 +593,8 @@ function gcgHtml(){
     gcEsc(String(gcgData.gold.updatedAt).slice(0, 16).replace('T', ' ')) + ' ' + gcEsc(gcgData.gold.updatedBy || '') + '</div>';
   h += '</div>';
 
+  h += gcgWinnersHtml();
+
   /* 試抽 */
   h += '<div class="card"><div class="card-title">試抽看分布</div>' +
     '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">用上面「現在畫面上填的機率」（不用先儲存）模擬抽很多次，不入帳、不扣限量，只是讓你看每一級實際會抽到什麼比例。</div>' +
@@ -642,6 +645,96 @@ function gcgHtml(){
         : '<span style="color:#2e7d4f;margin-right:6px">未抽</span><a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</span></div>';
   }).join('');
   return h + '</div>';
+}
+/* ── 得獎統計與領取確認單 ──
+   資料是每枚已抽的金幣（gacha/goldcoins）：誰、什麼時候、抽到什麼、領了沒。
+   紅利抽到就入帳，不用領；票券／贈品要來店領，領的時候按「已領取」（會同步把會員那張券標成已使用）。 */
+function gcgWinners(){
+  var sv = gcgData.gold || {}, pz = {}, out = [];
+  (sv.prizes || []).forEach(function(p){ pz[p.id] = p });
+  var coins = gcgData.coins || {};
+  Object.keys(coins).forEach(function(k){
+    var c = coins[k]; if (!c || !c.used) return;
+    var p = pz[c.prizeId] || {};
+    out.push({ id:k, at:c.usedAt || c.at, name:c.name || '', phone:c.phone || k.split('|')[0], prizeId:c.prizeId, nm:c.prizeNm || p.nm || '（已刪除的獎品）',
+      ic:c.prizeIc || p.ic || '', type:c.prizeType || p.type || 'ticket', v:c.prizeV || p.v || 0, tier:c.tierNm || '', taken:!!c.taken, takenBy:c.takenBy || '', takenAt:c.takenAt || '' });
+  });
+  return out.sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
+}
+function gcgWinnersHtml(){
+  var sv = gcgData.gold || {}, prizes = sv.prizes || [], list = gcgWinners(), stock = gcgData.stock || {};
+  var h = '<div class="card"><div class="card-title">得獎統計與領取確認</div>';
+  if (!prizes.length) return h + '<div class="muted" style="font-size:13px">儲存獎品之後，這裡會顯示每個獎品送出幾個、誰拿走。</div></div>';
+  /* 各獎品統計 */
+  h += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;min-width:560px;width:100%"><tr style="text-align:left;color:var(--text2)"><th style="padding:6px 4px"></th><th>獎品</th><th>類型</th><th style="text-align:right">限量</th><th style="text-align:right">已送出</th><th style="text-align:right">剩餘</th><th style="text-align:right">已領取</th><th style="text-align:right">還沒領</th></tr>';
+  prizes.forEach(function(p, i){
+    var mine = list.filter(function(w){ return w.prizeId === p.id }), sent = Math.max(mine.length, +stock[p.id] || 0);
+    var need = p.type === 'ticket', taken = mine.filter(function(w){ return w.taken }).length;
+    var left = p.qty == null ? '不限' : Math.max(0, p.qty - sent);
+    h += '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 4px;font-weight:600;color:var(--gold2)">' + gcgLetter(i) + '</td><td>' + gcEsc((p.ic || '') + ' ' + p.nm) + '</td><td>' + GCG_TYPE[p.type] + '</td>' +
+      '<td style="text-align:right">' + (p.qty == null ? '不限' : p.qty) + '</td><td style="text-align:right"><b>' + sent + '</b></td>' +
+      '<td style="text-align:right;' + (left === 0 ? 'color:var(--red)' : '') + '">' + left + '</td>' +
+      '<td style="text-align:right">' + (need ? taken : '—') + '</td><td style="text-align:right;' + (need && mine.length - taken > 0 ? 'color:var(--red);font-weight:600' : '') + '">' + (need ? mine.length - taken : '—') + '</td></tr>';
+  });
+  h += '</table></div>';
+  /* 確認單 */
+  var q = gcgWin.q.trim(), qd = q.replace(/\D/g, '');
+  var rows = list.filter(function(w){
+    if (gcgWin.prize && w.prizeId !== gcgWin.prize) return false;
+    if (gcgWin.st === 'todo' && !(w.type === 'ticket' && !w.taken)) return false;
+    if (gcgWin.st === 'done' && !(w.type === 'ticket' && w.taken)) return false;
+    if (!q) return true;
+    return (w.name && w.name.indexOf(q) >= 0) || (qd.length >= 3 && String(w.phone).indexOf(qd) >= 0);
+  });
+  var opt = function(v, t, cur){ return '<option value="' + gcEsc(v) + '"' + (cur === v ? ' selected' : '') + '>' + gcEsc(t) + '</option>' };
+  h += '<div style="margin-top:16px;font-weight:600;font-size:14px">領取確認單</div>' +
+    '<div class="muted" style="font-size:12px;margin:2px 0 8px">客人來店領獎品時，找到他那一筆按「已領取」。按錯可以「復原」。紅利抽到就已經入帳，不用領。</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:13px">' +
+    '<select onchange="gcgWin.prize=this.value;renderGacha()" style="padding:6px;border:1px solid var(--border);border-radius:6px">' + opt('', '全部獎品', gcgWin.prize) +
+    prizes.map(function(p, i){ return opt(p.id, gcgLetter(i) + ' ' + p.nm, gcgWin.prize) }).join('') + '</select>' +
+    '<select onchange="gcgWin.st=this.value;renderGacha()" style="padding:6px;border:1px solid var(--border);border-radius:6px">' + opt('', '全部', gcgWin.st) + opt('todo', '還沒領取', gcgWin.st) + opt('done', '已領取', gcgWin.st) + '</select>' +
+    '<input placeholder="搜尋姓名或電話" value="' + gcEsc(gcgWin.q) + '" onchange="gcgWin.q=this.value;renderGacha()" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;width:150px">' +
+    '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcgPrintSheet()">🖨 列印確認單</button></div>';
+  if (!rows.length) return h + '<div class="empty">還沒有符合的得獎紀錄</div></div>';
+  h += rows.slice(0, 300).map(function(w){
+    var t = String(w.at).slice(5, 16).replace('T', ' ').replace('-', '/');
+    var act = w.type === 'bonus' ? '<span style="color:#2e7d4f">紅利 ' + w.v + ' 點已入帳</span>' : w.type === 'none' ? '<span class="muted">銘謝惠顧</span>' :
+      (w.taken ? '<span style="color:#2e7d4f">✓ 已領取</span> <span class="muted" style="font-size:11.5px">' + gcEsc(w.takenBy) + ' ' + gcEsc(String(w.takenAt).slice(5, 10).replace('-', '/')) + '</span> <a style="cursor:pointer;text-decoration:underline;font-size:12px" onclick="gcgTaken(\'' + w.id + '\',true)">復原</a>' :
+        '<span style="color:var(--red);margin-right:6px">還沒領</span><button class="btn btn-gold btn-sm" onclick="gcgTaken(\'' + w.id + '\',false)">已領取</button>');
+    return '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
+      '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
+      '<span style="flex:1 1 150px"><b>' + gcEsc(w.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(w.phone) + '</span></span>' +
+      '<span style="flex:1 1 170px">' + gcEsc((w.ic || '') + ' ' + w.nm) + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + gcEsc(w.tier) + '</span></span>' +
+      '<span style="flex:0 1 230px;text-align:right">' + act + '</span></div>';
+  }).join('');
+  return h + '</div>';
+}
+async function gcgTaken(id, undo){
+  if (!undo && !confirm('確定客人已經把獎品拿走了嗎？')) return;
+  try {
+    await staffApi('/staff/gacha/gold/taken', { id:id, undo:!!undo });
+    await gcgLoad(); renderGacha();
+  } catch(e) { alert('更新失敗：' + e.message) }
+}
+/* 列印確認單：開新視窗，照目前的篩選列出，最後一欄留空白給客人簽收 */
+function gcgPrintSheet(){
+  var list = gcgWinners().filter(function(w){
+    if (w.type === 'none') return false;
+    if (gcgWin.prize && w.prizeId !== gcgWin.prize) return false;
+    if (gcgWin.st === 'todo' && !(w.type === 'ticket' && !w.taken)) return false;
+    if (gcgWin.st === 'done' && !(w.type === 'ticket' && w.taken)) return false;
+    return true;
+  });
+  var w = window.open('', '_blank');
+  if (!w) { alert('瀏覽器擋住了新視窗，請允許彈出視窗再試一次'); return }
+  var rows = list.map(function(x){
+    return '<tr><td>' + gcEsc(String(x.at).slice(5, 16).replace('T', ' ').replace('-', '/')) + '</td><td>' + gcEsc(x.name || '') + '</td><td>' + gcEsc(x.phone) + '</td><td>' + gcEsc(x.nm) + '</td><td>' +
+      (x.type === 'bonus' ? '紅利 ' + x.v + ' 點已入帳' : x.taken ? '已領取 ' + gcEsc(x.takenBy) : '') + '</td><td></td></tr>';
+  }).join('');
+  w.document.write('<!doctype html><meta charset="utf-8"><title>黃金扭蛋領取確認單</title><style>body{font-family:sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:8px;font-size:14px;text-align:left}th{background:#eee}td:last-child{width:130px}</style>' +
+    '<h2>黃金扭蛋領取確認單</h2><p>列印日期：' + new Date().toLocaleDateString('zh-TW') + '　共 ' + list.length + ' 筆</p>' +
+    '<table><tr><th>抽中時間</th><th>姓名</th><th>電話</th><th>獎品</th><th>狀態</th><th>簽收</th></tr>' + rows + '</table>');
+  w.document.close();
 }
 function gcgSetT(ti, k, v){
   var t = gcgDraft.tiers[ti]; if (!t) return;
