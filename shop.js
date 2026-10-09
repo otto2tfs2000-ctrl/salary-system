@@ -67,23 +67,58 @@ function shPriceTxt(p){
   return on ? '<s style="color:#999">' + p.price + '</s> <b style="color:#d6453b">' + sl.price + '</b> 點（優惠到 ' + sl.to.slice(5).replace('-','/') + '）'
     : '<b>' + p.price + '</b> 點' + (p.cash ? '<span class="muted" style="font-size:12px">（現金 ' + p.cash + ' 元）</span>' : '') + (sl && sl.from ? '<span class="muted" style="font-size:12px">　優惠 ' + sl.price + ' 點：' + sl.from.slice(5).replace('-','/') + '～' + sl.to.slice(5).replace('-','/') + '</span>' : '');
 }
+/* ── 商品順序：拖曳卡片（電腦）或按 ▲▼（手機也行）。順序就是客人在選品館看到的順序 ── */
+var shCatF = '', shDragId = '';
+function shSorted(){ return (shData.products || []).slice().sort(function(a, b){ return (Number(a.order) || 0) - (Number(b.order) || 0) }) }
+async function shSaveOrder(ids){
+  /* 先在畫面上改好（馬上看到），再通知伺服器；失敗就重新讀 */
+  ids.forEach(function(id, i){ var p = (shData.products || []).filter(function(x){ return x.id === id })[0]; if (p) p.order = (i + 1) * 10 });
+  shData.products = shSorted(); renderShop();
+  try { await staffApi('/staff/shop/reorder', { ids: ids }) } catch(e) { alert('順序沒存成功：' + e.message); shReload() }
+}
+function shMove(id, dir){
+  var all = shSorted().map(function(p){ return p.id });
+  var sub = shSorted().filter(function(p){ return !shCatF || p.cat === shCatF }).map(function(p){ return p.id });
+  var i = sub.indexOf(id), j = i + dir; if (i < 0 || j < 0 || j >= sub.length) return;
+  var a = all.indexOf(id), b = all.indexOf(sub[j]); all[a] = sub[j]; all[b] = id;
+  shSaveOrder(all);
+}
+function shMoveTop(id){
+  var all = shSorted().map(function(p){ return p.id });
+  var sub = shSorted().filter(function(p){ return !shCatF || p.cat === shCatF }).map(function(p){ return p.id });
+  if (!sub.length || sub[0] === id) return;
+  all.splice(all.indexOf(id), 1); all.splice(all.indexOf(sub[0]), 0, id);
+  shSaveOrder(all);
+}
+function shDrop(targetId){
+  var d = shDragId; shDragId = '';
+  if (!d || d === targetId) return;
+  var all = shSorted().map(function(p){ return p.id });
+  all.splice(all.indexOf(d), 1); all.splice(all.indexOf(targetId), 0, d);
+  shSaveOrder(all);
+}
 function shListHtml(){
-  var list = shData.products || [];
+  var list = shSorted();
+  var rank = {}; list.forEach(function(p, i){ rank[p.id] = i + 1 });
+  var cats = shData.cfg.cats || [];
+  if (shCatF) list = list.filter(function(p){ return p.cat === shCatF });
   var h = '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">' +
     '<button class="btn btn-gold" onclick="shNew()">＋ 新增商品</button>' +
-    '<span class="muted" style="font-size:12.5px">共 ' + list.length + ' 項。「排序」數字小的排前面；沒勾「上架」客人看不到。</span></div>';
+    '<span class="muted" style="font-size:12.5px">共 ' + list.length + ' 項。<b>拖曳卡片</b>或按 <b>▲▼</b> 調整順序，客人看到的順序就是這裡的順序；沒勾「上架」客人看不到。</span></div>' +
+    (cats.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + [{ id:'', nm:'全部' }].concat(cats).map(function(c){ return '<button class="btn ' + (shCatF === c.id ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="shCatF=\'' + c.id + '\';renderShop()">' + shEsc(c.nm) + '</button>' }).join('') + '</div>' : '');
   if (!shData.cloudinary) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:10px">伺服器還沒設定 Cloudinary，商品照片暫時不能上傳（可以先用圖片網址）。</div>';
   if (!list.length) return h + '<div class="empty">還沒有商品。按上面「＋ 新增商品」開始上架。</div>';
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">';
   list.forEach(function(p){
-    h += '<div class="card" style="display:flex;gap:12px;align-items:flex-start;' + (p.active === false ? 'opacity:.55' : '') + '">' +
+    h += '<div class="card" draggable="true" ondragstart="shDragId=\'' + p.id + '\'" ondragover="event.preventDefault()" ondrop="event.preventDefault();shDrop(\'' + p.id + '\')" style="display:flex;gap:12px;align-items:flex-start;cursor:grab;' + (p.active === false ? 'opacity:.55' : '') + '">' +
       '<div style="width:78px;height:78px;flex:none;border-radius:10px;background:#efe8d8 center/cover no-repeat;' + (p.img ? "background-image:url('" + shEsc(p.img) + "')" : '') + '">' + (p.img ? '' : '<div style="text-align:center;line-height:78px;font-size:26px">🎁</div>') + '</div>' +
-      '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">' + shEsc(p.nm) + (p.active === false ? ' <span class="muted" style="font-size:12px">（已下架）</span>' : '') + '</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px"><span style="display:inline-block;min-width:22px;text-align:center;font-size:12px;background:#f0ece2;color:var(--text2);border-radius:10px;padding:0 6px;margin-right:6px;vertical-align:1px">' + rank[p.id] + '</span>' + shEsc(p.nm) + (p.active === false ? ' <span class="muted" style="font-size:12px">（已下架）</span>' : '') + '</div>' +
       '<div class="muted" style="font-size:12px;margin:2px 0">' + shEsc(shCatName(p.cat)) + '</div>' +
       '<div style="font-size:13.5px">' + shPriceTxt(p) + '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:2px">庫存 ' + (p.stock == null ? '不限' : p.stock) + '　每人限兌 ' + (p.perPerson ? p.perPerson + ' 次' : '不限') + '</div>' +
       '<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-outline btn-sm" onclick="shOpen(\'' + p.id + '\')">編輯</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="shToggle(\'' + p.id + '\')">' + (p.active === false ? '重新上架' : '下架') + '</button></div></div></div>';
+      '<button class="btn btn-outline btn-sm" onclick="shToggle(\'' + p.id + '\')">' + (p.active === false ? '重新上架' : '下架') + '</button></div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;align-items:center"><button class="btn btn-outline btn-sm" title="往前" onclick="shMove(\'' + p.id + '\',-1)">▲</button><button class="btn btn-outline btn-sm" title="往後" onclick="shMove(\'' + p.id + '\',1)">▼</button><button class="btn btn-outline btn-sm" onclick="shMoveTop(\'' + p.id + '\')">移到最前</button></div></div></div>';
   });
   return h + '</div>';
 }
@@ -120,7 +155,7 @@ function shFormHtml(){
       '三格都填才會生效；期間過了自動恢復原價。不要優惠就全部留空。') +
     shRow('庫存', shInp('sh-stock', p.stock == null ? '' : p.stock, 'number', 90) + ' 件', '空白＝不限量。每兌換一次自動減 1，減到 0 客人看到「換完了」。') +
     shRow('每人限兌', shInp('sh-pp', p.perPerson || 0, 'number', 80) + ' 次', '0＝不限。') +
-    shRow('排序', shInp('sh-order', p.order, 'number', 80), '數字小的排前面。') +
+    shRow('排序', shInp('sh-order', p.order, 'number', 80), '數字小的排前面。平常不用改這格，回商品列表拖曳或按 ▲▼ 就好。') +
     shRow('上架', '<label style="display:flex;gap:6px;align-items:center"><input id="sh-act" type="checkbox"' + (p.active !== false ? ' checked' : '') + '> 客人看得到、可以兌換</label>') +
     '</div><div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">' +
     '<button class="btn btn-gold" onclick="shSaveProduct()">💾 儲存</button>' +
