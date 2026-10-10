@@ -74,6 +74,27 @@ function gcStat(n, label, sub){
     (sub ? '<div class="muted" style="font-size:12px">' + sub + '</div>' : '') + '</div>';
 }
 
+/* 2026-10-10 黑熊圖鑑集滿名單：誰拿到集滿禮、誰在限量送完後才集滿（沒拿到）。
+   以前限量送完後集滿的人沒有任何紀錄，只能從 players.collected 看出來，時間不明 */
+var gcShowCol = false;
+function gcColListHtml(pls, all){
+  var byPh = {};
+  all.forEach(function(x){ if (x.why === 'collect' && !x.test) byPh[x.phone] = x });
+  var rows = Object.keys(pls).filter(function(ph){ return (pls[ph] || {}).collected }).map(function(ph){
+    var x = byPh[ph], got = !!(x && !x.soldOut && x.type !== 'none');
+    return { ph: ph, nm: (x && x.name) || (pls[ph] || {}).name || '', at: x ? String(x.at) : '', got: got };
+  }).sort(function(a, b){ return (b.got - a.got) || (a.at && b.at ? (a.at < b.at ? -1 : 1) : (a.at ? -1 : 1)) });
+  if (!rows.length) return '<div class="muted" style="font-size:13px;margin-top:10px">還沒有人集滿。</div>';
+  return '<div style="margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:6px 14px">' + rows.map(function(r){
+    var t = r.at ? r.at.slice(5, 16).replace('T', ' ').replace('-', '/') : '時間不明';
+    return '<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
+      '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
+      '<span style="flex:1 1 160px"><b>' + gcEsc(r.nm || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(r.ph) + '</span></span>' +
+      (r.got ? '<span style="font-size:12px;color:#2e7d4f">🎁 有拿到集滿禮（核銷到「中獎紀錄」搜「集滿」）</span>'
+             : '<span style="font-size:12px;color:#b5482b">集滿了，但限量已送完，沒拿到禮物</span>') + '</div>';
+  }).join('').replace('border-top:1px solid var(--border);', '') + '</div>';
+}
+
 /* ── 總覽 ── */
 function gcOverviewHtml(){
   var cfg = gcData.cfg, today = gcData.today, all = gcLogList();
@@ -104,7 +125,9 @@ function gcOverviewHtml(){
   h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">' +
     gcStat(qN, '今天答題的人', '答對 ' + qOk + ' 人') +
     gcStat(memN, '今天翻牌過關', '') +
-    gcStat(colN, '黑熊圖鑑集滿', '集滿禮已送 ' + (+(gcData.stock || {}).collect || 0) + '／' + (gcData.cfg.collectLimit == null ? 5 : gcData.cfg.collectLimit)) + '</div>';
+    '<div style="flex:1 1 150px;display:flex;cursor:pointer" onclick="gcShowCol=!gcShowCol;renderGacha()" title="點一下看名單">' +
+    gcStat(colN, '黑熊圖鑑集滿 ' + (gcShowCol ? '▴' : '▾'), '集滿禮已送 ' + (+(gcData.stock || {}).collect || 0) + '／' + (gcData.cfg.collectLimit == null ? 5 : gcData.cfg.collectLimit) + '・點我看是誰') + '</div></div>';
+  if (gcShowCol) h += gcColListHtml(pls, all);
   if (all.some(function(x){ return x.test })) h += '<div class="muted" style="font-size:12px;margin-top:10px">上面數字不含活動開始前測試名單玩的紀錄。</div>';
   h += '</div>';
 
@@ -176,7 +199,7 @@ function gcDrawLottery(){
 function gcLogHtml(){
   return '<div class="card"><div class="card-title">中獎紀錄</div>' +
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-    '<input id="gc-search" placeholder="搜尋姓名或電話" value="' + gcEsc(gcQuery) + '" style="flex:1 1 200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
+    '<input id="gc-search" placeholder="搜尋姓名、電話或獎品（例：集滿）" value="' + gcEsc(gcQuery) + '" style="flex:1 1 200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
     '<label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" ' + (gcOnlyTkt ? 'checked' : '') +
     ' onchange="gcOnlyTkt=this.checked;gcDrawLog()"> 只看票券</label></div>' +
     '<div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">客人拿抽到的券來用時，找到那一筆按「已使用」。按錯可以按「復原」。</div>' +
@@ -188,7 +211,8 @@ function gcDrawLog(){
   var list = gcLogList().filter(function(x){
     if (gcOnlyTkt && x.type !== 'ticket') return false;
     if (!q) return true;
-    return (x.name && x.name.indexOf(q) >= 0) || (qd.length >= 3 && String(x.phone).indexOf(qd) >= 0);
+    return (x.name && x.name.indexOf(q) >= 0) || (qd.length >= 3 && String(x.phone).indexOf(qd) >= 0) ||
+      (x.nm && String(x.nm).indexOf(q) >= 0) || (GC_WHY[x.why] && GC_WHY[x.why].indexOf(q) >= 0);
   }).slice(0, 300);
   if (!list.length) { box.innerHTML = '<div class="empty">沒有符合的紀錄</div>'; return }
   box.innerHTML = list.map(function(x){
