@@ -731,7 +731,7 @@ function onGlobalMonthChange() {
 function doUnlock() {
   const pwd = document.getElementById('lock-pwd').value;
   if (pwd === BOSS_PWD) {
-    tabUnlocked[pendingTab] = true;
+    tabUnlocked.salary = tabUnlocked.settings = true;   /* 打一次密碼，兩個都開（重新整理前不用再打） */
     document.getElementById('lock-overlay').style.display = 'none';
     document.getElementById('lock-pwd').value = '';
     document.getElementById('lock-err').textContent = '';
@@ -744,6 +744,8 @@ function doUnlock() {
 // ── Tab ────────────────────────────────────────────────
 function switchTab(tab) {
   const PROTECTED = ['salary','settings'];
+  /* 2026-10-10 大熊嫌每次都要打一長串密碼：用店長（管理員）LINE 登入的就直接進，其他人才要密碼 */
+  if (PROTECTED.includes(tab) && window.ME && ME.staff && ME.staff.role === 'owner') { doSwitchTab(tab); return; }
   if (PROTECTED.includes(tab) && !tabUnlocked[tab]) {
     pendingTab = tab;
     document.getElementById('lock-overlay').style.display = 'flex';
