@@ -11,7 +11,7 @@
      原因欄寫「十月黑熊扭蛋・紅利 N 點」）。這裡改設定只影響之後的抽獎。
    ══════════════════════════════════════════════════════════ */
 
-var gcData = null, gcLoading = false, gcTab = 'overview', gcQuery = '', gcOnlyTkt = false;
+var gcData = null, gcLoading = false, gcTab = 'overview', gcQuery = '';
 var gcTkts = {}, gcDraft = null, gcLotteryPick = null;
 var gcgData = null, gcgDraft = null, gcgCoinQ = '';
 
@@ -195,49 +195,118 @@ function gcDrawLottery(){
   renderGacha();
 }
 
-/* ── 中獎紀錄・核銷 ── */
+/* ── 中獎紀錄・核銷 ──
+   2026-10-10 大熊嫌「所有東西混在一起太亂」：改成先分類（實體獎品／紅利／集滿禮／黃金扭蛋），
+   預設「依獎品整理」——每個獎品一張卡，看得到誰中了、誰已經領走、誰還沒領；也可以切回照時間排。
+   銘謝惠顧不顯示。 */
+var gcCat = 'tkt', gcSt = 'all', gcView = 'prize', gcOpen = {};
+var GC_CATS = [['tkt','🎁 實體獎品／票券'],['bonus','💰 紅利'],['collect','📖 圖鑑集滿禮'],['gold','🪙 黃金扭蛋'],['all','全部']];
+function gcCatOf(x){
+  if (x.why === 'collect') return 'collect';
+  if (x.why === 'gold') return 'gold';
+  if (x.type === 'ticket') return 'tkt';
+  if (x.type === 'bonus') return 'bonus';
+  return '';
+}
+function gcPrizeNm(x){ if (x.soldOut) return ((gcData.cfg || {}).collectReward || {}).nm || '圖鑑集滿禮'; return String(x.nm || '').replace(/^集章 \d+ 天・/, '').replace(/^圖鑑集滿・/, '') }
+/* 票券狀態：'used' 已領走／'open' 還沒領／'' 讀取中或不是票券 */
+function gcTktState(x){
+  if (x.type !== 'ticket') return '';
+  var tk = gcFindTkt(x.phone, x.why === 'milestone' ? null : x._k, x);
+  if (!tk) return '';
+  return +tk.qty > 0 ? 'open' : 'used';
+}
 function gcLogHtml(){
+  var chip = function(on, js, t){ return '<button class="store-btn' + (on ? ' active' : '') + '" style="padding:6px 12px;font-size:13px" onclick="' + js + '">' + t + '</button>' };
+  var all = gcLogList().filter(function(x){ return !x.test });
+  var n = {}; all.forEach(function(x){ var c = gcCatOf(x); if (c) { n[c] = (n[c] || 0) + 1; n.all = (n.all || 0) + 1 } });
+  var hc = {}; all.forEach(function(x){ if (x.why === 'collect') hc[x.phone] = 1 });
+  Object.keys(gcData.players || {}).forEach(function(ph){ if ((gcData.players[ph] || {}).collected && !hc[ph]) { n.collect = (n.collect || 0) + 1; n.all = (n.all || 0) + 1 } });
   return '<div class="card"><div class="card-title">中獎紀錄</div>' +
-    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-    '<input id="gc-search" placeholder="搜尋姓名、電話或獎品（例：集滿）" value="' + gcEsc(gcQuery) + '" style="flex:1 1 200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
-    '<label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" ' + (gcOnlyTkt ? 'checked' : '') +
-    ' onchange="gcOnlyTkt=this.checked;gcDrawLog()"> 只看票券</label></div>' +
-    '<div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">客人拿抽到的券來用時，找到那一筆按「已使用」。按錯可以按「復原」。</div>' +
+    '<div class="store-tabs" style="margin-bottom:10px;flex-wrap:wrap">' + GC_CATS.map(function(c){
+      return chip(gcCat === c[0], "gcCat='" + c[0] + "';gcOpen={};renderGacha()", c[1] + ' <span style="opacity:.6">' + (n[c[0]] || 0) + '</span>') }).join('') + '</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+    '<input id="gc-search" placeholder="搜尋姓名、電話或獎品" value="' + gcEsc(gcQuery) + '" style="flex:1 1 200px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
+    (gcCat === 'bonus' ? '' :
+      '<span style="display:flex;gap:4px">' + chip(gcSt === 'all', "gcSt='all';gcDrawLog();renderGacha()", '全部') + chip(gcSt === 'open', "gcSt='open';renderGacha()", '還沒領') + chip(gcSt === 'used', "gcSt='used';renderGacha()", '已領走') + '</span>') +
+    '<span style="display:flex;gap:4px">' + chip(gcView === 'prize', "gcView='prize';renderGacha()", gcCat === 'bonus' ? '依人整理' : '依獎品整理') + chip(gcView === 'time', "gcView='time';renderGacha()", '照時間') + '</span></div>' +
+    '<div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">' +
+    (gcCat === 'bonus' ? '紅利抽到就自動加進會員點數了，不用核銷，這裡只是看誰拿了多少。' : '客人來領獎時，找到他那一行按「已領走」。按錯可以按「復原」。') + '</div>' +
     '<div id="gc-log"></div></div>';
+}
+function gcLogRow(x, showPrize){
+  var t = x.at ? String(x.at).slice(5, 16).replace('T', ' ').replace('-', '/') : '時間不明';
+  var h = '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
+    '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
+    '<span style="flex:1 1 140px"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
+    (showPrize ? '<span style="flex:1 1 160px">' + gcEsc((x.ic || '') + ' ' + x.nm) + '</span>' : '') +
+    '<span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (GC_WHY[x.why] || x.why || '') + (x.tier ? '・' + gcEsc(x.tier) : '') + '</span>';
+  if (x.type === 'bonus') h += '<span style="width:150px;text-align:right;font-size:12.5px;color:var(--gold2)">+' + (+x.v || 0) + ' 點</span>';
+  else if (x.soldOut) h += '<span style="width:150px;text-align:right;font-size:12px;color:#b5482b">限量送完，沒拿到</span>';
+  else if (x.type === 'ticket') {
+    var tk = gcFindTkt(x.phone, x.why === 'milestone' ? null : x._k, x);
+    if (!tk) h += '<span class="muted" style="font-size:12px;width:150px;text-align:right">讀取中…</span>';
+    else if (+tk.qty > 0) h += '<span style="width:150px;text-align:right"><span style="font-size:12px;color:#2e7d4f;margin-right:6px">還沒領</span>' +
+      '<button class="btn btn-gold btn-sm" onclick="gcRedeem(\'' + x.phone + '\',\'' + tk.gid + '\',false)">已領走</button></span>';
+    else h += '<span style="width:150px;text-align:right;font-size:12px;color:var(--text3)">' + gcEsc((tk.usedBy || '') + ' ' + String(tk.usedAt || '').slice(5, 10).replace('-', '/')) +
+      ' 已領走 <a style="cursor:pointer;text-decoration:underline" onclick="gcRedeem(\'' + x.phone + '\',\'' + tk.gid + '\',true)">復原</a></span>';
+  }
+  return h + '</div>';
 }
 function gcDrawLog(){
   var box = document.getElementById('gc-log'); if (!box) return;
   var q = gcQuery.trim(), qd = q.replace(/\D/g, '');
-  var list = gcLogList().filter(function(x){
-    if (gcOnlyTkt && x.type !== 'ticket') return false;
+  var src = gcLogList();
+  /* 10/10 之前、限量送完後才集滿的人沒有任何紀錄 → 從 players.collected 補一行（時間不明） */
+  var hasCol = {}; src.forEach(function(x){ if (x.why === 'collect' && !x.test) hasCol[x.phone] = 1 });
+  var pls = gcData.players || {};
+  Object.keys(pls).forEach(function(ph){ if ((pls[ph] || {}).collected && !hasCol[ph])
+    src.push({ _k:'x-' + ph, at:'', phone:ph, name:(pls[ph] || {}).name || '', nm:'圖鑑集滿', ic:'📖', type:'none', why:'collect', soldOut:true }) });
+  var list = src.filter(function(x){
+    if (x.test) return false;
+    var c = gcCatOf(x); if (!c) return false;
+    if (gcCat !== 'all' && c !== gcCat) return false;
+    if (gcSt !== 'all' && gcCat !== 'bonus') { var st = gcTktState(x); if (st !== gcSt) return false }
     if (!q) return true;
     return (x.name && x.name.indexOf(q) >= 0) || (qd.length >= 3 && String(x.phone).indexOf(qd) >= 0) ||
       (x.nm && String(x.nm).indexOf(q) >= 0) || (GC_WHY[x.why] && GC_WHY[x.why].indexOf(q) >= 0);
-  }).slice(0, 300);
-  if (!list.length) { box.innerHTML = '<div class="empty">沒有符合的紀錄</div>'; return }
-  box.innerHTML = list.map(function(x){
-    var t = String(x.at).slice(5, 16).replace('T', ' ').replace('-', '/');
-    var h = '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
-      '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
-      '<span style="flex:1 1 140px"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
-      '<span style="flex:1 1 160px">' + gcEsc((x.ic || '') + ' ' + x.nm) +
-      ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (GC_WHY[x.why] || x.why || '') + '</span>' +
-      (x.test ? ' <span style="font-size:11px;background:#e7ecf7;border-radius:10px;padding:1px 7px">測試</span>' : '') + '</span>';
-    if (x.type === 'ticket') {
-      var gid = x.why === 'milestone' ? null : x._k;
-      var tk = gcFindTkt(x.phone, x.why === 'milestone' ? null : x._k, x);
-      if (!tk) h += '<span class="muted" style="font-size:12px;width:150px;text-align:right">讀取中…</span>';
-      else if (+tk.qty > 0) h += '<span style="width:150px;text-align:right"><span style="font-size:12px;color:#2e7d4f;margin-right:6px">未使用</span>' +
-        '<button class="btn btn-gold btn-sm" onclick="gcRedeem(\'' + x.phone + '\',\'' + tk.gid + '\',false)">已使用</button></span>';
-      else h += '<span style="width:150px;text-align:right;font-size:12px;color:var(--text3)">' + gcEsc((tk.usedBy || '') + ' ' + String(tk.usedAt || '').slice(5, 10).replace('-', '/')) +
-        ' 已使用 <a style="cursor:pointer;text-decoration:underline" onclick="gcRedeem(\'' + x.phone + '\',\'' + tk.gid + '\',true)">復原</a></span>';
+  });
+  if (!list.length) { box.innerHTML = '<div class="empty">' + (gcSt === 'open' ? '沒有還沒領的獎品' : gcSt === 'used' ? '還沒有人領走' : '沒有符合的紀錄') + '</div>'; return }
+  if (gcView === 'time') { box.innerHTML = list.slice(0, 300).map(function(x){ return gcLogRow(x, true) }).join(''); return }
+  /* 依獎品（紅利則依人）分組：一個獎品一張卡，標題寫幾個人中、幾個已領、幾個還沒領，點開看名單 */
+  var groups = {}, order = [];
+  list.forEach(function(x){
+    var k = gcCat === 'bonus' ? x.phone : gcPrizeNm(x) || '（沒有名稱）';
+    if (!groups[k]) { groups[k] = []; order.push(k) }
+    groups[k].push(x);
+  });
+  if (gcCat === 'bonus') order.sort(function(a, b){ return gcSum(groups[b]) - gcSum(groups[a]) });
+  else order.sort(function(a, b){ return groups[b].length - groups[a].length });
+  box.innerHTML = order.map(function(k){
+    var g = groups[k], open = !!gcOpen[k] || !!q, head;
+    if (gcCat === 'bonus') head = '<b>' + gcEsc(g[0].name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(k) + '</span>' +
+      '<span style="margin-left:auto;font-size:13px">共 <b style="color:var(--gold2)">' + gcSum(g) + '</b> 點・' + g.length + ' 次</span>';
+    else {
+      var used = 0, op = 0, miss = 0;
+      g.forEach(function(x){ if (x.soldOut) miss++; else { var s = gcTktState(x); if (s === 'used') used++; else if (s === 'open') op++ } });
+      head = '<b>' + gcEsc((g[0].ic || '') + ' ' + k) + '</b>' +
+        '<span style="margin-left:auto;font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap">' +
+        '<span>' + g.length + ' 人次</span>' +
+        (op ? '<span style="color:#2e7d4f">還沒領 ' + op + '</span>' : '') +
+        (used ? '<span style="color:var(--text3)">已領走 ' + used + '</span>' : '') +
+        (miss ? '<span style="color:#b5482b">沒拿到 ' + miss + '</span>' : '') + '</span>';
     }
-    return h + '</div>';
+    return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">' +
+      '<div style="display:flex;gap:8px;align-items:center;padding:10px 14px;cursor:pointer;background:#faf7f0;flex-wrap:wrap" onclick="gcOpen[' + gcEsc(JSON.stringify(k)) + ']=!gcOpen[' + gcEsc(JSON.stringify(k)) + '];gcDrawLog()">' +
+      '<span style="width:12px;color:var(--text3)">' + (open ? '▾' : '▸') + '</span>' + head + '</div>' +
+      (open ? '<div style="padding:0 14px">' + g.map(function(x){ return gcLogRow(x, gcCat === 'bonus' || gcCat === 'all') }).join('').replace('border-top:1px solid var(--border);', '') + '</div>' : '') + '</div>';
   }).join('');
 }
+function gcSum(g){ return g.reduce(function(s, x){ return s + (+x.v || 0) }, 0) }
 /* 一般抽到的票券用抽獎紀錄編號對；集章保底的票券編號是「那一次抽獎編號-ms」 */
 function gcFindTkt(phone, gid, x){
   var list = gcTkts[phone]; if (!list) return null;
+  if (x && x.why === 'collect') return list.filter(function(t){ return /-col$/.test(t.gid || '') })[0] || { gid:'', qty:0, usedBy:'（找不到這張券）' };
   if (gid) return list.filter(function(t){ return t.gid === gid })[0] || { gid:gid, qty:0, usedBy:'（找不到這張券）' };
   var same = gcLogList().filter(function(y){ return y.phone === x.phone && y.date === x.date && y.why !== 'milestone' });
   var base = same.length ? same[same.length - 1]._k : '';
