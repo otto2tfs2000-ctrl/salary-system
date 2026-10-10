@@ -574,7 +574,8 @@ function gcgHtml(){
       return '<select style="padding:5px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="' + f + '\'' + k + '\',this.value)">' +
         Object.keys(opts).map(function(o){ return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + opts[o] + '</option>' }).join('') + '</select>';
     };
-    h += '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 4px;font-weight:600;color:var(--gold2)">' + gcgLetter(pi) + '</td>' +
+    h += '<tr class="gcg-prow" style="border-top:1px solid var(--border)">' +
+      '<td title="按住拖移調整順序" style="padding:6px 4px;font-weight:600;color:var(--gold2);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;white-space:nowrap" onpointerdown="gcgDragStart(event,' + pi + ')"><span style="color:var(--text3);font-size:15px">⠿</span> ' + gcgLetter(pi) + '</td>' +
       '<td>' + gcgInp(p.ic, 40, f + '\'ic\',this.value)') + '</td>' +
       '<td>' + gcgInp(p.nm, 130, f + '\'nm\',this.value)', '', '獎品名稱') + '</td><td>' + gcgInp(p.sub, 130, f + '\'sub\',this.value)') + '</td>' +
       '<td>' + sel('type', p.type, GCG_TYPE) + '</td><td>' +
@@ -787,6 +788,44 @@ function gcgDelP(pi){
   var p = gcgDraft.prizes[pi];
   if (!confirm('要刪除獎品 ' + gcgLetter(pi) + (p.nm ? '「' + p.nm + '」' : '') + ' 嗎？（按儲存才會生效）')) return;
   gcgDraft.prizes.splice(pi, 1); renderGacha();
+}
+/* 拖移調整獎品順序：按住左邊 ⠿ 那格拖（滑鼠、平板都可以） */
+var gcgDrag = null;
+function gcgDragStart(e, pi){
+  if (e.button > 0) return;
+  e.preventDefault();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  var rows = [].slice.call(document.querySelectorAll('tr.gcg-prow'));
+  if (!rows[pi]) return;
+  gcgDrag = { from:pi, to:pi, rows:rows };
+  rows[pi].style.opacity = '.45'; rows[pi].style.background = '#fff8e6';
+  document.body.style.cursor = 'grabbing';
+  document.addEventListener('pointermove', gcgDragMove);
+  document.addEventListener('pointerup', gcgDragEnd);
+  document.addEventListener('pointercancel', gcgDragEnd);
+}
+function gcgDragMove(e){
+  var d = gcgDrag; if (!d) return;
+  e.preventDefault();
+  var to = d.rows.length - 1;
+  for (var i = 0; i < d.rows.length; i++) {
+    var r = d.rows[i].getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { to = i > d.from ? i - 1 : i; break }
+  }
+  d.to = to;
+  d.rows.forEach(function(tr, i){
+    tr.style.boxShadow = i !== to || to === d.from ? '' : (to > d.from ? 'inset 0 -3px 0 var(--gold2)' : 'inset 0 3px 0 var(--gold2)');
+  });
+}
+function gcgDragEnd(){
+  var d = gcgDrag; gcgDrag = null;
+  document.removeEventListener('pointermove', gcgDragMove);
+  document.removeEventListener('pointerup', gcgDragEnd);
+  document.removeEventListener('pointercancel', gcgDragEnd);
+  document.body.style.cursor = '';
+  if (!d) return;
+  if (d.to !== d.from) { var ps = gcgDraft.prizes; ps.splice(d.to, 0, ps.splice(d.from, 1)[0]) }
+  renderGacha();
 }
 function gcgUndo(){
   gcgDraft = JSON.parse(JSON.stringify(gcgData.gold)); gcgFill(); gcgSim = null; renderGacha();
