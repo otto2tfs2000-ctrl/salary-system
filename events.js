@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   📣 活動公告（2026-10-10，扭蛋活動底下的分頁）
+   📣 活動公告（2026-10-10，左邊「藝術家小活動」裡面的一頁）
    餐敘、展覽、看展……上傳海報、設日期，遊樂島就會：
    公告板掛海報、熱氣球拉倒數布條、進島跳一次通知、「💐 我想去」花牆、活動前幾天島上越來越多花。
    日期可以隨時改（例如 12/20 改 12/19），島上的倒數和開花進度會跟著新日期走。
@@ -8,13 +8,22 @@
    ══════════════════════════════════════════════════════════ */
 var evData = null, evEdit = null, evShowWant = {};
 async function evLoad(){ evData = await staffApi('/staff/events', {}) }
+async function renderEvents(){
+  var el = document.getElementById('events-body'); if (!el) return;
+  if (!evData) {
+    el.innerHTML = '<div class="empty">載入活動公告中…</div>';
+    try { await evLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到活動公告：' + gcEsc(e.message) + '</div>'; return }
+  }
+  el.innerHTML = evHtml();
+}
 function evMd(d){ return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : '' }
 function evDaysTo(d){ return Math.round((Date.parse(d + 'T00:00:00+08:00') - Date.parse(evData.today + 'T00:00:00+08:00')) / 864e5) }
 function evHtml(){
   if (evEdit) return evFormHtml();
   var list = Object.values(evData.list || {}).sort(function(a, b){ return String(b.date).localeCompare(String(a.date)) });
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">活動公告' +
-    '<button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="evNew()">＋ 新增活動</button></div>' +
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto;margin-right:8px" onclick="evData=null;renderEvents()">↻ 重新讀取</button>' +
+    '<button class="btn btn-gold btn-sm" onclick="evNew()">＋ 新增活動</button></div>' +
     '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">放上去的活動，遊樂島會自動：公告板掛海報、熱氣球拉「倒數 N 天」布條、客人進島時跳一次通知、' +
     '「💐 我想去」花牆，活動前幾天島上開始開花，越接近開越多。活動當天過完就自動收掉。<br>報名一律在櫃檯，「我想去」只是讓大家看得到人氣，不是報名。</div>';
   if (!list.length) h += '<div class="empty">還沒有活動，按右上角「＋ 新增活動」。</div>';
@@ -28,15 +37,15 @@ function evHtml(){
       '<div style="font-size:16px;font-weight:600">' + gcEsc(e.title) + '</div>' +
       '<div style="font-size:13.5px;margin:4px 0">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.sub ? '<br><span class="muted">' + gcEsc(e.sub) + '</span>' : '') + '</div>' +
       '<div style="font-size:13px">' + st + '</div>' +
-      '<div style="font-size:13px;margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderGacha()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
+      '<div style="font-size:13px;margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
       (evShowWant[e.id] && ws.length ? '<div style="font-size:12.5px;margin-top:6px;line-height:1.9">' + ws.map(function(x){
         return gcEsc(x.name || x.nm) + ' <span class="muted">' + gcEsc(x.phone || '（沒綁電話）') + '・' + String(x.at).slice(5, 10).replace('-', '/') + '</span>' }).join('<br>') + '</div>' : '') +
       '</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-outline btn-sm" onclick="evOpen(\'' + e.id + '\')">編輯</button></div></div>';
   });
   return h + '</div>';
 }
-function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', showFrom:evData.today, bloomDays:14, on:true, _new:true }; renderGacha() }
-function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderGacha() }
+function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', showFrom:evData.today, bloomDays:14, on:true, _new:true }; renderEvents() }
+function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderEvents() }
 function evInp(id, v, type, w, ph){ return '<input id="' + id + '" type="' + (type || 'text') + '" value="' + gcEsc(v == null ? '' : v) + '"' + (ph ? ' placeholder="' + gcEsc(ph) + '"' : '') +
   ' style="width:' + (w || 260) + 'px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px">' }
 function evRow(lb, inner, tip){ return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap"><label style="width:110px;color:var(--text2);font-size:13.5px;padding-top:7px">' + lb + '</label><div style="flex:1 1 240px">' + inner +
@@ -58,7 +67,7 @@ function evFormHtml(){
     evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '活動前幾天島上開始開花，越接近越多；0＝不開花') +
     evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
     '<input type="hidden" id="ev-poster" value="' + gcEsc(e.poster) + '">' +
-    '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderGacha()">取消</button>' +
+    '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderEvents()">取消</button>' +
     (e._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="evDel()">刪除活動</button>') + '</div>' +
     '</div></div></div>';
 }
@@ -93,11 +102,11 @@ async function evSave(){
   if (!ev.title) return alert('請填活動名稱');
   if (!ev.date) return alert('請填活動日期');
   if (!ev.poster && !confirm('還沒上傳海報，島上就只會顯示文字。確定先存嗎？')) return;
-  try { await staffApi('/staff/events/save', { ev: ev }); evEdit = null; evData = null; await renderGacha() }
+  try { await staffApi('/staff/events/save', { ev: ev }); evEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('儲存失敗：' + e.message) }
 }
 async function evDel(){
   if (!confirm('確定刪除這個活動？島上會馬上拿掉，「我想去」的名單也會一起刪掉。')) return;
-  try { await staffApi('/staff/events/delete', { id: evEdit.id }); evEdit = null; evData = null; await renderGacha() }
+  try { await staffApi('/staff/events/delete', { id: evEdit.id }); evEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('刪除失敗：' + e.message) }
 }

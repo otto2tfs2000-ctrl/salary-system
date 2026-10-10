@@ -61,9 +61,7 @@
   <div class="tab" data-tab="sched" onclick="switchTab('sched')">🗓️ 班表設定</div>
   <div class="tab" data-tab="daily" onclick="switchTab('daily')">📅 每日填寫</div>
   <div class="tab" data-tab="member" onclick="switchTab('member')">👤 會員</div>
-  <div class="tab" data-tab="gacha" onclick="switchTab('gacha')">🎰 扭蛋活動</div>
-  <div class="tab" data-tab="xmas" onclick="switchTab('xmas')">🎄 聖誕走格子</div>
-  <div class="tab" data-tab="shop" onclick="switchTab('shop')">🏪 選品館</div>
+  <div class="tab" data-tab="fun" data-sub="gacha xmas shop events" onclick="switchTab('fun')">🎪 藝術家小活動</div>
   <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">📊 月報總覽</div>
   <div class="tab" data-tab="finance" onclick="switchTab('finance')">💵 報表</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
@@ -108,18 +106,29 @@
 
 <div id="tab-finance" class="page"><div id="fnRoot"></div></div>
 
+<!-- 2026-10-10 大熊：扭蛋、走格子、選品館、活動公告收成左邊一個「藝術家小活動」，點進去再選（fun.js） -->
+<div id="tab-fun" class="page">
+  <h2>🎪 藝術家小活動</h2>
+  <div id="fun-body"></div>
+</div>
+
+<div id="tab-events" class="page">
+  <div class="fun-nav"></div>
+  <div id="events-body"></div>
+</div>
+
 <div id="tab-gacha" class="page">
-  <h2>🎰 扭蛋活動</h2>
+  <div class="fun-nav"></div>
   <div id="gacha-body"></div>
 </div>
 
 <div id="tab-xmas" class="page">
-  <h2>🎄 聖誕走格子</h2>
+  <div class="fun-nav"></div>
   <div id="xmas-body"></div>
 </div>
 
 <div id="tab-shop" class="page">
-  <h2>🏪 藝享選品館</h2>
+  <div class="fun-nav"></div>
   <div class="muted" style="font-size:13px;margin:-6px 0 12px">遊樂島裡的紅利商店：家長用紅利點數兌換。商品、分類、店員臺詞都在這裡自己改。</div>
   <div id="shop-body"></div>
 </div>
@@ -473,7 +482,7 @@
 </div>
 
 <script src="auth.js?v=20261004b"></script>
-<script src="app.js?v=20260930a"></script>
+<script src="app.js?v=20261010a"></script>
 <script src="consumables.js?v=20260922a"></script>
 <script src="inventory.js?v=20260927a"></script>
 <script src="booking.js?v=20261004b"></script>
@@ -483,10 +492,11 @@
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20260814a"></script>
 <script src="staff.js?v=20260930a"></script>
-<script src="gacha.js?v=20261010f"></script>
+<script src="gacha.js?v=20261010g"></script>
 <script src="xmas.js?v=20261002a"></script>
 <script src="shop.js?v=20261009a"></script>
-<script src="events.js?v=20261010a"></script>
+<script src="events.js?v=20261010b"></script>
+<script src="fun.js?v=20261010a"></script>
 <script>
 /* 手機上點完分頁就把側欄收起來，不然選單會一直擋住內容 */
 document.querySelectorAll('.tabs .tab').forEach(function(el){

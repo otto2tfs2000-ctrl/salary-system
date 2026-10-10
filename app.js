@@ -756,7 +756,7 @@ function switchTab(tab) {
 function doSwitchTab(tab) {
   /* 用 data-tab 對應，之後再加分頁也不會錯位 */
   document.querySelectorAll('.tab').forEach(el => {
-    el.classList.toggle('active', el.dataset.tab === tab);
+    el.classList.toggle('active', el.dataset.tab === tab || (el.dataset.sub || '').split(' ').indexOf(tab) >= 0);
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
@@ -764,6 +764,9 @@ function doSwitchTab(tab) {
   if (tab==='sched' && window.bkSchedRender) bkSchedRender();
   if (tab==='quote' && window.renderQuote) renderQuote();
   if (tab==='member') renderMember();
+  if (window.funNav) funNav(tab);
+  if (tab==='fun' && window.renderFun) renderFun();
+  if (tab==='events' && window.renderEvents) renderEvents();
   if (tab==='gacha' && window.renderGacha) renderGacha();
   if (tab==='xmas' && window.renderXmas) renderXmas();
   if (tab==='shop' && window.renderShop) renderShop();

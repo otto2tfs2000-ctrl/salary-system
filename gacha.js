@@ -39,21 +39,17 @@ async function renderGacha(){
     el.innerHTML = '<div class="empty">載入扭蛋資料中…</div>';
     try { await gcLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到扭蛋資料：' + gcEsc(e.message) + '</div>'; return }
   }
-  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋'],['events','📣 活動公告']];
+  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋']];
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (gcTab === t[0] ? ' active' : '') + '" onclick="gcSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="gcReload()">↻ 重新讀取</button></div>';
-  if (gcData.isDefault && gcTab !== 'gold' && gcTab !== 'events') h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
+  if (gcData.isDefault && gcTab !== 'gold') h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完獎品或活動設定按「儲存」之後，就會以這裡的為準。</div>';
   if (gcTab === 'gold' && !gcgData) {
     el.innerHTML = h + '<div class="empty">載入黃金扭蛋設定中…</div>';
     try { await gcgLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到黃金扭蛋設定：' + gcEsc(e.message) + '</div>'; return }
   }
-  if (gcTab === 'events' && !evData) {
-    el.innerHTML = h + '<div class="empty">載入活動公告中…</div>';
-    try { await evLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到活動公告：' + gcEsc(e.message) + '</div>'; return }
-  }
-  h += gcTab === 'events' ? evHtml() : gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
+  h += gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
   el.innerHTML = h;
   if (gcTab === 'log') {
     var sb = document.getElementById('gc-search');
@@ -63,7 +59,7 @@ async function renderGacha(){
   }
 }
 function gcSwitch(t){ gcTab = t; renderGacha() }
-async function gcReload(){ gcData = null; gcgData = null; evData = null; gcTkts = {}; await renderGacha() }
+async function gcReload(){ gcData = null; gcgData = null; gcTkts = {}; await renderGacha() }
 
 function gcLogList(){
   var l = gcData.log || {};
