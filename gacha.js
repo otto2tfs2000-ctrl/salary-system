@@ -644,14 +644,16 @@ function gcgHtml(){
   else h += shown.map(function(x){
     var t = String(x.at).slice(5, 16).replace('T', ' ').replace('-', '/');
     return '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px;flex-wrap:wrap">' +
-      '<span style="width:84px;color:var(--text3);font-size:12px">' + t + '</span>' +
-      '<span style="flex:1 1 150px"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
-      '<span style="flex:1 1 150px">🪙 ' + gcEsc(x.tierNm || '') + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (x.src === 'manual' ? '手動補發' : '買方案') + '</span>' +
+      '<span style="width:84px;color:var(--text3);font-size:12px;white-space:nowrap">' + t + '</span>' +
+      '<span style="flex:1 1 150px;white-space:nowrap"><b>' + gcEsc(x.name || '（未填姓名）') + '</b> <span class="muted" style="font-size:12px">' + gcEsc(x.phone) + '</span></span>' +
+      '<span style="flex:1 1 150px;white-space:nowrap">🪙 ' + gcEsc(x.tierNm || '') + ' <span style="font-size:11px;background:#f0ece2;border-radius:10px;padding:1px 7px;color:var(--text2)">' + (x.src === 'manual' ? '手動補發' : '買方案') + '</span>' +
       (x.src === 'plan' && x.planNm ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.planNm) + '</span>' : '') +
       (x.note ? ' <span class="muted" style="font-size:12px">' + gcEsc(x.note) + '</span>' : '') + '</span>' +
-      '<span style="width:130px;text-align:right;font-size:12px">' + (x.used
-        ? '<span style="color:var(--text3)">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span> <a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgUndoDraw(\'' + x._k + '\')">收回獎項</a>'
-        : '<span style="color:#2e7d4f;margin-right:6px">未抽</span><a style="cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</span></div>';
+      (x.used
+        ? '<span style="flex:1 1 160px;font-size:12.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span>' +
+          '<a style="flex:0 0 64px;text-align:right;font-size:12.5px;white-space:nowrap;cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgUndoDraw(\'' + x._k + '\')">收回獎項</a>'
+        : '<span style="flex:1 1 160px;font-size:12.5px;color:#2e7d4f;white-space:nowrap">未抽</span>' +
+          '<a style="flex:0 0 64px;text-align:right;font-size:12.5px;white-space:nowrap;cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</div>';
   }).join('');
   return h + '</div>';
 }
