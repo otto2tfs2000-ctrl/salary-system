@@ -62,6 +62,9 @@ function evFormHtml(){
     '<div style="flex:1 1 320px">' +
     evRow('活動名稱', evInp('ev-title', e.title, 'text', 300, '例：坐下，聊花'), '島上通知和布條會用到，短一點比較好') +
     evRow('一句話說明', evInp('ev-sub', e.sub, 'text', 300, '例：五週年藝術交流餐敘')) +
+    evRow('費用', evInp('ev-fee', e.fee || '', 'text', 300, '例：每人 800 元（含餐點）；免費就寫「免費」'), '會用醒目的方式放在「詳細資訊」最上面') +
+    evRow('地點', evInp('ev-place', e.place || '', 'text', 300, '例：Otto2 工作室')) +
+    evRow('詳細說明', '<textarea id="ev-detail" rows="6" placeholder="例：流程、要帶什麼、報名截止日、退費方式…（最多 1200 字）" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;line-height:1.6;font-family:inherit">' + gcEsc(e.detail || '') + '</textarea>', '家長在海報上按「詳細資訊」才看得到；有填任何一項，「＋1 我想去」就會放在詳細資訊裡面，讓家長先看完再按') +
     evRow('活動日期', evInp('ev-date', e.date, 'date', 170), '改日期就改這裡，島上的倒數和開花會跟著新日期走（海報上的日期要記得換新海報）') +
     evRow('時間', evInp('ev-time', e.time, 'text', 170, '例：晚間 18:30')) +
     evRow('島上開始露出', evInp('ev-from', e.showFrom, 'date', 170), '從這天起倒數看板、進島通知才出現') +
@@ -100,7 +103,7 @@ function evPickImg(inp){
 async function evSave(){
   var v = function(id){ return document.getElementById(id).value.trim() };
   var ev = { id: evEdit.id, title: v('ev-title'), sub: v('ev-sub'), date: v('ev-date'), time: v('ev-time'), showFrom: v('ev-from'),
-    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), poster: v('ev-poster'), on: document.getElementById('ev-on').checked };
+    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), fee: v('ev-fee'), place: v('ev-place'), detail: v('ev-detail'), poster: v('ev-poster'), on: document.getElementById('ev-on').checked };
   if (!ev.title) return alert('請填活動名稱');
   if (!ev.date) return alert('請填活動日期');
   if (ev.bloomFrom && ev.bloomFrom > ev.date) return alert('開花開始日不能比活動日晚');
