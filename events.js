@@ -45,7 +45,7 @@ function evHtml(){
   });
   return h + '</div>' + balListHtml();
 }
-function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', showFrom:evData.today, bloomDays:14, on:true, _new:true }; renderEvents() }
+function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
 function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderEvents() }
 function evInp(id, v, type, w, ph){ return '<input id="' + id + '" type="' + (type || 'text') + '" value="' + gcEsc(v == null ? '' : v) + '"' + (ph ? ' placeholder="' + gcEsc(ph) + '"' : '') +
   ' style="width:' + (w || 260) + 'px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px">' }
@@ -65,7 +65,8 @@ function evFormHtml(){
     evRow('活動日期', evInp('ev-date', e.date, 'date', 170), '改日期就改這裡，島上的倒數和開花會跟著新日期走（海報上的日期要記得換新海報）') +
     evRow('時間', evInp('ev-time', e.time, 'text', 170, '例：晚間 18:30')) +
     evRow('島上開始露出', evInp('ev-from', e.showFrom, 'date', 170), '從這天起倒數看板、進島通知才出現') +
-    evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '活動前幾天島上開始開花，越接近越多；0＝不開花') +
+    evRow('開花開始日', evInp('ev-bloomfrom', e.bloomFrom || '', 'date', 170), '從這天起花苞開始慢慢打開，活動當天全開。填了這個就以日期為準；不填就用下面的「開花天數」') +
+    evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '沒填開花開始日時才用：活動前幾天開始開花（最多 60）；0＝不開花') +
     evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
     '<input type="hidden" id="ev-poster" value="' + gcEsc(e.poster) + '">' +
     '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderEvents()">取消</button>' +
@@ -99,9 +100,10 @@ function evPickImg(inp){
 async function evSave(){
   var v = function(id){ return document.getElementById(id).value.trim() };
   var ev = { id: evEdit.id, title: v('ev-title'), sub: v('ev-sub'), date: v('ev-date'), time: v('ev-time'), showFrom: v('ev-from'),
-    bloomDays: +v('ev-bloom') || 0, poster: v('ev-poster'), on: document.getElementById('ev-on').checked };
+    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), poster: v('ev-poster'), on: document.getElementById('ev-on').checked };
   if (!ev.title) return alert('請填活動名稱');
   if (!ev.date) return alert('請填活動日期');
+  if (ev.bloomFrom && ev.bloomFrom > ev.date) return alert('開花開始日不能比活動日晚');
   if (!ev.poster && !confirm('還沒上傳海報，島上就只會顯示文字。確定先存嗎？')) return;
   try { await staffApi('/staff/events/save', { ev: ev }); evEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('儲存失敗：' + e.message) }
