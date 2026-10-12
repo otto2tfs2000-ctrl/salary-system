@@ -130,39 +130,44 @@ async function evDel(){
 
 /* ══════════════════════════════════════════════════════════
    🎈 熱氣球（2026-10-12）：A／B／C 三款，填好存檔就出現在遊樂島、吉祥物島、作品小屋；到期自動收掉。
-   A 大氣球（主標＋副標，固定在畫面角落）／B 直式飄帶（日期＋活動名＋倒數，繞島後面飄）／C 單色大字球（一句話）
+   A 大氣球（主標＋副標）／B 直式飄帶（日期＋活動名＋倒數）／C 單色大字球（一句話）；三款都可以綁活動，在島後面的天空
    同時最多 3 顆（開始日早的先上）。資料在 balloons/list/，跟活動清單一起讀。
    ══════════════════════════════════════════════════════════ */
 var balEdit = null;
 var BAL_COL = { pink:'#e8708f', blue:'#3d9bd0', orange:'#f2a04a', green:'#8cc152', yellow:'#f6cf4a', purple:'#9b7fd0' };
+var BAL_COL_DK = { pink:'#c93f66', blue:'#226a97', orange:'#b8651a', green:'#4d7f1f', yellow:'#9a7608', purple:'#5e43a0' };
 var BAL_COL_NM = { pink:'粉紅', blue:'天藍', orange:'橘', green:'草綠', yellow:'黃', purple:'紫' };
 var BAL_ST = { A:'A 款・大氣球', B:'B 款・直式飄帶', C:'C 款・單色大字球' };
-var BAL_ST_TIP = { A:'固定在畫面角落，上面一個主標、一行副標', B:'彩條氣球底下垂一條直的飄帶，繞島後面飄；可綁活動，自動寫日期＋活動名＋倒數', C:'單色大氣球，只放一句話（例：歡迎新同學），固定在畫面角落' };
+var BAL_ST_TIP = { A:'大字牌氣球：活動名超大、底下寫日期＋還有幾天（最好讀）', B:'彩條氣球底下垂一條直的飄帶：日期＋活動名＋倒數', C:'單色大氣球，只放一句大字（例：歡迎新同學）' };
 function balStatus(b){
   var t = evData.today, live = evData.live || [];
   if (b.on === false) return '<span style="color:var(--text3)">已關閉</span>';
   if (b.to && t > b.to) return '<span style="color:var(--text3)">已結束</span>';
   if (b.from && t < b.from) return '<span style="color:#b07a1f">' + evMd(b.from) + ' 開始出現</span>';
   if (live.indexOf(b.id) >= 0) return '<span style="color:#2e7d4f">島上出現中</span>';
-  if (b.style === 'B' && b.eventId) return '<span style="color:var(--text3)">綁定的活動已結束或關閉</span>';
+  if (b.eventId) return '<span style="color:var(--text3)">綁定的活動已結束或關閉</span>';
   return '<span style="color:#b07a1f">已經有 3 顆在島上，排隊中</span>';
 }
+function evTitleOf(b){ return b.eventId && evData && evData.list && evData.list[b.eventId] ? (evData.list[b.eventId].title || '') : '' }
+/* 預覽：字依長度縮小、不被圓形切掉；A 跟遊戲裡一樣是「純色氣球＋奶油白大字牌」 */
 function balPreview(b){
-  var c = BAL_COL[b.color] || BAL_COL.pink, t = gcEsc(b.title || (b.style === 'B' && b.eventId ? '活動名' : '文字')), sub = gcEsc(b.sub || '');
+  var c = BAL_COL[b.color] || BAL_COL.pink, raw = b.title || evTitleOf(b) || b.evTitle || (b.eventId ? '活動名' : '文字'), t = gcEsc(raw), sub = gcEsc(b.sub || (b.eventId ? '日期・倒數' : ''));
+  var len = Array.from(String(raw)).length, fs = len <= 3 ? 17 : len <= 5 ? 14 : len <= 8 ? 11 : 9;
   if (b.style === 'B') {
-    var chars = Array.from(String(b.title || (b.eventId ? '活動名' : '文字'))).slice(0, 6).map(function(ch){ return '<div>' + gcEsc(ch) + '</div>' }).join('');
+    var chars = Array.from(String(raw)).slice(0, 6).map(function(ch){ return '<div>' + gcEsc(ch) + '</div>' }).join('');
     return '<div style="width:70px;text-align:center"><div style="width:44px;height:52px;margin:0 auto;border-radius:50% 50% 46% 46%;background:repeating-linear-gradient(90deg,' + c + ' 0 6px,#fff6e4 6px 12px)"></div>' +
       '<div style="width:22px;margin:-2px auto 0;background:' + c + ';color:#fff;font-size:11px;font-weight:800;line-height:1.2;padding:4px 0;border-radius:2px">' + chars + '</div></div>';
   }
-  if (b.style === 'C') return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';color:#fff;font-weight:800;font-size:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;text-align:center;padding:0 6px">' + t + (sub ? '<small style="font-size:10px;opacity:.9">' + sub + '</small>' : '') + '</div>';
-  return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:#fff6e4;border-top:14px solid ' + c + ';border-bottom:10px solid ' + c + ';color:' + c + ';font-weight:800;font-size:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;text-align:center;padding:0 6px;box-sizing:border-box">' + t + (sub ? '<small style="font-size:10px;color:#1e2b4f">' + sub + '</small>' : '') + '</div>';
+  if (b.style === 'C') return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';color:#fff;font-weight:800;font-size:' + fs + 'px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15;text-align:center;padding:0 10px;box-sizing:border-box;overflow:hidden;word-break:break-all">' + t + (sub ? '<small style="font-size:9px;opacity:.9">' + sub + '</small>' : '') + '</div>';
+  return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden">' +
+    '<div style="width:46px;background:#fff6e4;border-radius:8px;padding:4px 2px;text-align:center;color:' + (BAL_COL_DK[b.color] || '#c93f66') + ';font-weight:900;font-size:' + Math.min(fs, 14) + 'px;line-height:1.1;word-break:break-all">' + t +
+    (sub ? '<div style="font-size:8px;color:#1e2b4f;margin-top:2px">' + sub + '</div>' : '') + '</div></div>';
 }
 function balListHtml(){
   var list = Object.values(evData.bal || {}).sort(function(a, b){ return String(b.from || '').localeCompare(String(a.from || '')) });
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">🎈 熱氣球' +
     '<button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="balNew()">＋ 新增熱氣球</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">填好存檔，遊樂島、吉祥物島、作品小屋就會出現這顆氣球；過了「結束日」自動收掉。<b>同時最多 3 顆</b>（開始日早的先上）。' +
-    '有設定任何一顆，原本 26 週年慶那幾顆舊氣球就會先收起來。</div>';
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">填好存檔，遊樂島、吉祥物島、作品小屋就會出現這顆氣球；過了「結束日」自動收掉。<b>同時最多 3 顆</b>（開始日早的先上），三顆在島後面的天空自動分開排。每顆都可以綁不同的活動，自動寫活動名和倒數。</div>';
   if (!list.length) h += '<div class="empty">還沒有熱氣球，按右上角「＋ 新增熱氣球」。</div>';
   list.forEach(function(b){
     h += '<div style="display:flex;gap:14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">' +
@@ -189,7 +194,7 @@ function balFormHtml(){
   var styleBtns = ['A', 'B', 'C'].map(function(k){
     var on = st === k;
     return '<div onclick="balSet(\'style\',\'' + k + '\')" style="cursor:pointer;flex:1 1 150px;border:2px solid ' + (on ? '#c9a24a' : 'var(--border)') + ';background:' + (on ? '#fff8e6' : '#fff') + ';border-radius:12px;padding:10px;text-align:center">' +
-      '<div style="display:flex;justify-content:center;margin-bottom:6px">' + balPreview({ style:k, color:b.color, title:k === 'B' ? (b.eventId ? '' : b.title) : b.title, sub:b.sub, eventId:b.eventId }) + '</div>' +
+      '<div style="display:flex;justify-content:center;margin-bottom:6px">' + balPreview({ style:k, color:b.color, title:b.title, sub:b.sub, eventId:b.eventId, evTitle:evTitleOf(b) }) + '</div>' +
       '<div style="font-weight:600;font-size:14px">' + BAL_ST[k] + '</div><div class="muted" style="font-size:12px;line-height:1.5;margin-top:3px">' + BAL_ST_TIP[k] + '</div></div>';
   }).join('');
   var cols = Object.keys(BAL_COL).map(function(k){
@@ -202,9 +207,9 @@ function balFormHtml(){
   return '<div class="card"><div class="card-title">' + (b._new ? '新增熱氣球' : '編輯熱氣球') + '</div>' +
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' + styleBtns + '</div>' +
     evRow('顏色', cols) +
-    (st === 'B' ? evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;max-width:100%">' + evOpts + '</select>', '綁了之後飄帶自動寫「日期＋活動名＋倒數」，活動結束氣球跟著收') : '') +
-    (st === 'B' && b.eventId ? '' : evRow(titleLb, evInp('bl-title', b.title, 'text', 300, st === 'A' ? '例：年度餐敘' : st === 'B' ? '例：歡迎新同學' : '例：歡迎新同學'))) +
-    (st === 'B' && b.eventId ? '' : evRow(st === 'A' ? '副標（最多 16 字）' : '小字（最多 16 字，可不填）', evInp('bl-sub', b.sub, 'text', 300, st === 'A' ? '例：12/20 18:30' : ''))) +
+    (true ? evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;max-width:100%">' + evOpts + '</select>', '綁了之後氣球自動寫「活動名＋日期＋倒數」，活動結束氣球跟著收') : '') +
+    (b.eventId ? '' : evRow(titleLb, evInp('bl-title', b.title, 'text', 300, st === 'A' ? '例：年度餐敘' : st === 'B' ? '例：歡迎新同學' : '例：歡迎新同學'))) +
+    (b.eventId ? '' : evRow(st === 'A' ? '副標（最多 16 字）' : '小字（最多 16 字，可不填）', evInp('bl-sub', b.sub, 'text', 300, st === 'A' ? '例：12/20 18:30' : ''))) +
     evRow('開始出現', evInp('bl-from', b.from, 'date', 170), '這天起島上才出現') +
     evRow('結束日', evInp('bl-to', b.to, 'date', 170), '過了這天自動收掉；不填＝一直掛著，要自己關') +
     evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="bl-on" ' + (b.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
@@ -215,7 +220,7 @@ async function balSave(){
   balSync();
   var b = balEdit;
   if (!(b.style === 'B' && b.eventId) && !b.title) return alert('請填氣球上的字');
-  try { await staffApi('/staff/balloons/save', { b: { id:b.id, style:b.style, title:b.title, sub:b.sub, color:b.color, eventId:b.style === 'B' ? b.eventId : '', from:b.from, to:b.to, on:b.on !== false } }); balEdit = null; evData = null; await renderEvents() }
+  try { await staffApi('/staff/balloons/save', { b: { id:b.id, style:b.style, title:b.title, sub:b.sub, color:b.color, eventId:b.eventId, from:b.from, to:b.to, on:b.on !== false } }); balEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('儲存失敗：' + e.message) }
 }
 async function balDel(){
