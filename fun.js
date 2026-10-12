@@ -10,10 +10,19 @@ var FUN_ITEMS = [
   { tab:'shop',   ic:'🏪', nm:'藝享選品館',   d:'紅利商店：商品、分類、店員臺詞' },
   { tab:'events', ic:'📣', nm:'活動公告',     d:'餐敘、展覽、看展：上傳海報、改日期，看誰按了「我想去」' }
 ];
+/* 誰看得到「藝術家小活動」：管理員、行政／業務一律看得到；老師要在「員工帳號」勾「藝術家小活動」（整組）或單項（扭蛋活動、聖誕走格子、選品館、活動公告）。
+   2026-10-12 修：10/10 把四頁收成一個入口後，入口的 data-tab 是 fun，舊的帳號權限只有 gacha／xmas／shop，沒人勾得到 fun，非管理員的入口整個被藏掉 */
+function funCan(t){
+  var st = window.ME && ME.staff; if (!st) return true;
+  if (st.role === 'owner' || st.role === 'admin') return true;
+  var a = Array.isArray(st.tabs) ? st.tabs : [];
+  return a.indexOf('fun') >= 0 || a.indexOf(t) >= 0;
+}
+function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;
   el.innerHTML = '<div class="muted" style="font-size:13px;margin:-6px 0 14px">客人在遊樂島玩的東西都在這裡。點一個進去設定。</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">' + FUN_ITEMS.map(function(x){
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">' + funItems().map(function(x){
       return '<div class="card" style="margin:0;cursor:pointer;padding:18px" onclick="switchTab(\'' + x.tab + '\')">' +
         '<div style="font-size:30px;line-height:1">' + x.ic + '</div>' +
         '<div style="font-size:17px;font-weight:600;margin:10px 0 4px">' + x.nm + '</div>' +
@@ -25,5 +34,5 @@ function funNav(cur){
   var box = document.querySelector('#tab-' + cur + ' .fun-nav'); if (!box) return;
   box.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-outline btn-sm" onclick="switchTab(\'fun\')">← 藝術家小活動</button>' +
-    FUN_ITEMS.map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:13px" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
+    funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:13px" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
 }

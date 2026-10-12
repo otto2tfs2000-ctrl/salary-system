@@ -251,7 +251,9 @@ function authApplyTabs(){
   var first = null;
   document.querySelectorAll(".tabs .tab").forEach(function(el){
     var k = el.dataset.tab;
-    if (allowed.indexOf(k) < 0) el.style.display = "none";
+    var subs = (el.dataset.sub || "").split(" ").filter(Boolean);
+    var ok = allowed.indexOf(k) >= 0 || (st && subs.length && window.funCan && subs.some(function(x){ return funCan(x) }));   /* 藝術家小活動入口：底下任何一項看得到就顯示 */
+    if (!ok) el.style.display = "none";
     else if (!first) first = k;
   });
   /* 目前這頁不在權限內就跳到第一個看得到的 */
