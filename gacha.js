@@ -59,7 +59,13 @@ async function renderGacha(){
   }
 }
 function gcSwitch(t){ gcTab = t; renderGacha() }
-async function gcReload(){ gcData = null; gcgData = null; gcTkts = {}; await renderGacha() }
+/* 黃金扭蛋獎品表有沒有改了還沒按「儲存」（商品金額、機率都是先改在畫面上，按儲存才寫進雲端） */
+function gcgDirty(){
+  try { return !!(gcgDraft && gcgData && gcgData.gold && JSON.stringify(gcgDraft) !== JSON.stringify(gcgData.gold)) } catch(e) { return false }
+}
+async function gcReload(){
+  if (gcgDirty() && !confirm('黃金扭蛋獎品表有改了還沒儲存的地方（例如商品金額）。\n重新讀取會把這些修改丟掉，確定要重新讀取嗎？\n\n（按「取消」回去，先按「💾 儲存黃金扭蛋設定」）')) return;
+  gcData = null; gcgData = null; gcgDraft = null; gcTkts = {}; await renderGacha() }
 
 function gcLogList(){
   var l = gcData.log || {};
@@ -567,8 +573,11 @@ async function gcSaveQuiz(){
 var gcgSim = null, gcgSimSel = { t:'', n:10000 };
 var gcgWin = { prize:'', st:'', q:'' };
 async function gcgLoad(){
+  /* 2026-10-12 修：以前補發／收回金幣、標記已使用之後會重讀，把畫面上改了還沒儲存的商品金額、機率整份蓋掉（看起來就是「更新後商品金額不見」）。
+     現在只更新金幣和庫存，沒儲存的修改保留 */
+  var keep = gcgDirty() ? gcgDraft : null;
   gcgData = await staffApi('/staff/gacha/gold', {});
-  gcgDraft = JSON.parse(JSON.stringify(gcgData.gold));
+  gcgDraft = keep || JSON.parse(JSON.stringify(gcgData.gold));
   gcgFill();
 }
 /* 第一次打開（還沒存過）先擺好兩級、十格空的獎品，照大熊講的金額分級；名稱和機率要他自己填 */
@@ -688,7 +697,7 @@ function gcgHtml(){
     '</table></div>' +
     '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="gcgAddP()">＋ 新增獎品</button>' +
     '<button class="btn btn-outline btn-sm" onclick="gcgAuto()">🪄 依金額自動配機率</button>' +
-    '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcgUndo()">放棄修改</button>' +
+    '<span style="flex:1"></span>' + (gcgDirty() ? '<span style="color:#b5482b;font-size:13px;align-self:center">⚠ 有還沒儲存的修改</span>' : '') + '<button class="btn btn-outline btn-sm" onclick="gcgUndo()">放棄修改</button>' +
     '<button class="btn btn-gold" onclick="gcgSave()">💾 儲存黃金扭蛋設定</button></div>';
   if (gcgData.gold && gcgData.gold.updatedAt) h += '<div class="muted" style="font-size:12px;margin-top:8px;text-align:right">上次儲存：' +
     gcEsc(String(gcgData.gold.updatedAt).slice(0, 16).replace('T', ' ')) + ' ' + gcEsc(gcgData.gold.updatedBy || '') + '</div>';
