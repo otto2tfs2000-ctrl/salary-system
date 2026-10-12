@@ -45,7 +45,7 @@ function evHtml(){
   });
   return h + '</div>' + balListHtml();
 }
-function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
+function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', poster2:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
 function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderEvents() }
 function evInp(id, v, type, w, ph){ return '<input id="' + id + '" type="' + (type || 'text') + '" value="' + gcEsc(v == null ? '' : v) + '"' + (ph ? ' placeholder="' + gcEsc(ph) + '"' : '') +
   ' style="width:' + (w || 260) + 'px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px">' }
@@ -56,9 +56,13 @@ function evFormHtml(){
   return '<div class="card"><div class="card-title">' + (e._new ? '新增活動' : '編輯活動') + '</div>' +
     (evData.cloudinary ? '' : '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px">伺服器還沒設定 Cloudinary，海報暫時不能上傳。</div>') +
     '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
-    '<div><div id="ev-pv" style="width:150px;height:212px;border-radius:10px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
-    '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳海報<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this)"></label>' +
-    '<div id="ev-st" class="muted" style="font-size:12px;margin-top:4px;max-width:150px"></div></div>' +
+    '<div><div style="display:flex;gap:10px">' +
+    '<div><div class="muted" style="font-size:12px;margin-bottom:4px">第 1 張（先看到）</div><div id="ev-pv" style="width:150px;height:212px;border-radius:10px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
+    '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳海報<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this,1)"></label></div>' +
+    '<div><div class="muted" style="font-size:12px;margin-bottom:4px">第 2 張（選填，左右滑）</div><div id="ev-pv2" style="width:150px;height:212px;border-radius:10px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (e.poster2 ? ";background-image:url('" + gcEsc(e.poster2) + "')" : '') + '"></div>' +
+    '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳第二張<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this,2)"></label> ' +
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="evClearPoster2()">移除</button></div></div>' +
+    '<div id="ev-st" class="muted" style="font-size:12px;margin-top:4px;max-width:320px"></div></div>' +
     '<div style="flex:1 1 320px">' +
     evRow('活動名稱', evInp('ev-title', e.title, 'text', 300, '例：坐下，聊花'), '島上通知和布條會用到，短一點比較好') +
     evRow('一句話說明', evInp('ev-sub', e.sub, 'text', 300, '例：五週年藝術交流餐敘')) +
@@ -72,12 +76,13 @@ function evFormHtml(){
     evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '沒填開花開始日時才用：活動前幾天開始開花（最多 60）；0＝不開花') +
     evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
     '<input type="hidden" id="ev-poster" value="' + gcEsc(e.poster) + '">' +
+    '<input type="hidden" id="ev-poster2" value="' + gcEsc(e.poster2 || '') + '">' +
     '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderEvents()">取消</button>' +
     (e._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="evDel()">刪除活動</button>') + '</div>' +
     '</div></div></div>';
 }
 /* 海報：縮到最長邊 1400px（島上點開要看得清楚字）、轉 JPEG 再傳 Cloudinary */
-function evPickImg(inp){
+function evPickImg(inp, n){
   var f = inp.files && inp.files[0]; if (!f) return;
   var st = document.getElementById('ev-st'); st.textContent = '處理海報中…';
   var rd = new FileReader();
@@ -89,10 +94,11 @@ function evPickImg(inp){
       cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
       try {
         st.textContent = '上傳中…';
-        var j = await staffApi('/staff/events/img', { id: evEdit.id, dataUrl: cv.toDataURL('image/jpeg', .88) });
-        document.getElementById('ev-poster').value = j.url;
-        document.getElementById('ev-pv').style.backgroundImage = "url('" + j.url + "')";
-        st.textContent = '✅ 海報已上傳，記得按「儲存」';
+        var j = await staffApi('/staff/events/img', { id: evEdit.id, n: n === 2 ? 2 : 1, dataUrl: cv.toDataURL('image/jpeg', .88) });
+        var sfx = n === 2 ? '2' : '';
+        document.getElementById('ev-poster' + sfx).value = j.url;
+        document.getElementById('ev-pv' + sfx).style.backgroundImage = "url('" + j.url + "')";
+        st.textContent = '✅ 第 ' + (n === 2 ? 2 : 1) + ' 張海報已上傳，記得按「儲存」';
       } catch(e) { st.textContent = '❌ ' + e.message }
     };
     im.onerror = function(){ st.textContent = '❌ 這個檔案打不開' };
@@ -100,10 +106,15 @@ function evPickImg(inp){
   };
   rd.readAsDataURL(f);
 }
+function evClearPoster2(){
+  document.getElementById('ev-poster2').value = '';
+  document.getElementById('ev-pv2').style.backgroundImage = '';
+  document.getElementById('ev-st').textContent = '第二張已移除，記得按「儲存」';
+}
 async function evSave(){
   var v = function(id){ return document.getElementById(id).value.trim() };
   var ev = { id: evEdit.id, title: v('ev-title'), sub: v('ev-sub'), date: v('ev-date'), time: v('ev-time'), showFrom: v('ev-from'),
-    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), fee: v('ev-fee'), place: v('ev-place'), detail: v('ev-detail'), poster: v('ev-poster'), on: document.getElementById('ev-on').checked };
+    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), fee: v('ev-fee'), place: v('ev-place'), detail: v('ev-detail'), poster: v('ev-poster'), poster2: v('ev-poster2'), on: document.getElementById('ev-on').checked };
   if (!ev.title) return alert('請填活動名稱');
   if (!ev.date) return alert('請填活動日期');
   if (ev.bloomFrom && ev.bloomFrom > ev.date) return alert('開花開始日不能比活動日晚');
