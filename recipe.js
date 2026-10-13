@@ -68,6 +68,14 @@ function rcCost(key){
 
 async function rcLoadCourses(){
   if (rcCourses) return;
+  /* 課程管理開著就讀它（key 一樣是「課程名|規格」，用料不用搬）；沒開或讀不到就照舊讀試算表 */
+  try {
+    var cat = window.bkCatalogFetch ? await bkCatalogFetch() : null;
+    if (cat) {
+      rcCourses = bkCatEntries(cat).map(function(c){ return { cat: c.cat, name: c.name, spec: c.spec, price: c.tiers ? c.tiers.member : c.price } });
+      return;
+    }
+  } catch (e) {}
   try {
     var url = 'https://docs.google.com/spreadsheets/d/1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M' +
       '/gviz/tq?sheet=' + encodeURIComponent('課程') + '&tqx=out:json';

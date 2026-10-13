@@ -183,10 +183,14 @@ async function renderCatalog(){
     catScroll = null;
   }
 }
+function catIsLive(){ return !!(catMeta && catMeta.live === true) }
 function catBanner(){
+  if (catIsLive()) return '<div class="card" style="background:#eef7f0;border-color:#b9dcc4;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
+    '🟢 <b>預約系統現在讀這裡</b><br>客人的預約頁、後台登記、課程用料、AI 客服，現在都讀「課程管理」的資料。你改價格、加購、順序、圖片，<b>大約 1 分鐘內客人就看得到</b>。' +
+    '<br><button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="catView=\'switch\';renderCatalog()">開關與切換前檢查</button></div>';
   return '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
-    '🧪 <b>第一階段・整理與核對用</b><br>這裡的課程是從試算表「複製」過來的。<b>改這裡不會影響</b>預約頁、會員扣點、LINE 預約和核銷，' +
-    '那些現在都還是讀試算表。等你確認這裡的資料都對、跟課程用料也對得上，才會一起切換過來。</div>';
+    '🧪 <b>預約系統現在還是讀試算表</b><br>這裡的課程是從試算表「複製」過來的，<b>改這裡不會影響</b>預約頁、會員扣點、LINE 預約和核銷。確認資料都對之後，到「開關與切換前檢查」一鍵切換。' +
+    '<br><button class="btn btn-gold btn-sm" style="margin-top:6px" onclick="catView=\'switch\';renderCatalog()">開關與切換前檢查</button></div>';
 }
 function catHtml(){
   var h = catBanner();
@@ -202,12 +206,13 @@ function catHtml(){
     '<span style="flex:1"></span>' +
     '<button class="btn ' + (catView === 'list' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'list\';renderCatalog()">課程清單</button>' +
     '<button class="btn ' + (catView === 'check' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catShowCheck()">🔍 核對報告</button>' +
+    '<button class="btn ' + (catView === 'switch' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'switch\';renderCatalog()">🔀 預約系統開關</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catCsv()">⬇ 備份 CSV</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catRows=null;catSheet=null;catAddonSheet=null;renderCatalog()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="catNew()">＋ 新增課程</button></div>';
-  if (catView !== 'check' && (!catAddons || !catAddons.length)) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin:8px 0">' +
+  if (catView === 'list' && (!catAddons || !catAddons.length)) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin:8px 0">' +
     '加購項目（試算表「加購」分頁）還沒有複製進來，所以課程的編輯視窗裡看不到加購。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catImportAddons()">從試算表複製加購</button></div>';
-  h += catView === 'check' ? catCheckHtml() : catListHtml();
+  h += catView === 'check' ? catCheckHtml() : catView === 'switch' ? catSwitchHtml() : catListHtml();
   return h + '</div>';
 }
 function catEarlyState(r){
@@ -1044,6 +1049,102 @@ function catAddonCheckHtml(){
   });
   if (bad.length) h += '<div style="font-size:13.5px;margin-top:8px;line-height:1.8"><b style="color:#b5482b">「可加購」備註的金額跟加購項目對不上（' + bad.length + '）</b>：<br>' + bad.map(catEsc).join('<br>') + '</div>';
   return h + '</div>';
+}
+
+/* ══ 預約系統開關＋切換前檢查（2026-10-13）════════════════
+   開關存在 courseCatalog/meta/live。關（預設）：預約頁、後台、AI 都照舊讀試算表；開：全部改讀課程管理。
+   伺服器快取約 1 分鐘，客人手機上有暫存的，下次打開就換。隨時可以再關回去，不用改程式。
+   價格規則（跟客人端／伺服器／後台同一條）：會員→會員價；第一次來的新客→初次體驗價（沒填用會員價／優惠價）；其他→原價；早鳥期間所有人早鳥價。 */
+function catPriceOf(r, st, today){
+  var orig = r.pOrig || r.price || 0, price = orig, tier = 'orig';
+  if (catIsBase(r)) {
+    if (st.member && r.pMember) { price = r.pMember; tier = 'member' }
+    else if (!st.member && st.first && r.pFirst) { price = r.pFirst; tier = 'first' }
+  } else if (st.member) { if (r.pMember) { price = r.pMember; tier = 'member' } }
+  else if (st.first) { if (r.pFirst) { price = r.pFirst; tier = 'first' } else if (r.pMember) { price = r.pMember; tier = 'member' } }
+  var early = r.early > 0 && /^\d{4}-\d{2}-\d{2}$/.test(r.earlyUntil || '') && String(today) <= r.earlyUntil;
+  if (early) { price = r.early; tier = 'early' }
+  return { price: price, tier: tier, orig: orig, early: early };
+}
+function catPreflight(){
+  var today = catToday(), must = [], note = [], diff = [];
+  var on = catRows.filter(function(r){ return r.on !== false });
+  var legacyOf = function(r, w){ return catRows.find(function(x){ return x.name === r.name && catIsLegacy(x) && w.test(x.spec) }) };
+  on.forEach(function(r){
+    if (catIsLegacy(r)) return;
+    var nm = catKey(r);
+    if (r.hourly > 0) return;
+    if (!(r.pOrig > 0) && !(r.price > 0)) { must.push('「' + nm + '」沒有任何價格（客人會看到「現場報價」）'); return }
+    if (!(r.pOrig > 0)) note.push('「' + nm + '」還沒填原價，切換後會拿試算表舊價格 ' + r.price + ' 當原價（沒有折扣）');
+    if (r.pMember && r.pOrig && r.pMember > r.pOrig) must.push('「' + nm + '」會員價 ' + r.pMember + ' 比原價 ' + r.pOrig + ' 還高');
+    if (r.pFirst && r.pOrig && r.pFirst > r.pOrig) must.push('「' + nm + '」初次體驗價 ' + r.pFirst + ' 比原價 ' + r.pOrig + ' 還高');
+    if (r.early && r.pOrig && r.early > r.pOrig) must.push('「' + nm + '」早鳥價 ' + r.early + ' 比原價 ' + r.pOrig + ' 還高');
+    if (r.early && !r.earlyUntil) must.push('「' + nm + '」有早鳥價但沒有截止日（不會生效）');
+    if (catIsBase(r)) {
+      [['體驗價', r.pFirst, /體驗價/], ['會員價', r.pMember, /會員價/], ['單次原價', r.pOrig, /單次原價/]].forEach(function(t){
+        var lg = t[0] === '單次原價' ? r : legacyOf(r, t[2]);
+        if (!(t[1] > 0)) note.push('「' + r.name + '」' + t[0] + ' 還沒填（會用原價）');
+        else if (lg && lg.price > 0 && lg.price !== t[1]) must.push('「' + r.name + '」' + t[0] + '：課程管理填 ' + t[1] + '，試算表原本是 ' + lg.price + '（確定要改嗎？）');
+      });
+    }
+  });
+  /* 價格差異表：客人實際會看到的價，跟現在（試算表）不一樣的 */
+  var seen = {};
+  on.forEach(function(r){
+    if (catIsLegacy(r) || r.hourly > 0) return;
+    var kinds = [['一般', {}], ['新客', { first: true }], ['會員', { member: true }]];
+    var cells = kinds.map(function(k){ return catPriceOf(r, k[1], today) });
+    if (catIsBase(r)) {
+      var lgF = legacyOf(r, /體驗價/), lgM = legacyOf(r, /會員價/), olds = [r.price, lgF ? lgF.price : r.price, lgM ? lgM.price : r.price];
+      diff.push({ name: catKey(r), old: '體驗 ' + olds[1] + '／會員 ' + olds[2] + '／原價 ' + olds[0], now: cells, changed: cells[0].price !== olds[0] || cells[1].price !== olds[1] || cells[2].price !== olds[2] });
+    } else {
+      diff.push({ name: catKey(r), old: String(r.price), now: cells, changed: cells.some(function(c){ return c.price !== r.price }) });
+    }
+  });
+  var names = {}; catRows.forEach(function(r){ names[r.name] = 1 });
+  (catAddons || []).forEach(function(a){ if (!names[a.course]) must.push('加購「' + a.course + '・' + a.name + '」找不到對應的課程'); if (!(+a.price > 0)) must.push('加購「' + a.course + '・' + a.name + '」金額是 0') });
+  var noImg = on.filter(function(r){ return !r.img }).map(function(r){ return r.name }).filter(function(n, i, a){ return a.indexOf(n) === i });
+  if (noImg.length) note.push(noImg.length + ' 門課還沒有圖片（預約頁會顯示預設底圖）：' + noImg.slice(0, 8).join('、') + (noImg.length > 8 ? '…' : ''));
+  return { must: must, note: note, diff: diff };
+}
+async function catSetLive(on){
+  if (catBusy) return;
+  var pf = catPreflight();
+  var msg = on ? ('要把預約系統切換成讀「課程管理」嗎？\n\n切換後（約 1 分鐘內）：客人預約頁、後台登記、課程用料、AI 客服都改讀這裡，價格會照客人身分（會員／新客／一般）自動算。' +
+      (pf.must.length ? '\n\n⚠ 檢查報告還有 ' + pf.must.length + ' 個必看的問題沒處理，確定仍要切換？' : '') + '\n\n之後隨時可以再關回去。')
+    : '要把預約系統切回讀「試算表」嗎？（約 1 分鐘內生效，課程管理的資料不會被刪）';
+  if (!confirm(msg)) return;
+  catBusy = true;
+  try {
+    var m = { live: !!on, liveAt: new Date().toISOString(), liveBy: catBy() };
+    await catFb('PATCH', '/courseCatalog/meta', m);
+    await catLog(on ? 'liveOn' : 'liveOff', { id: '', name: on ? '預約系統切換成讀課程管理' : '預約系統切回讀試算表' }, null, m);
+    catMeta = Object.assign({}, catMeta || {}, m);
+    renderCatalog();
+    alert(on ? '已切換：預約系統改讀課程管理（約 1 分鐘內生效）。\n建議現在打開客人預約頁看一下價格。' : '已切回：預約系統讀回試算表（約 1 分鐘內生效）。');
+  } catch (err) { alert('切換失敗：' + err.message + '\n沒有改動任何設定。') } finally { catBusy = false }
+}
+function catSwitchHtml(){
+  var live = catIsLive(), pf = catPreflight(), h = '';
+  h += '<div class="card" style="margin:8px 0;background:' + (live ? '#eef7f0' : '#fff8e6') + '"><div style="font-size:16px;font-weight:600">預約系統現在讀：' + (live ? '🟢 課程管理（新）' : '⚪ 試算表（舊）') + '</div>' +
+    '<div style="font-size:13.5px;line-height:1.8;margin-top:6px">' + (live ? '客人預約頁、後台登記、課程用料、AI 客服都讀課程管理。' + (catMeta && catMeta.liveBy ? '<br><span class="muted">' + catEsc(catMeta.liveBy) + ' 在 ' + catEsc(String(catMeta.liveAt || '').slice(0, 16).replace('T', ' ')) + ' 切換</span>' : '') :
+      '客人預約頁、後台登記、課程用料、AI 客服都還是讀試算表，課程管理的資料不影響任何人。') + '</div>' +
+    '<div style="margin-top:10px">' + (live ? '<button class="btn btn-outline" onclick="catSetLive(false)">⏪ 切回讀試算表</button>' : '<button class="btn btn-gold" onclick="catSetLive(true)">🔀 切換成讀課程管理</button>') + '</div>' +
+    '<div class="muted" style="font-size:12.5px;margin-top:8px;line-height:1.7">切換後約 1 分鐘內生效，隨時可以切回去。讀不到課程管理的時候，系統會自動退回讀試算表，預約不會壞掉。</div></div>';
+  h += '<div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600">切換前檢查</div>';
+  h += pf.must.length ? '<div style="font-size:13.5px;line-height:1.9;margin-top:6px;color:#b5482b"><b>必看（' + pf.must.length + '）</b><br>' + pf.must.map(catEsc).join('<br>') + '</div>'
+    : '<div style="font-size:13.5px;margin-top:6px;color:#2e7d4f">✓ 沒有必看的問題。</div>';
+  if (pf.note.length) h += '<div style="font-size:13px;line-height:1.9;margin-top:8px"><b>提醒（' + pf.note.length + '）</b><br>' + pf.note.map(catEsc).join('<br>') + '</div>';
+  h += '</div>';
+  var ch = pf.diff.filter(function(d){ return d.changed });
+  h += '<div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600">客人實際看到的價格（今天）</div>' +
+    '<div class="muted" style="font-size:12.5px;margin:4px 0 8px">跟現在試算表不一樣的有 <b>' + ch.length + '</b> 門課／規格（共 ' + pf.diff.length + '）。「一般」是來過的非會員，「新客」是第一次來的，「會員」是有方案／點數堂數的。</div>' +
+    '<div style="overflow-x:auto"><table><thead><tr><th>課程</th><th style="width:150px">試算表現在</th><th style="width:80px">一般</th><th style="width:80px">新客</th><th style="width:80px">會員</th></tr></thead><tbody>' +
+    pf.diff.map(function(d){
+      var cell = function(c){ return '<td style="text-align:right;' + (c.tier === 'early' ? 'color:#8A5A00' : '') + '">' + c.price.toLocaleString() + (c.tier === 'early' ? ' 🐦' : '') + '</td>' };
+      return '<tr' + (d.changed ? '' : ' style="opacity:.55"') + '><td>' + catEsc(d.name) + '</td><td style="font-size:12.5px">' + catEsc(d.old) + '</td>' + d.now.map(cell).join('') + '</tr>';
+    }).join('') + '</tbody></table></div></div>';
+  return h;
 }
 
 /* ── 備份 CSV（下載到自己電腦）── */

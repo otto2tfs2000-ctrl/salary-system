@@ -225,8 +225,55 @@ function bkEarlyOn(priceRaw,untilRaw){
   var d=bkEarlyDay(untilRaw);
   return bkNum(priceRaw)>0&&!!d&&new Date(Date.now()+288e5).toISOString().slice(0,10)<=d;
 }
+/* ══ 課程管理（2026-10-13）══════════════════════════════
+   後台「📚 課程管理」是課程、價格、加購的新來源。伺服器 /liff/catalog 有總開關：沒開 → 照舊讀試算表；開了 → 讀課程管理。
+   讀不到一律退回試算表。價格有三種（原價／會員價／初次體驗價），登記時預設照客人身分自動選，也可以每一列手動改。
+   繪畫課（體驗價／會員價／單次原價三列）維持三列，價格都從「單次原價」那列的三個價格來，用料才對得上。 */
+var bkCatLive=false, bkCatToday="", bkCatP=null;
+function bkCatalogFetch(force){
+  if(bkCatP&&!force)return bkCatP;
+  bkCatP=(async function(){
+    try{
+      var ac=new AbortController(), tm=setTimeout(function(){ ac.abort() },3500);   /* 最多等 3.5 秒，慢就直接讀試算表 */
+      var r=await fetch((typeof AUTH_API!=="undefined"?AUTH_API:"https://otto2-notify-production.up.railway.app")+"/liff/catalog",
+        {method:"POST",headers:{"Content-Type":"application/json"},body:"{}",signal:ac.signal});
+      clearTimeout(tm);
+      var j=await r.json();
+      return (j&&j.ok&&j.live&&j.rows&&j.rows.length)?j:null;
+    }catch(e){ return null }
+  })();
+  return bkCatP;
+}
+window.bkCatalogFetch=bkCatalogFetch;
+window.bkCatEntries=function(j){ return bkCatEntries(j) };   /* recipe.js（課程用料）也要用 */
+/* 課程管理的列 → 後台用的課程項目（形狀跟讀試算表時一樣，多幾個價別欄位） */
+function bkCatEntries(j){
+  var today=j.today||"", base={}, out=[];
+  j.rows.forEach(function(r){ if(r.tier==="base")base[r.name]=r });
+  j.rows.forEach(function(r){
+    var b=base[r.name], orig=r.pOrig||r.price||0, price=orig, tiers=null;
+    if(r.tier==="legacy"&&b){
+      price=/體驗價/.test(r.spec)?(b.pFirst||r.price):/會員價/.test(r.spec)?(b.pMember||r.price):r.price;
+    }else if(r.tier==="base"){ price=r.pOrig||r.price }
+    else if(!(r.hourly>0)){
+      tiers={orig:orig,member:r.pMember||orig,first:r.pFirst||r.pMember||orig};
+    }
+    var early=!(r.hourly>0)&&r.early>0&&/^\d{4}-\d{2}-\d{2}$/.test(r.earlyUntil)&&String(today)<=r.earlyUntil;
+    var origPrice=price;
+    if(early){ price=r.early; if(tiers)tiers={orig:r.early,member:r.early,first:r.early}; }
+    var pair=r.pair>=2*price?0:r.pair;
+    out.push({cat:r.cat,name:r.name,spec:r.spec,dur:r.dur,price:price,early:early?1:0,origPrice:origPrice,
+      seats:r.seats||0,hourly:r.hourly||0,pair:pair,label:r.name+(r.spec?"（"+r.spec+"）":""),
+      tiers:tiers,_row:r});
+  });
+  return out;
+}
 async function bkLoadCourses(){
   if(bkCourses)return;
+  try{
+    var cat=await bkCatalogFetch();
+    if(cat){ bkCatLive=true; bkCatToday=cat.today||""; bkCourses=bkCatEntries(cat); return }
+  }catch(e){}
   try{
     var rows=await bkGviz("課程");
     /* 前十一欄照位置讀（沿用舊行為）；之後新增的欄位照標題找，
@@ -270,6 +317,17 @@ async function bkLoadCourses(){
 var bkAddons = null; // 課程名稱 -> [{name,price,sort,spec}]
 async function bkLoadAddons(){
   if(bkAddons)return;
+  try{
+    var cat=await bkCatalogFetch();
+    if(cat){
+      var o2={};
+      (cat.addons||[]).forEach(function(a){
+        (o2[a.course]=o2[a.course]||[]).push({name:a.name,price:a.price,sort:a.sort||99,spec:a.spec||"",unit:a.unit||"fixed",maxQty:a.maxQty||1});
+      });
+      Object.keys(o2).forEach(function(k){ o2[k].sort(function(a,b){return a.sort-b.sort}) });
+      bkAddons=o2; return;
+    }
+  }catch(e){}
   try{
     var rows=await bkGviz("加購");
     var first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
@@ -315,7 +373,8 @@ function bkCourseOptions(sel){
     return '<optgroup label="'+esc(k)+'">'+
       byCat[k].map(function(o){
         var tag=o.c.hourly?("　每小時 $"+o.c.hourly.toLocaleString())
-                          :(o.c.price?"　$"+o.c.price.toLocaleString()+(o.c.early?"（早鳥，原價 $"+o.c.origPrice.toLocaleString()+"）":""):"");
+                          :((o.c.tiers&&!o.c.early&&o.c.tiers.member<o.c.tiers.orig)?"　原價 $"+o.c.tiers.orig.toLocaleString()+"／會員 $"+o.c.tiers.member.toLocaleString()
+                          :(o.c.price?"　$"+o.c.price.toLocaleString()+(o.c.early?"（早鳥，原價 $"+o.c.origPrice.toLocaleString()+"）":""):""));
         return '<option value="'+o.i+'"'+(String(sel)===String(o.i)?" selected":"")+'>'+
           esc(o.c.label)+tag+'</option>';
       }).join("")+'</optgroup>';
@@ -2523,7 +2582,7 @@ function bkCard(b){
   var unpaid=dp.s==="wait"&&!c;
   var depPaid=dp.s==="paid"&&!c;
   var items=(b.items||[]).map(function(i){
-    var ad=(i.addons||[]).map(function(a){return a.name}).join("、");
+    var ad=(i.addons||[]).map(function(a){return a.name+(+a.qty>1?"×"+a.qty:"")}).join("、");
     return esc(i.name)+(i.spec?"("+esc(i.spec)+")":"")+" ×"+(i.qty||1)+(ad?"　加購："+esc(ad):"") }).join("、");
   /* 待收就把方式一起寫出來，行政才知道要去 LINE Pay 還是銀行對帳，不用點進去看 */
   var depTag="";
@@ -3940,7 +3999,7 @@ async function bkManual(editId,repeatId,holdId){
                     hours:+it.hours||0,
                     qtyManual:true, amtManual:false,
                     lostName: ci<0 ? (it.name||"") : "",
-                    addons:(it.addons||[]).map(function(a){return {name:a.name,price:+a.price||0}}) });
+                    addons:(it.addons||[]).map(function(a){var o={name:a.name,price:+a.price||0}; if(+a.qty>1){o.qty=+a.qty;o.unit=+a.unit||0} if(a.perHour)o.perHour=1; return o}) });
     });
   }
   if(!mItems.length) mItems.push({ ci:"", qty:0, amt:0, qtyManual:false, amtManual:false, lostName:"", addons:[] });
@@ -3960,21 +4019,60 @@ async function bkManual(editId,repeatId,holdId){
   function mPplNow(){
     return (+document.getElementById("mAdult").value||0)+(+document.getElementById("mKid").value||0);
   }
+  /* 這位客人預設用哪個價（課程管理開著才有用）：有方案／點數堂數的會員 → 會員價；沒有會員檔案、也沒來過 → 初次體驗價；
+     其他（來過的非會員、還沒填電話）→ 原價。每一列可以手動改。跟客人端 index.html 的 catStatus 同一條規則。 */
+  function mAutoKind(){
+    var phEl=document.getElementById("mPhone"), ph=bkNorm((phEl&&phEl.value)||"");
+    var who=picked;
+    if(!who&&bkMembers&&ph)who=bkMembers.filter(function(m){ return bkNorm(m.phone)===ph })[0]||null;
+    if(who&&(+who.points>0||+who.sessions>0||+who.tkt>0))return "member";
+    if(!ph&&!who)return "orig";                       /* 還沒填電話，先照原價，行政再改 */
+    if(who)return "orig";                            /* 有會員檔案但沒有方案了 */
+    var dEl=document.getElementById("mDate");
+    var pb={id:"",date:((dEl&&dEl.value)||"").replace(/-/g,"/")||new Date(Date.now()+288e5).toISOString().slice(0,10).replace(/-/g,"/"),customer:{phone:phEl.value},memberPhone:""};
+    var pv=[]; try{ pv=bkPastVisits(pb) }catch(e){}
+    return pv.length?"orig":"first";
+  }
+  var BK_KIND_NM={orig:"原價",member:"會員價",first:"初次體驗價"};
+  function mKindOf(r){ return (r.kind&&r.kind!=="auto")?r.kind:mAutoKind() }
   function mRowPrice(r){
     if(r.ci==="")return 0;
     var c=bkCourses[+r.ci]; if(!c)return 0;
     /* 計時課的單價＝每小時 × 時數 */
     if(+c.hourly>0)return (+c.hourly)*(+r.hours||BK_HOUR_MIN);
+    if(c.tiers)return +c.tiers[mKindOf(r)]||+c.price||0;
     return +c.price||0;
+  }
+  /* 認到會員／改了電話或日期以後，沒手動改過金額的列照新的價別重算 */
+  function mReprice(){
+    if(!bkCatLive||typeof mItems==="undefined"||!mItems)return;
+    var any=false;
+    mItems.forEach(function(r){
+      if(r.ci!==""&&!r.amtManual&&(!r.kind||r.kind==="auto")){ r.amt=mRowCourse(r)+mAddonsTotal(r); any=true }
+    });
+    if(any)mDraw();
   }
   /* 這一列的課程費（不含加購）：有兩人價就每兩件算一次兩人價 */
   function mRowCourse(r){
     var c=r.ci===""?null:bkCourses[+r.ci];
     var pair=(c&&!(+c.hourly>0))?(+c.pair||0):0;
-    return bkPairTotal(mRowPrice(r),pair,+r.qty||0);
+    var unit=mRowPrice(r);
+    if(c&&c.tiers&&pair>=2*unit)pair=0;              /* 兩人價沒有比兩個單人價便宜就不套（跟客人端一樣） */
+    return bkPairTotal(unit,pair,+r.qty||0);
   }
   /* 加購是一組客人加一次（不管幾位），不隨件數倍增，跟客人端算法一致 */
+  /* 加購每一項存「這一項的總額」price（客人端、核銷加總都靠它）；有單價 unit 的（課程管理的加購）照
+     單價 ×［每小時的乘小時數］× 數量 重算，改了小時數或數量會跟著變 */
+  function mAddonRecalc(r){
+    (r.addons||[]).forEach(function(a){
+      if(a&&a.unit>0){
+        var c=r.ci===""?null:bkCourses[+r.ci], hrs=(c&&+c.hourly>0)?(+r.hours||BK_HOUR_MIN):1;
+        a.price=(+a.unit)*(a.perHour?hrs:1)*(+a.qty||1);
+      }
+    });
+  }
   function mAddonsTotal(r){
+    mAddonRecalc(r);
     return (r.addons||[]).reduce(function(s,a){return s+(+a.price||0)},0);
   }
   function mRecalc(){
@@ -4027,6 +4125,11 @@ async function bkManual(editId,repeatId,holdId){
             'value="'+(+r.hours||BK_HOUR_MIN)+'">小時　每小時 $'+(+c.hourly).toLocaleString()+
             '　佔 '+(+c.seats||1)+' 個位子</div>'
           : "")+
+        (c&&c.tiers&&!c.early&&(c.tiers.member!==c.tiers.orig||c.tiers.first!==c.tiers.orig)
+          ? '<div class="bk-left bk-iinfo">價別：<select data-ir="'+i+'" data-f="kind" style="margin:0 6px">'+
+            '<option value="auto"'+((!r.kind||r.kind==="auto")?" selected":"")+'>自動（目前判斷：'+BK_KIND_NM[mAutoKind()]+'）</option>'+
+            ["orig","member","first"].map(function(k){ return '<option value="'+k+'"'+(r.kind===k?" selected":"")+'>'+BK_KIND_NM[k]+' $'+(+c.tiers[k]).toLocaleString()+'</option>' }).join("")+
+            '</select></div>':'')+
         (c?'<div class="bk-left bk-iinfo">單價 $'+mRowPrice(r).toLocaleString()+
             (+c.pair>0&&!(+c.hourly>0)?"・兩人 $"+(+c.pair).toLocaleString():"")+
             (c.dur?"　時長 "+esc(c.dur):"")+
@@ -4038,10 +4141,16 @@ async function bkManual(editId,repeatId,holdId){
           ? '<div class="bk-left bk-iinfo" style="margin-top:6px">加購（可複選）：'+
             '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px">'+
             bkAddonsFor(c).map(function(a,ai){
-              var on=(r.addons||[]).some(function(x){return x.name===a.name});
+              var cur=(r.addons||[]).filter(function(x){return x.name===a.name})[0], on=!!cur;
               return '<button type="button" class="bk-way'+(on?' on':'')+
                 '" data-addon-i="'+i+'" data-addon-ai="'+ai+'" style="font-size:12.5px;padding:5px 10px">'+
-                esc(a.name)+'　+$'+a.price.toLocaleString()+'</button>';
+                esc(a.name)+'　+$'+a.price.toLocaleString()+(a.unit==="hour"?'／小時':'')+((a.maxQty||1)>1?'／個':'')+'</button>'+
+                (on&&(a.maxQty||1)>1
+                  ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px">數量'+
+                    '<button type="button" class="bk-way" data-aq-i="'+i+'" data-aq-ai="'+ai+'" data-d="-1" style="padding:3px 9px">−</button><b>'+(+cur.qty||1)+'</b>'+
+                    '<button type="button" class="bk-way" data-aq-i="'+i+'" data-aq-ai="'+ai+'" data-d="1" style="padding:3px 9px">＋</button>'+
+                    '<span class="bk-cap">最多 '+a.maxQty+'</span></span>'
+                  : '');
             }).join("")+
             '</div></div>'
           : '');
@@ -4054,6 +4163,24 @@ async function bkManual(editId,repeatId,holdId){
         r.addons=[]; /* 換課程，舊課程的加購清單對不上了 */
         if(!r.qty) r.qty=mItems.length===1?(mPplNow()||1):1;
         r.amt=mRowCourse(r)+mAddonsTotal(r);
+        mDraw();
+      };
+    });
+    box.querySelectorAll("select[data-f=kind]").forEach(function(el){
+      el.onchange=function(){
+        var r=mItems[+el.dataset.ir];
+        r.kind=el.value; r.amtManual=false; mItemsDirty=true;
+        r.amt=mRowCourse(r)+mAddonsTotal(r);
+        mDraw();
+      };
+    });
+    box.querySelectorAll("[data-aq-i]").forEach(function(el){
+      el.onclick=function(){
+        var r=mItems[+el.dataset.aqI], c=bkCourses[+r.ci], a=bkAddonsFor(c)[+el.dataset.aqAi];
+        var cur=(r.addons||[]).filter(function(x){return x.name===a.name})[0]; if(!cur)return;
+        cur.qty=Math.max(1,Math.min(a.maxQty||1,(+cur.qty||1)+(+el.dataset.d)));
+        mItemsDirty=true;
+        if(!r.amtManual)r.amt=mRowCourse(r)+mAddonsTotal(r);
         mDraw();
       };
     });
@@ -4093,7 +4220,8 @@ async function bkManual(editId,repeatId,holdId){
         var a=bkAddonsFor(c)[+el.dataset.addonAi];
         r.addons=r.addons||[];
         var idx=r.addons.findIndex(function(x){return x.name===a.name});
-        if(idx>=0)r.addons.splice(idx,1); else r.addons.push({name:a.name,price:a.price});
+        if(idx>=0)r.addons.splice(idx,1);
+        else r.addons.push(a.unit==="hour"||(a.maxQty||1)>1?{name:a.name,price:a.price,qty:1,unit:a.price,perHour:a.unit==="hour"?1:0}:{name:a.name,price:a.price});
         mItemsDirty=true;
         if(!r.amtManual)r.amt=mRowCourse(r)+mAddonsTotal(r);
         mDraw();
@@ -4123,10 +4251,13 @@ async function bkManual(editId,repeatId,holdId){
       if(r.ci==="")return;
       var c=bkCourses[+r.ci]; if(!c)return;
       var row={name:c.name,spec:c.spec,qty:+r.qty||1,price:mRowPrice(r)};
+      if(c.tiers){ var kd=mKindOf(r); if(kd!=="orig"&&!c.early){ row.tier=kd; row.origPrice=+c.tiers.orig||0 } if(c.early){ row.early=1; row.origPrice=+c.origPrice||0 } }
       if(+c.pair>0&&!(+c.hourly>0))row.pair=+c.pair;
       if(+c.hourly>0)row.hours=+r.hours||BK_HOUR_MIN;
       if(+c.seats>0)row.seats=+c.seats;
-      if(r.addons&&r.addons.length)row.addons=r.addons.map(function(a){return {name:a.name,price:a.price}});
+      mAddonRecalc(r);
+      if(r.addons&&r.addons.length)row.addons=r.addons.map(function(a){
+        var o={name:a.name,price:+a.price||0}; if(+a.qty>1){ o.qty=+a.qty; o.unit=+a.unit||0 } if(a.perHour)o.perHour=1; return o });
       out.push(row);
     });
     /* 沒動過品項就別把原本的資料洗掉（「約下次」也一樣，套用來源那筆） */
@@ -4143,6 +4274,7 @@ async function bkManual(editId,repeatId,holdId){
      電話欄自動比對，三個地方以前各自複製一份一樣的 HTML，容易改一個
      忘記改另一個。 */
   function renderPickCard(){
+    mReprice();
     document.getElementById("mPick").innerHTML=picked?
       '<div class="bk-info"><b>'+esc(picked.name||"（未填姓名）")+'</b> '+picked.phone+
       '<div>可用點數 <b>'+picked.points.toLocaleString()+'</b>　堂數 <b>'+picked.sessions+
@@ -4243,6 +4375,7 @@ async function bkManual(editId,repeatId,holdId){
       picked=null; renderPickCard();
     }
     tryPhoneMatch();
+    mReprice();
   });
   /* ══ 姓名欄直接搜會員（2026-09-22，取代原本另外收合的「找會員」）══
      大熊回報：打了姓名（例如「邱宗洲」）什麼都沒發生，還要另外點開
