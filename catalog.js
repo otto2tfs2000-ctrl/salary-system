@@ -14,8 +14,8 @@
    ・用料（S.recipes）只「讀」不「寫」，用「課程名|規格」對應，跟課程用料分頁同一條規則。
 
    資料欄位（courseCatalog/rows/{id}）：
-   cat 分類／name 課程名稱／spec 規格／desc 說明／dur 時長／price 現行價（預約頁現在收的）／
-   pMember 優惠價／pOrig 原價／early 早鳥價／earlyUntil 早鳥截止（含當天，YYYY-MM-DD）／
+   cat 分類／name 課程名稱／spec 規格／desc 說明／dur 時長／price 試算表原本的價格（舊價格，只當對照，不在畫面上編輯）／
+   pOrig 原價（課程卡片先顯示）／pMember 優惠價（第一次上這門課的客人、會員）／early 早鳥價＋earlyUntil 早鳥截止（含當天，YYYY-MM-DD，所有人）／
    pair 兩人價／img 圖片網址／on 上架／sort 排序／minAge 最小年齡／multi 可加堂／addon 可加購／
    seats 佔位／hourly 計時／ord 試算表原本的先後／src sheet 或 new／updatedAt／updatedBy
    ══════════════════════════════════════════════════════════ */
@@ -40,7 +40,7 @@ function catFoldAll(close){
 }
 
 /* 比對試算表時看的欄位（欄位代號, 顯示名稱） */
-var CAT_CMP = [['cat', '分類'], ['desc', '說明'], ['dur', '時長'], ['price', '現行價'], ['img', '圖片'], ['on', '上架'],
+var CAT_CMP = [['cat', '分類'], ['desc', '說明'], ['dur', '時長'], ['price', '試算表價格'], ['img', '圖片'], ['on', '上架'],
   ['sort', '排序'], ['minAge', '最小年齡'], ['multi', '可加堂'], ['addon', '可加購'], ['seats', '佔位'],
   ['hourly', '計時'], ['pair', '兩人價'], ['early', '早鳥價'], ['earlyUntil', '早鳥截止']];
 
@@ -51,6 +51,8 @@ function catEsc(s){
 function catNum(v){ var m = String(v == null ? '' : v).replace(/[^\d.]/g, ''); return m ? Math.round(parseFloat(m)) : 0 }
 function catStr(v){ return String(v == null ? '' : v).trim() }
 function catKey(r){ var sp = catStr(r.spec); return catStr(r.name) + (sp ? '|' + sp : '') }   /* 跟 recipe.js 的 rcKey 同一條 */
+/* 規格欄寫的是價格別（體驗價／會員價／單次原價）的列：一門課拆成好幾列、各收各的價，不適用「原價＋優惠價」 */
+function catIsTier(r){ return /體驗價|會員價|單次原價|優惠價|原價/.test(String(r.spec || '')) }
 function catToday(){ return new Date(Date.now() + 288e5).toISOString().slice(0, 10) }
 function catMd(d){ return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : '' }
 function catBy(){
@@ -201,7 +203,8 @@ function catListHtml(){
     '<select id="cat-on" style="max-width:130px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px"><option value="">上架＋下架</option><option value="1"' + (catOnFilter === '1' ? ' selected' : '') + '>只看上架</option>' +
     '<option value="0"' + (catOnFilter === '0' ? ' selected' : '') + '>只看下架</option></select>' +
     '<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFoldAll(true)">全部收起</button>' +
-    '<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFoldAll(false)">全部展開</button></div>';
+    '<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFoldAll(false)">全部展開</button>' +
+    '<button class="btn btn-outline btn-sm" style="white-space:nowrap" title="把還沒填原價的課，原價先帶入試算表的價格（只填空的）" onclick="catFillAllOrig()">原價先帶入試算表價格</button></div>';
   var list = catRows.filter(function(r){
     if (catCatFilter && r.cat !== catCatFilter) return false;
     if (catOnFilter === '1' && r.on === false) return false;
@@ -209,10 +212,14 @@ function catListHtml(){
     if (catFilter && (r.name + r.spec + r.cat).indexOf(catFilter) < 0) return false;
     return true;
   });
-  var full = catRows.filter(function(r){ return r.pMember > 0 && r.pOrig > 0 }).length;
-  h += '<div class="muted" style="font-size:12.5px;margin-bottom:8px">「現行價」是預約頁現在實際在收的價格（從試算表複製）。「優惠價」「原價」是新欄位，現在還沒有任何系統在用，你可以先在這裡慢慢填；已填齊 <b>' + full + '</b> / ' + catRows.length + ' 列。</div>';
-  h += '<div style="overflow-x:auto"><table><thead><tr><th>課程</th><th style="width:70px">現行價</th><th style="width:70px">優惠價</th><th style="width:70px">原價</th>' +
-    '<th style="width:86px">早鳥價</th><th style="width:56px">上架</th><th style="width:76px">用料</th><th style="width:76px"></th></tr></thead><tbody>';
+  var elig = catRows.filter(function(r){ return !catIsTier(r) }), done = elig.filter(function(r){ return r.pOrig > 0 }).length;
+  var tierN = catRows.length - elig.length;
+  h += '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:8px">' +
+    '<b>原價</b>：課程卡片上先顯示的價格。<b>優惠價</b>：第一次上這門課的客人、會員付的價格（留空＝沒有優惠）。<b>早鳥價</b>：特定課程的限時價，所有人都適用，到截止日自動結束。<br>' +
+    '這三個價格現在還沒有任何系統在用，可以慢慢填。灰色小字是試算表原本的價格，預約頁現在還是收那個。<br>' +
+    '已填原價 <b>' + done + '</b> / ' + elig.length + ' 列' + (tierN ? '（選圖繪畫等「體驗價／會員價／單次原價」分三列的課，共 ' + tierN + ' 列，先不用填）' : '') + '</div>';
+  h += '<div style="overflow-x:auto"><table><thead><tr><th>課程</th><th style="width:84px">原價</th><th style="width:84px">優惠價</th>' +
+    '<th style="width:96px">早鳥價</th><th style="width:56px">上架</th><th style="width:76px">用料</th><th style="width:76px"></th></tr></thead><tbody>';
   var last = null, cnt = {};
   list.forEach(function(r){ cnt[r.cat || ''] = (cnt[r.cat || ''] || 0) + 1 });
   list.forEach(function(r){
@@ -220,7 +227,7 @@ function catListHtml(){
     var closed = !!catClosed[r.cat || ''] && !catFilter;
     if (r.cat !== last) {
       last = r.cat;
-      h += '<tr style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="8" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
+      h += '<tr style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="7" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
         '<span style="display:inline-block;width:18px;color:var(--gold2)">' + (closed ? '▶' : '▼') + '</span>' + catEsc(r.cat || '（沒分類）') +
         ' <span class="muted" style="font-weight:400;font-size:12.5px">' + cnt[r.cat || ''] + ' 列</span></td></tr>';
     }
@@ -228,9 +235,9 @@ function catListHtml(){
     var n = catRecipeCount(r), off = r.on === false;
     h += '<tr' + (off ? ' style="opacity:.55"' : '') + '><td>' + catEsc(r.name) + (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '') +
       (r.src === 'new' ? ' <span style="font-size:11px;color:#b07a1f">新增</span>' : '') + '</td>' +
-      '<td style="text-align:right">' + (r.price ? r.price.toLocaleString() : '—') + '</td>' +
+      '<td style="text-align:right">' + (r.pOrig ? r.pOrig.toLocaleString() :
+        (r.price ? '<span class="muted" style="font-size:12px" title="試算表原本的價格，預約頁現在還是收這個">試算表 ' + r.price.toLocaleString() + '</span>' : '<span class="muted">—</span>')) + '</td>' +
       '<td style="text-align:right">' + (r.pMember ? r.pMember.toLocaleString() : '<span class="muted">—</span>') + '</td>' +
-      '<td style="text-align:right">' + (r.pOrig ? r.pOrig.toLocaleString() : '<span class="muted">—</span>') + '</td>' +
       '<td style="text-align:right;font-size:13px">' + catEarlyState(r) + '</td>' +
       '<td style="text-align:center">' + (off ? '<span class="muted">下架</span>' : '✓') + '</td>' +
       '<td>' + (n ? '<button class="btn-sm" style="white-space:nowrap" onclick="catGoRecipe(\'' + r.id + '\')">' + n + ' 項</button>' : '<span class="muted">—</span>') + '</td>' +
@@ -282,12 +289,18 @@ function catDrawModal(){
   h += catFld('說明', '<textarea id="cf-desc" rows="2" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">' + catEsc(r.desc) + '</textarea>');
   h += catFld('時長', catIn('cf-dur', r.dur, 'text', 160, false, '例：2-2.5小時'));
   h += '<div style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px;font-size:13.5px;font-weight:600">價格</div>';
-  h += catFld('現行價', catIn('cf-price', r.price || '', 'number', 120), '預約頁現在實際在收的價格（從試算表複製來的）');
-  h += catFld('優惠價', catIn('cf-pm', r.pMember || '', 'number', 120), '首次來上課和會員用的價格（新欄位，目前沒有系統在用）');
-  h += catFld('原價', catIn('cf-po', r.pOrig || '', 'number', 120), '單次或來很多次的非會員用的價格（新欄位，目前沒有系統在用）');
-  h += catFld('早鳥價', catIn('cf-early', r.early || '', 'number', 120), '只有特定課程才填，所有人都適用');
-  h += catFld('早鳥截止', catIn('cf-until', r.earlyUntil, 'date', 170), '最後一天，含當天；過了自動不算早鳥');
-  h += catFld('兩人價', catIn('cf-pair', r.pair || '', 'number', 120), '兩人同行的總價；留空＝沒有優惠');
+  if (!e._new && catIsTier(r)) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;line-height:1.7;margin-bottom:10px">這一列的規格是價格別（' + catEsc(r.spec) + '），一門課拆成幾列、各收各的價。先不用填原價和優惠價，等我們決定這幾門課怎麼轉換再處理。</div>';
+  h += catFld('原價', catIn('cf-po', r.pOrig || '', 'number', 120) +
+    (r.price > 0 ? ' <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFillOrig()">帶入試算表價格 ' + r.price.toLocaleString() + '</button>' : ''),
+    '課程卡片上先顯示的價格。單次、或來很多次的非會員，付這個價。');
+  h += catFld('優惠價', catIn('cf-pm', r.pMember || '', 'number', 120), '第一次上這門課的客人、會員付這個價。留空＝沒有優惠，大家都付原價。');
+  h += '<div style="margin:12px 0 8px;font-size:13px;color:var(--text2)">早鳥活動（選填，只有特定課程才填）</div>';
+  h += catFld('早鳥價', catIn('cf-early', r.early || '', 'number', 120), '截止日前預約的所有人（含會員）都付這個價。');
+  h += catFld('早鳥截止', catIn('cf-until', r.earlyUntil, 'date', 170), '最後一天，含當天。過了自動恢復成原價／優惠價。');
+  h += '<div style="margin:12px 0 8px;font-size:13px;color:var(--text2)">同行優惠（選填）</div>';
+  h += catFld('兩人價', catIn('cf-pair', r.pair || '', 'number', 120), '兩人同行的總價；留空＝沒有優惠。');
+  h += '<div id="cf-preview" style="background:#f6f1e7;border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.9;margin:10px 0"></div>';
+  if (!e._new) h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">試算表原本的價格（舊價格，只當對照）：<b>' + (r.price ? 'NT$' + r.price.toLocaleString() : '—') + '</b>　預約頁現在還是收這個。</div>';
   h += '<div style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px;font-size:13.5px;font-weight:600">其他</div>';
   h += catFld('圖片網址', catIn('cf-img', r.img, 'text', 300));
   h += catFld('排序', catIn('cf-sort', r.sort, 'number', 80), '同分類內由小到大');
@@ -302,12 +315,35 @@ function catDrawModal(){
     (e._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="catDelete()">刪除</button>') + '</div>';
   document.getElementById('cat-modal-body').innerHTML = h;
   var ci = document.getElementById('cf-cat'); if (ci) ci.setAttribute('list', 'cf-cats');
+  ['cf-po', 'cf-pm', 'cf-early', 'cf-until', 'cf-pair'].forEach(function(id){ var x = document.getElementById(id); if (x) { x.oninput = catPreview; x.onchange = catPreview } });
+  catPreview();
   document.getElementById('cat-modal').style.display = 'block';
+}
+function catFillOrig(){
+  var e = catEdit; if (!e || !(e.row.price > 0)) return;
+  document.getElementById('cf-po').value = e.row.price; catPreview();
+}
+/* 編輯視窗裡的「家長會看到什麼」：邊填邊更新，不用自己想像 */
+function catPreview(){
+  var el = document.getElementById('cf-preview'); if (!el) return;
+  var v = function(id){ var x = document.getElementById(id); return x ? x.value : '' };
+  var po = catNum(v('cf-po')), pm = catNum(v('cf-pm')), eb = catNum(v('cf-early')), un = catDay(v('cf-until')), pr = catNum(v('cf-pair'));
+  var f = function(n){ return '<b>NT$' + n.toLocaleString() + '</b>' }, bad = function(t){ return '<span style="color:var(--red)">' + t + '</span>' }, L = [];
+  L.push('<div style="font-weight:600;margin-bottom:2px">家長會看到：</div>');
+  L.push(po ? '・課程卡片先顯示：' + f(po) + '（原價）' : '・' + bad('還沒填原價'));
+  if (po && pm) L.push('・第一次上這門課的客人、會員：' + f(pm) + (pm < po ? '（省 ' + (po - pm).toLocaleString() + '）' : '　' + bad('優惠價沒有比原價低')));
+  else if (po) L.push('・沒有優惠價：所有人都付原價');
+  if (eb && un) {
+    L.push('・早鳥期間（到 ' + catMd(un) + '）：所有人 ' + f(eb) + '，過了自動恢復' + (po && eb >= po ? '　' + bad('早鳥價沒有比原價低') : '') +
+      (pm && eb > pm ? '　' + bad('早鳥價比優惠價還高，會員早鳥期間反而付比較多') : ''));
+  } else if (eb || un) L.push('・' + bad('早鳥價和截止日要一起填'));
+  if (pr) L.push('・兩人同行：2 位 ' + f(pr));
+  el.innerHTML = L[0] + L.slice(1).join('<br>');
 }
 function catFormGet(){
   var g = function(id){ var x = document.getElementById(id); return x ? x.value : '' };
   return { cat: catStr(g('cf-cat')), name: catStr(g('cf-name')), spec: catStr(g('cf-spec')), desc: catStr(g('cf-desc')), dur: catStr(g('cf-dur')),
-    price: catNum(g('cf-price')), pMember: catNum(g('cf-pm')), pOrig: catNum(g('cf-po')), early: catNum(g('cf-early')),
+    pMember: catNum(g('cf-pm')), pOrig: catNum(g('cf-po')), early: catNum(g('cf-early')),
     earlyUntil: catDay(g('cf-until')), pair: catNum(g('cf-pair')), img: catStr(g('cf-img')),
     on: !!(document.getElementById('cf-on') || {}).checked, sort: parseInt(g('cf-sort'), 10) || 99, minAge: parseInt(g('cf-age'), 10) || 0,
     multi: g('cf-multi') === 'Y', addon: catStr(g('cf-addon')), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
@@ -319,6 +355,10 @@ async function catSave(){
   if (!v.cat) { alert('請填分類'); return }
   if (v.early && !v.earlyUntil) { alert('有填早鳥價，請也填早鳥截止日'); return }
   if (!v.early && v.earlyUntil) { alert('有填早鳥截止日，請也填早鳥價'); return }
+  if (v.pMember && !v.pOrig) { alert('有填優惠價，請先填原價（課程卡片要先顯示原價）'); return }
+  if (v.pOrig && v.pMember && v.pMember >= v.pOrig && !confirm('優惠價（' + v.pMember + '）沒有比原價（' + v.pOrig + '）低，確定嗎？')) return;
+  if (v.pOrig && v.early && v.early >= v.pOrig && !confirm('早鳥價（' + v.early + '）沒有比原價（' + v.pOrig + '）低，確定嗎？')) return;
+  if (v.pMember && v.early && v.early > v.pMember && !confirm('早鳥價（' + v.early + '）比優惠價（' + v.pMember + '）還高：早鳥期間會員反而要付比較多。確定嗎？')) return;
   var key = catKey(v);
   if (catRows.some(function(r){ return r.id !== e.id && catKey(r) === key })) { alert('已經有同名同規格的課程了：' + key); return }
   if (v.earlyUntil && v.earlyUntil < catToday() && !confirm('早鳥截止日已經過了，存下來會是「已過期」，確定嗎？')) return;
@@ -352,6 +392,29 @@ async function catDelete(){
     catRows = catRows.filter(function(r){ return r.id !== e.id });
     catCloseModal(); renderCatalog();
   } catch (err) { alert('刪除失敗：' + err.message) } finally { catBusy = false }
+}
+
+/* ── 原價先帶入試算表價格（只填空的；價格別那幾列不處理）── */
+async function catFillAllOrig(){
+  if (catBusy) return;
+  var todo = catRows.filter(function(r){ return !catIsTier(r) && !r.pOrig && r.price > 0 });
+  if (!todo.length) { alert('沒有需要帶入的課：不是已經填了原價，就是沒有試算表價格。'); return }
+  if (!confirm('把 ' + todo.length + ' 列「還沒填原價」的課，原價先帶入試算表的價格？\n\n・只填空的，已經填過的不會動\n・體驗價／會員價／單次原價那幾列不處理\n・帶入之後還是可以一列一列改')) return;
+  catBusy = true;
+  try {
+    await catLoad();   /* 先重讀一次，只補現在還是空的 */
+    var fresh = catRows.filter(function(r){ return !catIsTier(r) && !r.pOrig && r.price > 0 });
+    var now = new Date().toISOString(), by = catBy();
+    for (var i = 0; i < fresh.length; i += 10) {
+      await Promise.all(fresh.slice(i, i + 10).map(function(r){
+        return catFb('PATCH', '/courseCatalog/rows/' + r.id, { pOrig: r.price, updatedAt: now, updatedBy: by });
+      }));
+    }
+    fresh.forEach(function(r){ r.pOrig = r.price; r.updatedAt = now; r.updatedBy = by });
+    await catLog('fillOrig', { id: '', name: '原價帶入試算表價格' }, null, { count: fresh.length, ids: fresh.map(function(r){ return r.id }) });
+    renderCatalog();
+    alert('已帶入 ' + fresh.length + ' 列。');
+  } catch (err) { alert('帶入失敗：' + err.message + '\n（可能有一部分已經寫入，請按「↻ 重新讀取」看現況。）') } finally { catBusy = false }
 }
 
 /* ── 從試算表匯入（複製，不改試算表）── */
@@ -463,10 +526,11 @@ function catCheckHtml(){
     '<div class="muted" style="font-size:12.5px;margin:4px 0 6px">有些課本來就不用扣材料，這份只是讓你知道有哪些還沒建。</div><div style="font-size:13px;line-height:1.8">' +
     (noRec.length ? noRec.map(function(r){ return catEsc(catKey(r)) }).join('<br>') : '都建好了 ✓') + '</div></div>';
   /* ③ 價格填寫進度 */
-  var pm = catRows.filter(function(r){ return r.pMember > 0 }).length, po = catRows.filter(function(r){ return r.pOrig > 0 }).length;
+  var eligC = catRows.filter(function(r){ return !catIsTier(r) });
+  var po = eligC.filter(function(r){ return r.pOrig > 0 }).length, pm = catRows.filter(function(r){ return r.pMember > 0 }).length;
   var eb = catRows.filter(function(r){ return r.early > 0 }).length;
   h += '<div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600">③ 價格填寫進度</div><div style="font-size:13.5px;margin-top:6px;line-height:1.8">' +
-    '優惠價已填 <b>' + pm + '</b> / ' + catRows.length + ' 列・原價已填 <b>' + po + '</b> / ' + catRows.length + ' 列・早鳥價 <b>' + eb + '</b> 列</div></div>';
+    '原價已填 <b>' + po + '</b> / ' + eligC.length + ' 列（三列式課程不算）・優惠價 <b>' + pm + '</b> 列・早鳥價 <b>' + eb + '</b> 列</div></div>';
   return h;
 }
 async function catAdopt(id){
@@ -504,8 +568,8 @@ async function catAddMissing(){
 
 /* ── 備份 CSV（下載到自己電腦）── */
 function catCsv(){
-  var cols = [['cat', '分類'], ['name', '課程名稱'], ['spec', '規格'], ['desc', '說明'], ['dur', '時長'], ['price', '現行價'],
-    ['pMember', '優惠價'], ['pOrig', '原價'], ['early', '早鳥價'], ['earlyUntil', '早鳥截止'], ['pair', '兩人價'], ['img', '圖片網址'],
+  var cols = [['cat', '分類'], ['name', '課程名稱'], ['spec', '規格'], ['desc', '說明'], ['dur', '時長'], ['price', '試算表價格'],
+    ['pOrig', '原價'], ['pMember', '優惠價'], ['early', '早鳥價'], ['earlyUntil', '早鳥截止'], ['pair', '兩人價'], ['img', '圖片網址'],
     ['on', '上架'], ['sort', '排序'], ['minAge', '最小年齡'], ['multi', '可加堂'], ['addon', '可加購'], ['seats', '佔位'], ['hourly', '計時']];
   var q = function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"' };
   var lines = [cols.map(function(c){ return q(c[1]) }).join(',')];
