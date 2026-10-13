@@ -342,11 +342,17 @@ function catDrawModal(){
   h += '<div style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px;font-size:13.5px;font-weight:600">加購項目</div>' +
     (e._new ? '<div class="muted" style="font-size:13px;margin-bottom:8px">先按下面的「儲存」建立這門課，之後再回來新增加購項目。</div>' : '<div id="cf-addons"></div>');
   h += '<div style="border-top:1px solid var(--border);margin:12px 0 10px;padding-top:10px;font-size:13.5px;font-weight:600">其他</div>';
-  h += catFld('圖片網址', catIn('cf-img', r.img, 'text', 300));
+  var sameN = catRows.filter(function(x){ return x.name === r.name }).length;
+  h += catFld('課程圖片',
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div id="cf-imgpv" style="width:96px;height:72px;border-radius:8px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (r.img ? ';background-image:' + catBgUrl(r.img) : '') + '"></div>' +
+    '<div><label class="btn btn-outline btn-sm" style="cursor:pointer">上傳圖片<input type="file" accept="image/*" style="display:none" onchange="catPickImg(this)"></label> ' +
+    '<button type="button" class="btn btn-outline btn-sm" onclick="catClearImg()">清除</button><div id="cf-imgst" class="muted" style="font-size:12px;margin-top:4px"></div></div></div>' +
+    '<input id="cf-img" type="text" value="' + catEsc(r.img || '') + '" placeholder="或直接貼圖片網址" oninput="catImgPv()" style="width:300px;max-width:100%;margin-top:8px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">' +
+    (sameN > 1 ? '<label style="display:block;font-size:13px;margin-top:6px"><input type="checkbox" id="cf-imgall" checked> 同一門課的所有規格都用這張（共 ' + sameN + ' 列）</label>' : ''),
+    '客人預約頁的課程卡片會顯示這張圖。上傳時會自動縮小成適合手機的大小，載入很快。請不要貼 Google 雲端的連結（載入慢、容易顯示不出來）。');
   h += catFld('排序', catIn('cf-sort', r.sort, 'number', 80), '同分類內由小到大');
   h += catFld('最小年齡', catIn('cf-age', r.minAge || '', 'number', 80));
   h += catFld('可加堂', '<select id="cf-multi" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px"><option value="N"' + (r.multi ? '' : ' selected') + '>否</option><option value="Y"' + (r.multi ? ' selected' : '') + '>是</option></select>');
-  h += catFld('可加購', catIn('cf-addon', r.addon, 'text', 300, false, '備註文字；實際加購品項目前還在試算表「加購」分頁'));
   h += catFld('佔位', catIn('cf-seats', r.seats || '', 'number', 80), '一組佔幾個位子（地毯課填 3）；留空＝一般');
   h += catFld('計時', catIn('cf-hourly', r.hourly || '', 'number', 100), '每小時多少錢；留空＝不是計時課');
   h += catFld('上架', '<label style="font-size:14px"><input type="checkbox" id="cf-on"' + (r.on !== false ? ' checked' : '') + '> 在課程清單顯示</label>');
@@ -358,6 +364,39 @@ function catDrawModal(){
   catPreview();
   catAddonEdit = null; catAddonDraw();
   document.getElementById('cat-modal').style.display = 'block';
+}
+function catBgUrl(u){ return "url('" + String(u).replace(/'/g, '%27') + "')" }
+function catImgPv(){
+  var pv = document.getElementById('cf-imgpv'), v = document.getElementById('cf-img'); if (!pv || !v) return;
+  pv.style.backgroundImage = /^https?:\/\//.test(v.value.trim()) ? catBgUrl(v.value.trim()) : '';
+}
+function catClearImg(){
+  var v = document.getElementById('cf-img'); if (v) v.value = '';
+  catImgPv(); var st = document.getElementById('cf-imgst'); if (st) st.textContent = '已清除，記得按「儲存」';
+}
+/* 課程圖片：縮到最長邊 720px、轉 JPEG（大約 40～100KB），再傳 Cloudinary。手機載入才不會慢 */
+function catPickImg(inp){
+  var f = inp.files && inp.files[0]; if (!f) return;
+  var st = document.getElementById('cf-imgst'); st.textContent = '處理圖片中…';
+  var rd = new FileReader();
+  rd.onload = function(){
+    var im = new Image();
+    im.onload = async function(){
+      var k = Math.min(1, 720 / Math.max(im.width, im.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+      var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(im, 0, 0, cv.width, cv.height);
+      var data = cv.toDataURL('image/jpeg', .82), kb = Math.round(data.length * .75 / 1024);
+      try {
+        st.textContent = '上傳中…（' + kb + ' KB）';
+        var j = await staffApi('/staff/catalog/img', { id: catEdit.id, dataUrl: data });
+        document.getElementById('cf-img').value = j.url; catImgPv();
+        st.textContent = '✅ 已上傳（' + kb + ' KB），記得按下面的「儲存」';
+      } catch (e) { st.textContent = '❌ ' + e.message }
+    };
+    im.onerror = function(){ st.textContent = '❌ 這個檔案打不開' };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
 }
 function catFillOrig(){
   var e = catEdit; if (!e || !(e.row.price > 0)) return;
@@ -401,7 +440,7 @@ function catFormGet(){
     pMember: num('cf-pm', 'pMember'), pFirst: num('cf-pf', 'pFirst'), pOrig: num('cf-po', 'pOrig'), early: num('cf-early', 'early'),
     earlyUntil: has('cf-until') ? catDay(g('cf-until')) : (o.earlyUntil || ''), pair: num('cf-pair', 'pair'), img: catStr(g('cf-img')),
     on: !!(document.getElementById('cf-on') || {}).checked, sort: parseInt(g('cf-sort'), 10) || 99, minAge: parseInt(g('cf-age'), 10) || 0,
-    multi: g('cf-multi') === 'Y', addon: catStr(g('cf-addon')), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
+    multi: g('cf-multi') === 'Y', addon: has('cf-addon') ? catStr(g('cf-addon')) : (o.addon || ''), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
 }
 async function catSave(){
   if (catBusy || !catEdit) return;
@@ -416,6 +455,8 @@ async function catSave(){
   if (v.pOrig && v.early && v.early >= v.pOrig && !confirm('早鳥價（' + v.early + '）沒有比原價（' + v.pOrig + '）低，確定嗎？')) return;
   var lowOther = Math.min.apply(null, [v.pMember, v.pFirst].filter(function(n){ return n > 0 }).concat([1e9]));
   if (v.early && lowOther < 1e9 && v.early > lowOther && !confirm('早鳥價（' + v.early + '）比會員價／體驗價（' + lowOther + '）還高：那些客人早鳥期間反而要付比較多。確定嗎？')) return;
+  if (/drive\.google\.com|docs\.google\.com|googleusercontent\.com/.test(v.img) && v.img !== ((e.orig && e.orig.img) || '') &&
+      !confirm('這張圖是 Google 雲端的連結。客人用手機開預約頁時，Google 雲端的圖載入比較慢，也可能被限流顯示不出來。\n\n建議改用「上傳圖片」按鈕。仍要這樣儲存嗎？')) return;
   var key = catKey(v);
   if (catRows.some(function(r){ return r.id !== e.id && catKey(r) === key })) { alert('已經有同名同規格的課程了：' + key); return }
   if (v.earlyUntil && v.earlyUntil < catToday() && !confirm('早鳥截止日已經過了，存下來會是「已過期」，確定嗎？')) return;
@@ -433,6 +474,17 @@ async function catSave(){
     await catLog(e._new ? 'add' : 'edit', row, e.orig, row);
     var i = catRows.findIndex(function(r){ return r.id === e.id });
     if (i >= 0) catRows[i] = row; else catRows.push(row);
+    /* 圖片套用到同一門課的其他規格（預約頁用的是這門課第一個規格那列的圖，全部放一樣最保險） */
+    var all = document.getElementById('cf-imgall');
+    if (all && all.checked && v.img !== ((e.orig && e.orig.img) || '')) {
+      var oldName = e.orig ? e.orig.name : v.name, others = catRows.filter(function(r){ return r.id !== e.id && r.name === oldName && (r.img || '') !== v.img });
+      var tt = new Date().toISOString();
+      for (var q = 0; q < others.length; q++) {
+        await catFb('PATCH', '/courseCatalog/rows/' + others[q].id, { img: v.img, updatedAt: tt, updatedBy: catBy() });
+        others[q].img = v.img; others[q].updatedAt = tt; others[q].updatedBy = catBy();
+      }
+      if (others.length) await catLog('imgAll', { id: e.id, name: v.name }, null, { img: v.img, count: others.length });
+    }
     catSortRows(); catCloseModal(); renderCatalog();
   } catch (err) {
     alert('儲存失敗：' + err.message + '\n資料沒有被改動，請再試一次。');
@@ -718,6 +770,7 @@ function catAddonDraw(){
   var r = catEdit.orig || catEdit.row, list = catAddonsFor(r), E = catAddonEdit;
   var sty = 'padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px';
   var h = '';
+  if (r.addon) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:12.5px;line-height:1.7;margin-bottom:8px">試算表舊的「可加購」備註欄寫著：「' + catEsc(r.addon) + '」。那只是文字備註，客人選不到。要讓客人能加購，請用下面的「新增加購項目」建立。</div>';
   if (!list.length && !E) h += '<div class="muted" style="font-size:13px;margin-bottom:8px">這個規格目前沒有加購項目。</div>';
   list.forEach(function(a){
     h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
