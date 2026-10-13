@@ -132,6 +132,8 @@ async function evDel(){
    🎈 熱氣球（2026-10-12）：A／B／C 三款，填好存檔就出現在遊樂島、吉祥物島、作品小屋；到期自動收掉。
    A 大氣球（主標＋副標）／B 直式飄帶（日期＋活動名＋倒數）／C 單色大字球（一句話）；三款都可以綁活動，在島後面的天空
    同時最多 3 顆（開始日早的先上）。資料在 balloons/list/，跟活動清單一起讀。
+   2026-10-13 改成「先填內容、再挑款式」：內容＝綁活動／自己寫字／放圖（用活動海報或自己上傳），款式 A／B／C 只是外觀；
+   位置可以指定（上排／中排 × 左／中／右，共 6 格），不指定就自動挑不會被標題蓋住的位置。
    ══════════════════════════════════════════════════════════ */
 var balEdit = null;
 var BAL_COL = { pink:'#e8708f', blue:'#3d9bd0', orange:'#f2a04a', green:'#8cc152', yellow:'#f6cf4a', purple:'#9b7fd0' };
@@ -139,6 +141,11 @@ var BAL_COL_DK = { pink:'#c93f66', blue:'#226a97', orange:'#b8651a', green:'#4d7
 var BAL_COL_NM = { pink:'粉紅', blue:'天藍', orange:'橘', green:'草綠', yellow:'黃', purple:'紫' };
 var BAL_ST = { A:'A 款・大氣球', B:'B 款・直式飄帶', C:'C 款・單色大字球' };
 var BAL_ST_TIP = { A:'大字牌氣球：活動名超大、底下寫日期＋還有幾天（最好讀）', B:'彩條氣球底下垂一條直的飄帶：日期＋活動名＋倒數', C:'單色大氣球，只放一句大字（例：歡迎新同學）' };
+var BAL_POS_NM = { TL:'左上', TM:'中上', TR:'右上', ML:'左中', MM:'正中', MR:'右中' };
+/* 氣球上的圖：用活動海報（綁了活動才有）／自己上傳／不放 */
+function evPosterOf(b){ var e = b.eventId && evData && evData.list ? evData.list[b.eventId] : null; return e && e.poster ? e.poster : '' }
+function balImgOf(b){ return b.useEvImg ? evPosterOf(b) : (b.img || '') }
+function balMode(b){ return b.useEvImg ? 'ev' : (b.img || b._own) ? 'own' : 'none' }
 function balStatus(b){
   var t = evData.today, live = evData.live || [];
   if (b.on === false) return '<span style="color:var(--text3)">已關閉</span>';
@@ -149,52 +156,106 @@ function balStatus(b){
   return '<span style="color:#b07a1f">已經有 3 顆在島上，排隊中</span>';
 }
 function evTitleOf(b){ return b.eventId && evData && evData.list && evData.list[b.eventId] ? (evData.list[b.eventId].title || '') : '' }
-/* 預覽：字依長度縮小、不被圓形切掉；A 跟遊戲裡一樣是「純色氣球＋奶油白大字牌」 */
+function balUrl(u){ return "url('" + String(u).replace(/'/g, '%27') + "')" }
+/* 預覽：字依長度縮小、不被圓形切掉；A 跟遊戲裡一樣是「純色氣球＋奶油白大字牌」；有圖就換成圖 */
 function balPreview(b){
   var c = BAL_COL[b.color] || BAL_COL.pink, raw = b.title || evTitleOf(b) || b.evTitle || (b.eventId ? '活動名' : '文字'), t = gcEsc(raw), sub = gcEsc(b.sub || (b.eventId ? '日期・倒數' : ''));
+  var im = b._img != null ? b._img : balImgOf(b), dk = BAL_COL_DK[b.color] || '#c93f66';
   var len = Array.from(String(raw)).length, fs = len <= 3 ? 17 : len <= 5 ? 14 : len <= 8 ? 11 : 9;
   if (b.style === 'B') {
-    var chars = Array.from(String(raw)).slice(0, 6).map(function(ch){ return '<div>' + gcEsc(ch) + '</div>' }).join('');
+    var chars = Array.from(String(raw)).slice(0, im ? 3 : 6).map(function(ch){ return '<div>' + gcEsc(ch) + '</div>' }).join('');
     return '<div style="width:70px;text-align:center"><div style="width:44px;height:52px;margin:0 auto;border-radius:50% 50% 46% 46%;background:repeating-linear-gradient(90deg,' + c + ' 0 6px,#fff6e4 6px 12px)"></div>' +
-      '<div style="width:22px;margin:-2px auto 0;background:' + c + ';color:#fff;font-size:11px;font-weight:800;line-height:1.2;padding:4px 0;border-radius:2px">' + chars + '</div></div>';
+      '<div style="width:26px;margin:-2px auto 0;background:' + c + ';color:#fff;font-size:11px;font-weight:800;line-height:1.2;padding:4px 0;border-radius:2px">' +
+      (im ? '<div style="width:20px;height:26px;margin:0 auto 3px;border-radius:2px;background:#fff6e4 center/cover no-repeat ' + balUrl(im) + '"></div>' : '') + chars + '</div></div>';
+  }
+  if (im) {
+    return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden">' +
+      '<div style="width:40px;height:54px;border-radius:6px;border:2px solid ' + (b.style === 'C' ? '#fff' : dk) + ';background:#fff6e4 center/cover no-repeat ' + balUrl(im) + '"></div></div>';
   }
   if (b.style === 'C') return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';color:#fff;font-weight:800;font-size:' + fs + 'px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15;text-align:center;padding:0 10px;box-sizing:border-box;overflow:hidden;word-break:break-all">' + t + (sub ? '<small style="font-size:9px;opacity:.9">' + sub + '</small>' : '') + '</div>';
   return '<div style="width:70px;height:78px;border-radius:50% 50% 46% 46%;background:' + c + ';display:flex;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden">' +
-    '<div style="width:46px;background:#fff6e4;border-radius:8px;padding:4px 2px;text-align:center;color:' + (BAL_COL_DK[b.color] || '#c93f66') + ';font-weight:900;font-size:' + Math.min(fs, 14) + 'px;line-height:1.1;word-break:break-all">' + t +
+    '<div style="width:46px;background:#fff6e4;border-radius:8px;padding:4px 2px;text-align:center;color:' + dk + ';font-weight:900;font-size:' + Math.min(fs, 14) + 'px;line-height:1.1;word-break:break-all">' + t +
     (sub ? '<div style="font-size:8px;color:#1e2b4f;margin-top:2px">' + sub + '</div>' : '') + '</div></div>';
 }
 function balListHtml(){
   var list = Object.values(evData.bal || {}).sort(function(a, b){ return String(b.from || '').localeCompare(String(a.from || '')) });
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">🎈 熱氣球' +
     '<button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="balNew()">＋ 新增熱氣球</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">填好存檔，遊樂島、吉祥物島、作品小屋就會出現這顆氣球；過了「結束日」自動收掉。<b>同時最多 3 顆</b>（開始日早的先上），三顆在島後面的天空自動分開排。每顆都可以綁不同的活動，自動寫活動名和倒數。</div>';
+    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">做法：先填內容（綁活動、自己寫字，或放圖），再挑 A／B／C 款式，最後可以指定它在天空的哪個位置。' +
+    '填好存檔，遊樂島、吉祥物島、作品小屋就會出現；過了「結束日」自動收掉。<b>同時最多 3 顆</b>（開始日早的先上）。沒指定位置的會自動挑不會被標題蓋住的位置。</div>';
   if (!list.length) h += '<div class="empty">還沒有熱氣球，按右上角「＋ 新增熱氣球」。</div>';
   list.forEach(function(b){
     h += '<div style="display:flex;gap:14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">' +
       '<div style="flex:none;width:76px;display:flex;justify-content:center">' + balPreview(b) + '</div>' +
       '<div style="flex:1 1 200px;min-width:0"><div style="font-size:15px;font-weight:600">' + gcEsc(BAL_ST[b.style] || b.style) + '</div>' +
       '<div style="font-size:13.5px;margin:3px 0">' + gcEsc(b.title || (b.eventId && evData.list && evData.list[b.eventId] ? '（跟著活動：' + evData.list[b.eventId].title + '）' : '')) + (b.sub ? '<span class="muted">　' + gcEsc(b.sub) + '</span>' : '') + '</div>' +
-      '<div style="font-size:12.5px" class="muted">' + (b.from ? evMd(b.from) : '馬上') + ' ～ ' + (b.to ? evMd(b.to) : '不設結束日') + '</div>' +
+      '<div style="font-size:12.5px" class="muted">' + (b.from ? evMd(b.from) : '馬上') + ' ～ ' + (b.to ? evMd(b.to) : '不設結束日') +
+      '　位置：' + (BAL_POS_NM[b.pos] || '自動') + (balImgOf(b) ? '　🖼 有圖' : '') + '</div>' +
       '<div style="font-size:13px;margin-top:3px">' + balStatus(b) + '</div></div>' +
       '<button class="btn btn-outline btn-sm" onclick="balOpen(\'' + b.id + '\')">編輯</button></div>';
   });
   return h + '</div>';
 }
-function balNew(){ balEdit = { id:'bl' + Date.now().toString(36), style:'A', title:'', sub:'', color:'pink', eventId:'', from:evData.today, to:'', on:true, _new:true }; renderEvents() }
-function balOpen(id){ balEdit = JSON.parse(JSON.stringify(evData.bal[id])); renderEvents() }
+function balNew(){ balEdit = { id:'bl' + Date.now().toString(36), style:'A', title:'', sub:'', color:'pink', eventId:'', from:evData.today, to:'', on:true, pos:'', img:'', useEvImg:false, _new:true }; renderEvents() }
+function balOpen(id){ balEdit = JSON.parse(JSON.stringify(evData.bal[id])); balEdit.pos = balEdit.pos || ''; balEdit.img = balEdit.img || ''; balEdit.useEvImg = !!balEdit.useEvImg; renderEvents() }
 function balSync(){
   var g = function(id){ var e = document.getElementById(id); return e ? e.value.trim() : '' };
   balEdit.title = g('bl-title'); balEdit.sub = g('bl-sub'); balEdit.from = g('bl-from'); balEdit.to = g('bl-to');
-  var ev = document.getElementById('bl-ev'); if (ev) balEdit.eventId = ev.value;
+  var ev = document.getElementById('bl-ev'); if (ev) { balEdit.eventId = ev.value; if (!ev.value) balEdit.useEvImg = false }
   var on = document.getElementById('bl-on'); if (on) balEdit.on = on.checked;
 }
 function balSet(k, v){ balSync(); balEdit[k] = v; renderEvents() }
+function balSetMode(m){
+  balSync();
+  if (m === 'ev') { balEdit.useEvImg = true }
+  else if (m === 'own') { balEdit.useEvImg = false; balEdit._own = true }
+  else { balEdit.useEvImg = false; balEdit.img = ''; balEdit._own = false }
+  renderEvents();
+}
+/* 自己的圖：縮到最長邊 1000px、轉 JPEG 傳 Cloudinary（氣球上很小，不用太大） */
+function balPickImg(inp){
+  var f = inp.files && inp.files[0]; if (!f) return;
+  var st = document.getElementById('bl-st'); st.textContent = '處理圖片中…';
+  var rd = new FileReader();
+  rd.onload = function(){
+    var im = new Image();
+    im.onload = async function(){
+      var k = Math.min(1, 1000 / Math.max(im.width, im.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      try {
+        st.textContent = '上傳中…';
+        var j = await staffApi('/staff/balloons/img', { id: balEdit.id, dataUrl: cv.toDataURL('image/jpeg', .88) });
+        balSync(); balEdit.img = j.url; balEdit.useEvImg = false; balEdit._own = true; renderEvents();
+      } catch(e) { st.textContent = '❌ ' + e.message }
+    };
+    im.onerror = function(){ st.textContent = '❌ 這個檔案打不開' };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+}
+/* 位置：畫面上方天空的 6 格。手機直式時左上、中上會被大標題蓋住，所以格子上有提醒 */
+function balPosPicker(b){
+  var used = {};
+  Object.values(evData.bal || {}).forEach(function(o){ if (o.id !== b.id && o.pos && o.on !== false) used[o.pos] = o.style });
+  var cell = function(k){
+    var on = b.pos === k, u = used[k], warn = k === 'TL' || k === 'TM';
+    return '<div onclick="balSet(\'pos\',\'' + k + '\')" style="cursor:pointer;flex:1 1 0;min-width:70px;text-align:center;padding:10px 4px;border-radius:10px;border:2px solid ' + (on ? '#c9a24a' : 'var(--border)') + ';background:' + (on ? '#fff8e6' : '#fff') + '">' +
+      '<div style="font-weight:600;font-size:14px">' + BAL_POS_NM[k] + '</div>' +
+      (u ? '<div style="font-size:11px;color:#b07a1f">已有 ' + u + ' 款</div>' : warn ? '<div style="font-size:11px" class="muted">手機會被標題蓋</div>' : '<div style="font-size:11px" class="muted">&nbsp;</div>') + '</div>';
+  };
+  var auto = '<div onclick="balSet(\'pos\',\'\')" style="cursor:pointer;padding:8px 12px;border-radius:10px;border:2px solid ' + (!b.pos ? '#c9a24a' : 'var(--border)') + ';background:' + (!b.pos ? '#fff8e6' : '#fff') + ';display:inline-block;margin-bottom:8px;font-size:14px;font-weight:600">自動（系統挑不會被蓋住的位置）</div>';
+  return auto + '<div style="max-width:420px;background:#dff0fb;border-radius:12px;padding:8px">' +
+    '<div style="display:flex;gap:6px;margin-bottom:6px">' + ['TL', 'TM', 'TR'].map(cell).join('') + '</div>' +
+    '<div style="display:flex;gap:6px">' + ['ML', 'MM', 'MR'].map(cell).join('') + '</div>' +
+    '<div class="muted" style="font-size:11.5px;text-align:center;margin-top:6px">↑ 遊樂島畫面上方的天空（上排最靠近標題，中排在雲上面）</div></div>';
+}
 function balFormHtml(){
-  var b = balEdit, st = b.style;
+  var b = balEdit, st = b.style, mode = balMode(b), evPost = evPosterOf(b), curImg = balImgOf(b);
   var styleBtns = ['A', 'B', 'C'].map(function(k){
     var on = st === k;
     return '<div onclick="balSet(\'style\',\'' + k + '\')" style="cursor:pointer;flex:1 1 150px;border:2px solid ' + (on ? '#c9a24a' : 'var(--border)') + ';background:' + (on ? '#fff8e6' : '#fff') + ';border-radius:12px;padding:10px;text-align:center">' +
-      '<div style="display:flex;justify-content:center;margin-bottom:6px">' + balPreview({ style:k, color:b.color, title:b.title, sub:b.sub, eventId:b.eventId, evTitle:evTitleOf(b) }) + '</div>' +
+      '<div style="display:flex;justify-content:center;margin-bottom:6px">' + balPreview({ style:k, color:b.color, title:b.title, sub:b.sub, eventId:b.eventId, evTitle:evTitleOf(b), _img:curImg }) + '</div>' +
       '<div style="font-weight:600;font-size:14px">' + BAL_ST[k] + '</div><div class="muted" style="font-size:12px;line-height:1.5;margin-top:3px">' + BAL_ST_TIP[k] + '</div></div>';
   }).join('');
   var cols = Object.keys(BAL_COL).map(function(k){
@@ -203,13 +264,29 @@ function balFormHtml(){
   }).join('');
   var evOpts = '<option value="">不綁活動（自己寫字）</option>' + Object.values(evData.list || {}).sort(function(a, c){ return String(a.date).localeCompare(String(c.date)) }).map(function(e){
     return '<option value="' + gcEsc(e.id) + '"' + (b.eventId === e.id ? ' selected' : '') + '>' + evMd(e.date) + ' ' + gcEsc(e.title) + '</option>' }).join('');
-  var titleLb = st === 'A' ? '主標（最多 12 字）' : st === 'B' ? '飄帶文字（最多 10 字）' : '大字（最多 10 字）';
+  var titleLb = st === 'A' ? '主標（最多 12 字）' : '氣球上的字（最多 10 字）';
+  var mBtn = function(m, lb, dis){
+    var on = mode === m;
+    return '<button type="button" ' + (dis ? 'disabled title="要先綁一個有海報的活動"' : 'onclick="balSetMode(\'' + m + '\')"') + ' class="btn ' + (on ? 'btn-gold' : 'btn-outline') + ' btn-sm" style="margin-right:6px' + (dis ? ';opacity:.45' : '') + '">' + lb + '</button>';
+  };
+  var imgRow = mBtn('none', '不放圖') + mBtn('ev', '用活動海報', !(b.eventId && evPost)) + mBtn('own', '自己上傳') +
+    (mode === 'own' ? '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<div style="width:54px;height:72px;border-radius:8px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (b.img ? ';background-image:' + balUrl(b.img) : '') + '"></div>' +
+      '<label class="btn btn-outline btn-sm" style="cursor:pointer">' + (b.img ? '換一張' : '選擇圖片') + '<input type="file" accept="image/*" style="display:none" onchange="balPickImg(this)"></label>' +
+      '<span id="bl-st" class="muted" style="font-size:12.5px">' + (b.img ? '' : '還沒有圖片') + '</span></div>' : '') +
+    (mode === 'ev' ? '<div class="muted" style="font-size:12px;margin-top:6px">會直接用這個活動第一張海報，活動公告改海報，氣球跟著換。</div>' : '');
+  var sec = function(n, t){ return '<div style="font-weight:600;font-size:14.5px;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--border)">' + n + ' ' + t + '</div>' };
   return '<div class="card"><div class="card-title">' + (b._new ? '新增熱氣球' : '編輯熱氣球') + '</div>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' + styleBtns + '</div>' +
-    evRow('顏色', cols) +
-    (true ? evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;max-width:100%">' + evOpts + '</select>', '綁了之後氣球自動寫「活動名＋日期＋倒數」，活動結束氣球跟著收') : '') +
-    (b.eventId ? '' : evRow(titleLb, evInp('bl-title', b.title, 'text', 300, st === 'A' ? '例：年度餐敘' : st === 'B' ? '例：歡迎新同學' : '例：歡迎新同學'))) +
+    '<div style="font-weight:600;font-size:14.5px;margin-bottom:8px">① 氣球上要放什麼內容</div>' +
+    evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;max-width:100%">' + evOpts + '</select>', '綁了之後氣球自動寫「活動名＋日期＋倒數」，活動結束氣球跟著收') +
+    (b.eventId ? '' : evRow(titleLb, evInp('bl-title', b.title, 'text', 300, '例：歡迎新同學'), '用圖片的話可以不填')) +
     (b.eventId ? '' : evRow(st === 'A' ? '副標（最多 16 字）' : '小字（最多 16 字，可不填）', evInp('bl-sub', b.sub, 'text', 300, st === 'A' ? '例：12/20 18:30' : ''))) +
+    evRow('氣球上的圖', imgRow, '選填。放圖的話，氣球上會貼一張圖（A／C 款貼在字牌位置，B 款貼在飄帶上）') +
+    sec('②', '挑款式（下面三張都是用上面的內容做的預覽，點一張就換）') +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">' + styleBtns + '</div>' +
+    evRow('顏色', cols) +
+    sec('③', '放在天空的哪裡') + balPosPicker(b) +
+    sec('④', '什麼時候出現') +
     evRow('開始出現', evInp('bl-from', b.from, 'date', 170), '這天起島上才出現') +
     evRow('結束日', evInp('bl-to', b.to, 'date', 170), '過了這天自動收掉；不填＝一直掛著，要自己關') +
     evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="bl-on" ' + (b.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
@@ -219,9 +296,14 @@ function balFormHtml(){
 async function balSave(){
   balSync();
   var b = balEdit;
-  if (!b.eventId && !b.title) return alert('請填氣球上的字，或選一個要綁的活動');
-  try { await staffApi('/staff/balloons/save', { b: { id:b.id, style:b.style, title:b.title, sub:b.sub, color:b.color, eventId:b.eventId, from:b.from, to:b.to, on:b.on !== false } }); balEdit = null; evData = null; await renderEvents() }
-  catch(e) { alert('儲存失敗：' + e.message) }
+  if (!b.eventId && !b.title && !balImgOf(b)) return alert('請填氣球上的字、選一個要綁的活動，或放一張圖');
+  if (b.useEvImg && !evPosterOf(b)) return alert('這個活動還沒有上傳海報，沒辦法用活動海報。請改選「自己上傳」或「不放圖」');
+  if (!b.useEvImg && balMode(b) === 'own' && !b.img && !b.eventId && !b.title) return alert('選了「自己上傳」但還沒有圖片');
+  try {
+    await staffApi('/staff/balloons/save', { b: { id:b.id, style:b.style, title:b.title, sub:b.sub, color:b.color, eventId:b.eventId, from:b.from, to:b.to, on:b.on !== false,
+      pos:b.pos || '', img:b.useEvImg ? '' : (b.img || ''), useEvImg:!!b.useEvImg } });
+    balEdit = null; evData = null; await renderEvents();
+  } catch(e) { alert('儲存失敗：' + e.message) }
 }
 async function balDel(){
   if (!confirm('確定刪除這顆熱氣球？島上會馬上拿掉。')) return;
