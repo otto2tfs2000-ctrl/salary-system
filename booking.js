@@ -212,6 +212,19 @@ function bkNum(v){
   var m=String(v==null?"":v).replace(/[^\d.]/g,"");
   return m?Math.round(parseFloat(m)):0;
 }
+/* 早鳥價（2026-10-13）：課程表有「早鳥價」「早鳥截止」兩欄，兩欄都填、今天（台灣時間）還沒過截止日，
+   這個尺寸的單價就換成早鳥價（登記當天算）。客人端 index.html 的 earlyOn 是同一條規則，改這裡要一起改。 */
+function bkEarlyDay(raw){
+  var t=String(raw==null?"":raw).trim(), ty=new Date(Date.now()+288e5).toISOString().slice(0,10), m;
+  if((m=t.match(/(\d{4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/)))return m[1]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[3]).slice(-2);
+  if((m=t.match(/Date\((\d{4}),(\d{1,2}),(\d{1,2})\)/)))return m[1]+"-"+("0"+(+m[2]+1)).slice(-2)+"-"+("0"+m[3]).slice(-2);
+  if((m=t.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})$/)))return ty.slice(0,4)+"-"+("0"+m[1]).slice(-2)+"-"+("0"+m[2]).slice(-2);
+  return "";
+}
+function bkEarlyOn(priceRaw,untilRaw){
+  var d=bkEarlyDay(untilRaw);
+  return bkNum(priceRaw)>0&&!!d&&new Date(Date.now()+288e5).toISOString().slice(0,10)<=d;
+}
 async function bkLoadCourses(){
   if(bkCourses)return;
   try{
@@ -221,11 +234,11 @@ async function bkLoadCourses(){
     var head={}, first=rows.length?rows[0].map(function(x){return String(x||"").trim()}):[];
     /* gviz 認得出標題列時，標題不在資料裡，改從 __head 找（兩人價這種後加的欄要靠它） */
     if(first[0]!=="分類"&&rows.__head&&rows.__head[0]==="分類"){
-      ["佔位","計時","兩人價"].forEach(function(n){
+      ["佔位","計時","兩人價","早鳥價","早鳥截止"].forEach(function(n){
         var i=rows.__head.indexOf(n); if(i>=0)head[n]=i });
     }
     if(first[0]==="分類"){
-      ["佔位","計時","兩人價"].forEach(function(n){
+      ["佔位","計時","兩人價","早鳥價","早鳥截止"].forEach(function(n){
         var i=first.indexOf(n); if(i>=0)head[n]=i });
       rows.shift();
     }
@@ -235,14 +248,17 @@ async function bkLoadCourses(){
       var on=String(r[7]||"Y").trim().toUpperCase()!=="N";
       if(!name||!on)return;
       var spec=String(r[3]||"").trim();
+      var eb=head["早鳥價"]!=null&&head["早鳥截止"]!=null&&bkEarlyOn(r[head["早鳥價"]],r[head["早鳥截止"]]);
+      var pairV=head["兩人價"]!=null?bkNum(r[head["兩人價"]]):0;
+      if(eb&&pairV>=2*bkNum(r[head["早鳥價"]]))pairV=0;   /* 早鳥價比兩人價每人還便宜，就不再套兩人價 */
       out.push({cat:String(r[0]||"").trim(),name:name,spec:spec,
-        dur:String(r[4]||"").trim(),price:bkNum(r[5]),
+        dur:String(r[4]||"").trim(),price:eb?bkNum(r[head["早鳥價"]]):bkNum(r[5]),early:eb?1:0,origPrice:bkNum(r[5]),
         /* 地毯這類課：一組不管幾個人都佔 3 位、按小時計價。
            客人端已經在用，後台以前讀不到，所以單價會顯示 $0。 */
         seats:head["佔位"]!=null?bkNum(r[head["佔位"]]):0,
         hourly:head["計時"]!=null?bkNum(r[head["計時"]]):0,
         /* 兩人價：大熊在課程表自己挑課填，同課同尺寸每兩位算一次，留空＝沒有同行優惠 */
-        pair:head["兩人價"]!=null?bkNum(r[head["兩人價"]]):0,
+        pair:pairV,
         label:name+(spec?"（"+spec+"）":"")});
     });
     bkCourses=out;
@@ -299,7 +315,7 @@ function bkCourseOptions(sel){
     return '<optgroup label="'+esc(k)+'">'+
       byCat[k].map(function(o){
         var tag=o.c.hourly?("　每小時 $"+o.c.hourly.toLocaleString())
-                          :(o.c.price?"　$"+o.c.price.toLocaleString():"");
+                          :(o.c.price?"　$"+o.c.price.toLocaleString()+(o.c.early?"（早鳥，原價 $"+o.c.origPrice.toLocaleString()+"）":""):"");
         return '<option value="'+o.i+'"'+(String(sel)===String(o.i)?" selected":"")+'>'+
           esc(o.c.label)+tag+'</option>';
       }).join("")+'</optgroup>';
