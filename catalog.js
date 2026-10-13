@@ -234,22 +234,30 @@ function catListHtml(){
     '<b>初次體驗價</b>（選填）：第一次來上這門課的客人付的價格，繪畫課這類體驗價和會員價不同的才填，沒填就跟會員價一樣。<b>早鳥價</b>：特定課程的限時價，所有人都適用，到截止日自動結束。<br>' +
     '這些價格現在還沒有任何系統在用，可以慢慢填。灰色小字是試算表原本的價格，預約頁現在還是收那個。<br>' +
     '已填原價 <b>' + done + '</b> / ' + elig.length + ' 列' + (legN ? '（選圖繪畫、創作繪畫、邏輯素描的「體驗價」「會員價」兩列，共 ' + legN + ' 列，只是舊的價格別列，這三門課的價格填在「單次原價」那一列）' : '') + '</div>';
-  h += '<div style="overflow-x:auto"><table><thead><tr><th>課程</th><th style="width:80px">原價</th><th style="width:96px">會員價<br><span style="font-weight:400;font-size:11px">（優惠價）</span></th><th style="width:84px">初次體驗價</th>' +
+  var canDrag = !catFilter && !catCatFilter && !catOnFilter;
+  h += '<style>#cat-tblbox th{position:sticky;top:0;z-index:3}#cat-tblbox tr.cat-ins-before td{box-shadow:inset 0 3px 0 #c9a24a}#cat-tblbox tr.cat-ins-after td{box-shadow:inset 0 -3px 0 #c9a24a}' +
+    '#cat-tblbox .cat-h{cursor:grab;color:var(--text3);font-size:17px;user-select:none;padding:0 4px}#cat-tblbox .cat-h:hover{color:var(--gold2)}</style>';
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' + (canDrag ? '🖐 要換順序：按住每門課左邊的 ⠿ 往上或往下拖（同一個分類裡）；按住分類標題左邊的 ⠿ 可以拖整個分類。放開就存好，預約頁之後也會照這個順序。' : '要拖移排序，請先清掉上面的搜尋和篩選。') + '</div>';
+  h += '<div id="cat-tblbox" style="overflow:auto;max-height:calc(100vh - 150px)"><table><thead><tr><th style="width:30px"></th><th>課程</th><th style="width:80px">原價</th><th style="width:96px">會員價<br><span style="font-weight:400;font-size:11px">（優惠價）</span></th><th style="width:84px">初次體驗價</th>' +
     '<th style="width:96px">早鳥價</th><th style="width:56px">上架</th><th style="width:66px">加購</th><th style="width:76px">用料</th><th style="width:76px"></th></tr></thead><tbody>';
-  var last = null, cnt = {};
+  var last = null, cnt = {}, lastCat2 = null, lastName2 = null;
   list.forEach(function(r){ cnt[r.cat || ''] = (cnt[r.cat || ''] || 0) + 1 });
   list.forEach(function(r){
     /* 有在搜尋的時候一律展開，不然搜到的東西會藏在收起來的分類裡 */
     var closed = !!catClosed[r.cat || ''] && !catFilter;
     if (r.cat !== last) {
       last = r.cat;
-      h += '<tr style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="9" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
+      h += '<tr data-k="cat" data-cat="' + encodeURIComponent(r.cat || '') + '" style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="10" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
+        (canDrag ? '<span class="cat-h" draggable="true" title="拖移整個分類" onclick="event.stopPropagation()" ondragstart="catDragStart(event,\'cat\',\'' + encodeURIComponent(r.cat || '') + '\',\'\')" ondragend="catDragEnd()">⠿</span> ' : '') +
         '<span style="display:inline-block;width:18px;color:var(--gold2)">' + (closed ? '▶' : '▼') + '</span>' + catEsc(r.cat || '（沒分類）') +
         ' <span class="muted" style="font-weight:400;font-size:12.5px">' + cnt[r.cat || ''] + ' 列</span></td></tr>';
     }
     if (closed) return;
     var n = catRecipeCount(r), off = r.on === false;
-    h += '<tr' + (off ? ' style="opacity:.55"' : '') + '><td>' + catEsc(r.name) + (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '') +
+    var firstOfCourse = r.cat !== lastCat2 || r.name !== lastName2; lastCat2 = r.cat; lastName2 = r.name;
+    var ec = encodeURIComponent(r.cat || ''), en = encodeURIComponent(r.name || '');
+    h += '<tr data-k="course" data-cat="' + ec + '" data-course="' + en + '"' + (off ? ' style="opacity:.55"' : '') + '><td style="text-align:center">' +
+      (canDrag && firstOfCourse ? '<span class="cat-h" draggable="true" title="按住拖移，換這門課的順序" ondragstart="catDragStart(event,\'course\',\'' + en + '\',\'' + ec + '\')" ondragend="catDragEnd()">⠿</span>' : '') + '</td><td>' + catEsc(r.name) + (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '') +
       (r.src === 'new' ? ' <span style="font-size:11px;color:#b07a1f">新增</span>' : '') + '</td>' +
       (catIsLegacy(r) ? '<td colspan="4" class="muted" style="font-size:12px">舊的價格別列（試算表 ' + (r.price ? r.price.toLocaleString() : '—') + '）・價格請看「單次原價」那一列</td>' :
       '<td style="text-align:right">' + (r.pOrig ? r.pOrig.toLocaleString() :
@@ -270,8 +278,95 @@ function catListHtml(){
     if (sb) { sb.oninput = function(){ catFilter = this.value.trim(); var pos = this.selectionStart; renderCatalog(); setTimeout(function(){ var s2 = document.getElementById('cat-search'); if (s2) { s2.focus(); try { s2.setSelectionRange(pos, pos) } catch (e) {} } }, 0) } }
     var c1 = document.getElementById('cat-cat'); if (c1) c1.onchange = function(){ catCatFilter = this.value; renderCatalog() };
     var c2 = document.getElementById('cat-on'); if (c2) c2.onchange = function(){ catOnFilter = this.value; renderCatalog() };
+    var bx = document.getElementById('cat-tblbox'); if (bx) { bx.ondragover = catDragOver; bx.ondrop = catDrop; bx.ondragleave = function(e){ if (!bx.contains(e.relatedTarget)) catDropClear() } }
   }, 0);
   return h;
+}
+
+/* ── 拖移排序（2026-10-13）──────────────────────────
+   拖的單位是「一門課」（它所有規格列一起走）或「一個分類」。放開後把全部列重新編號：
+   ord（整張表的先後，10、20、30…）、sort（這門課在分類裡排第幾，1、2、3…，預約頁用這個排）。
+   只寫有變動的列，每列單獨 PATCH。 */
+var catDrag = null;
+function catDragStart(ev, kind, key, cat){
+  catDrag = { kind: kind, key: decodeURIComponent(key), cat: decodeURIComponent(cat || ''), drop: null };
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', key) } catch (e) {}
+  var tr = ev.target.closest && ev.target.closest('tr'); if (tr && ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(tr, 16, 12);
+}
+function catDragEnd(){ catDrag = null; catDropClear() }
+function catDropClear(){
+  var bx = document.getElementById('cat-tblbox'); if (!bx) return;
+  Array.prototype.forEach.call(bx.querySelectorAll('.cat-ins-before,.cat-ins-after'), function(t){ t.classList.remove('cat-ins-before'); t.classList.remove('cat-ins-after') });
+}
+function catDropTarget(ev){
+  if (!catDrag) return null;
+  var bx = document.getElementById('cat-tblbox'); if (!bx) return null;
+  var tr = ev.target.closest ? ev.target.closest('tr[data-k]') : null; if (!tr) return null;
+  var ec = tr.getAttribute('data-cat'), cat = decodeURIComponent(ec || ''), rows, key;
+  if (catDrag.kind === 'cat') {
+    if (cat === catDrag.key) return null;
+    rows = bx.querySelectorAll('tr[data-cat="' + ec + '"]'); key = cat;
+  } else {
+    if (tr.getAttribute('data-k') !== 'course' || cat !== catDrag.cat) return null;
+    var ecn = tr.getAttribute('data-course'); key = decodeURIComponent(ecn || '');
+    if (key === catDrag.key) return null;
+    rows = bx.querySelectorAll('tr[data-k="course"][data-cat="' + ec + '"][data-course="' + ecn + '"]');
+  }
+  var first = rows[0], last = rows[rows.length - 1], top = first.getBoundingClientRect().top, bot = last.getBoundingClientRect().bottom;
+  return { key: key, after: ev.clientY > (top + bot) / 2, first: first, last: last };
+}
+function catDragOver(ev){
+  if (!catDrag) return;
+  var bx = document.getElementById('cat-tblbox'), rc = bx.getBoundingClientRect();
+  if (ev.clientY < rc.top + 50) bx.scrollTop -= 18; else if (ev.clientY > rc.bottom - 50) bx.scrollTop += 18;   /* 快到邊邊就自動捲動 */
+  var t = catDropTarget(ev); catDropClear();
+  if (!t) { catDrag.drop = null; return }
+  ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move' } catch (e) {}
+  (t.after ? t.last : t.first).classList.add(t.after ? 'cat-ins-after' : 'cat-ins-before');
+  catDrag.drop = { key: t.key, after: t.after };
+}
+function catDrop(ev){
+  if (!catDrag) return;
+  ev.preventDefault();
+  var t = catDropTarget(ev) || null, d = t ? { key: t.key, after: t.after } : catDrag.drop, src = catDrag; catDrag = null; catDropClear();
+  if (d) catReorder(src.kind, src.key, src.cat, d.key, d.after);
+}
+async function catReorder(kind, srcKey, cat, dstKey, after){
+  if (catBusy) return;
+  var cats = [], cm = {};
+  catRows.forEach(function(r){
+    var c = r.cat || '';
+    if (!cm[c]) { cm[c] = { cat: c, courses: [], cmap: {} }; cats.push(cm[c]) }
+    var g = cm[c]; if (!g.cmap[r.name]) { g.cmap[r.name] = { name: r.name, rows: [] }; g.courses.push(g.cmap[r.name]) }
+    g.cmap[r.name].rows.push(r);
+  });
+  var move = function(arr, keyOf, a, b){
+    var ia = arr.findIndex(function(x){ return keyOf(x) === a }), ib = arr.findIndex(function(x){ return keyOf(x) === b });
+    if (ia < 0 || ib < 0) return false;
+    var it = arr.splice(ia, 1)[0]; ib = arr.findIndex(function(x){ return keyOf(x) === b });
+    arr.splice(after ? ib + 1 : ib, 0, it); return true;
+  };
+  if (kind === 'cat') { if (!move(cats, function(g){ return g.cat }, srcKey, dstKey)) return }
+  else { if (!cm[cat] || !move(cm[cat].courses, function(c){ return c.name }, srcKey, dstKey)) return }
+  var seq = [], n = 0;
+  cats.forEach(function(g){ g.courses.forEach(function(co, ci){ co.rows.forEach(function(r){ seq.push({ r: r, ord: (++n) * 10, sort: ci + 1 }) }) }) });
+  var changed = seq.filter(function(x){ return (+x.r.ord || 0) !== x.ord || (+x.r.sort || 0) !== x.sort });
+  if (!changed.length) return;
+  catBusy = true;
+  try {
+    var now = new Date().toISOString(), by = catBy();
+    for (var i = 0; i < changed.length; i += 10) {
+      await Promise.all(changed.slice(i, i + 10).map(function(x){
+        return catFb('PATCH', '/courseCatalog/rows/' + x.r.id, { ord: x.ord, sort: x.sort, updatedAt: now, updatedBy: by });
+      }));
+    }
+    changed.forEach(function(x){ x.r.ord = x.ord; x.r.sort = x.sort; x.r.updatedAt = now; x.r.updatedBy = by });
+    await catLog('reorder', { id: '', name: (kind === 'cat' ? '分類 ' : '課程 ') + srcKey }, null, { kind: kind, src: srcKey, dst: dstKey, after: !!after, changed: changed.length });
+    catSortRows(); renderCatalog();
+  } catch (err) {
+    alert('排序沒有存好：' + err.message + '\n（可能有一部分已經存了，畫面會重新讀取一次。）');
+    catRows = null; renderCatalog();
+  } finally { catBusy = false }
 }
 
 /* ── 編輯 ── */
@@ -350,7 +445,6 @@ function catDrawModal(){
     '<input id="cf-img" type="text" value="' + catEsc(r.img || '') + '" placeholder="或直接貼圖片網址" oninput="catImgPv()" style="width:300px;max-width:100%;margin-top:8px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">' +
     (sameN > 1 ? '<label style="display:block;font-size:13px;margin-top:6px"><input type="checkbox" id="cf-imgall" checked> 同一門課的所有規格都用這張（共 ' + sameN + ' 列）</label>' : ''),
     '客人預約頁的課程卡片會顯示這張圖。上傳時會自動縮小成適合手機的大小，載入很快。請不要貼 Google 雲端的連結（載入慢、容易顯示不出來）。');
-  h += catFld('排序', catIn('cf-sort', r.sort, 'number', 80), '同分類內由小到大');
   h += catFld('最小年齡', catIn('cf-age', r.minAge || '', 'number', 80));
   h += catFld('可加堂', '<select id="cf-multi" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px"><option value="N"' + (r.multi ? '' : ' selected') + '>否</option><option value="Y"' + (r.multi ? ' selected' : '') + '>是</option></select>');
   h += catFld('佔位', catIn('cf-seats', r.seats || '', 'number', 80), '一組佔幾個位子（地毯課填 3）；留空＝一般');
@@ -439,7 +533,7 @@ function catFormGet(){
   return { cat: cat, name: catStr(g('cf-name')), spec: catStr(g('cf-spec')), desc: catStr(g('cf-desc')), dur: catStr(g('cf-dur')),
     pMember: num('cf-pm', 'pMember'), pFirst: num('cf-pf', 'pFirst'), pOrig: num('cf-po', 'pOrig'), early: num('cf-early', 'early'),
     earlyUntil: has('cf-until') ? catDay(g('cf-until')) : (o.earlyUntil || ''), pair: num('cf-pair', 'pair'), img: catStr(g('cf-img')),
-    on: !!(document.getElementById('cf-on') || {}).checked, sort: parseInt(g('cf-sort'), 10) || 99, minAge: parseInt(g('cf-age'), 10) || 0,
+    on: !!(document.getElementById('cf-on') || {}).checked, sort: +o.sort || 99, minAge: parseInt(g('cf-age'), 10) || 0,
     multi: g('cf-multi') === 'Y', addon: has('cf-addon') ? catStr(g('cf-addon')) : (o.addon || ''), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
 }
 async function catSave(){
@@ -469,7 +563,12 @@ async function catSave(){
       if ((cur || '') !== (e.orig.updatedAt || '')) { alert('這一筆剛剛被別人改過了，沒有儲存。請按「↻ 重新讀取」後再改。'); return }
     }
     var row = Object.assign({}, e.orig || {}, v, { id: e.id, updatedAt: new Date().toISOString(), updatedBy: catBy() });
-    if (e._new) { row.src = 'new'; row.ord = e.ord }
+    if (e._new) {
+      row.src = 'new'; row.ord = e.ord;
+      /* 新增的課排在分類最後；同名課的新規格就跟那門課排一起 */
+      var sameC = catRows.find(function(r){ return r.name === row.name && (r.cat || '') === row.cat });
+      row.sort = sameC ? sameC.sort : (catRows.filter(function(r){ return (r.cat || '') === row.cat }).reduce(function(m, r){ return Math.max(m, +r.sort || 0) }, 0) + 1);
+    }
     await catFb('PUT', '/courseCatalog/rows/' + e.id, row);
     await catLog(e._new ? 'add' : 'edit', row, e.orig, row);
     var i = catRows.findIndex(function(r){ return r.id === e.id });
@@ -773,11 +872,13 @@ function catAddonDraw(){
   if (r.addon) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:12.5px;line-height:1.7;margin-bottom:8px">試算表舊的「可加購」備註欄寫著：「' + catEsc(r.addon) + '」。那只是文字備註，客人選不到。要讓客人能加購，請用下面的「新增加購項目」建立。</div>';
   if (!list.length && !E) h += '<div class="muted" style="font-size:13px;margin-bottom:8px">這個規格目前沒有加購項目。</div>';
   list.forEach(function(a){
-    h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
+    h += '<div ondragover="event.preventDefault()" ondrop="catAdDrop(event,\'' + a.id + '\')" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
+      (list.length > 1 ? '<span draggable="true" title="按住拖移，換順序" ondragstart="catAdDragStart(event,\'' + a.id + '\')" style="cursor:grab;color:var(--text3);font-size:17px;user-select:none">⠿</span>' : '') +
       '<div style="flex:1 1 200px;min-width:0"><b>' + catEsc(a.name) + '</b>　' + catEsc(catAddonPriceTxt(a)) +
       '<div class="muted" style="font-size:12px">' + (a.spec ? '只有這個規格' : '這門課所有規格都有') + '</div></div>' +
       '<button type="button" class="btn btn-outline btn-sm" onclick="catAddonOpen(\'' + a.id + '\')">編輯</button></div>';
   });
+  if (list.length > 1 && !E) h += '<div ondragover="event.preventDefault()" ondrop="catAdDrop(event,\'END\')" class="muted" style="font-size:12px;text-align:center;border:1px dashed var(--border);border-radius:8px;padding:4px;margin-bottom:8px">拖到這裡＝排最後</div>';
   if (E) {
     h += '<div style="background:#f6f1e7;border-radius:10px;padding:10px 12px;margin:6px 0">' +
       '<div style="font-weight:600;font-size:13.5px;margin-bottom:8px">' + (E._new ? '新增加購項目' : '編輯加購項目') + '</div>' +
@@ -789,7 +890,7 @@ function catAddonDraw(){
       '<span id="ad-maxbox" style="' + (catAddonQty(E) > 1 ? '' : 'display:none;') + '"><span class="muted" style="font-size:12.5px">最多</span> <input id="ad-max" type="number" min="2" max="99" step="1" onwheel="this.blur()" value="' + (catAddonQty(E) > 1 ? catAddonQty(E) : 10) + '" style="width:70px;' + sty + '"> <span class="muted" style="font-size:12.5px">個（上面的金額是每個的價）</span></span></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><select id="ad-scope" style="' + sty + '"><option value="all"' + (E.spec ? '' : ' selected') + '>這門課所有規格都有</option>' +
       (r.spec ? '<option value="spec"' + (E.spec ? ' selected' : '') + '>只有「' + catEsc(r.spec) + '」這個規格</option>' : '') + '</select>' +
-      '<span class="muted" style="font-size:12.5px">顯示順序</span><input id="ad-sort" type="number" min="1" step="1" onwheel="this.blur()" value="' + catEsc(E.sort || '') + '" style="width:70px;' + sty + '"></div>' +
+      '</div>' +
       '<div class="muted" style="font-size:12px;margin-bottom:8px">固定金額：加購一次收這個價。每小時：客人選幾小時就乘幾倍（例如地毯這種計時的課）。可以選數量：客人想加購幾個就乘幾倍（例如加購 8 個杯墊，每個 300 ＝ 2,400）。</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-gold btn-sm" onclick="catAddonSave()">儲存這個加購</button>' +
       '<button type="button" class="btn btn-outline btn-sm" onclick="catAddonEdit=null;catAddonDraw()">取消</button>' +
@@ -797,6 +898,46 @@ function catAddonDraw(){
       '<div class="muted" style="font-size:12px;margin-top:6px">加購項目是單獨存的，按「儲存這個加購」就生效，不用再按下面的課程「儲存」。</div></div>';
   } else h += '<button type="button" class="btn btn-outline btn-sm" onclick="catAddonNew()">＋ 新增加購項目</button>';
   box.innerHTML = h;
+}
+/* 說明裡寫「可加購原木框600元」這種：抓出名稱和金額，一鍵建立成正式的加購項目（所有規格都有，固定金額，可再編輯） */
+function catDescAddon(r){
+  var m = String(r.desc || '').match(/可加購\s*([^\d，。,；;、\s]{1,12}?)\s*(\d{2,5})\s*元/);
+  return m ? { name: m[1], price: +m[2] } : null;
+}
+async function catAddonFromDesc(enc){
+  if (catBusy) return;
+  var name = decodeURIComponent(enc), r = catRows.find(function(x){ return x.name === name }); if (!r) return;
+  var m = catDescAddon(r); if (!m) return;
+  if (!confirm('為「' + name + '」建立加購項目：' + m.name + '　' + m.price + ' 元（每個規格都有、固定金額、只能加購 1 個）？\n建立後可以在課程編輯視窗裡再改。')) return;
+  catBusy = true;
+  try {
+    var id = 'a' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), now = new Date().toISOString();
+    var item = { id: id, course: name, spec: '', name: m.name, price: m.price, unit: 'fixed', maxQty: 1, sort: ((catAddons || []).filter(function(a){ return a.course === name }).length) + 1, on: true, src: 'desc', updatedAt: now, updatedBy: catBy() };
+    await catFb('PUT', '/courseCatalog/addons/' + id, item);
+    await catLog('addonAdd', { id: id, name: name, spec: '' }, null, item);
+    (catAddons = catAddons || []).push(item); renderCatalog();
+  } catch (err) { alert('建立失敗：' + err.message) } finally { catBusy = false }
+}
+var catAdDragId = null;
+function catAdDragStart(ev, id){ catAdDragId = id; try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id) } catch (e) {} }
+async function catAdDrop(ev, dst){
+  ev.preventDefault(); var src = catAdDragId; catAdDragId = null;
+  if (!src || src === dst || catBusy || !catEdit) return;
+  var list = catAddonsFor(catEdit.orig || catEdit.row).slice();
+  var ia = list.findIndex(function(a){ return a.id === src }); if (ia < 0) return;
+  var it = list.splice(ia, 1)[0], ib = dst === 'END' ? list.length : list.findIndex(function(a){ return a.id === dst });
+  if (ib < 0) return;
+  list.splice(ib, 0, it);
+  var changed = []; list.forEach(function(a, i){ if ((+a.sort || 0) !== i + 1) changed.push({ a: a, sort: i + 1 }) });
+  if (!changed.length) return;
+  catBusy = true;
+  try {
+    var now = new Date().toISOString(), by = catBy();
+    await Promise.all(changed.map(function(x){ return catFb('PATCH', '/courseCatalog/addons/' + x.a.id, { sort: x.sort, updatedAt: now, updatedBy: by }) }));
+    changed.forEach(function(x){ x.a.sort = x.sort; x.a.updatedAt = now; x.a.updatedBy = by });
+    await catLog('addonReorder', { id: '', name: (catEdit.orig || catEdit.row).name }, null, { count: changed.length });
+    catAddonDraw(); renderCatalog();
+  } catch (err) { alert('排序沒有存好：' + err.message) } finally { catBusy = false }
 }
 function catAddonQtyUi(){
   var q = document.getElementById('ad-qty'), b = document.getElementById('ad-maxbox');
@@ -816,7 +957,7 @@ async function catAddonSave(){
   var mq = g('ad-qty') === 'multi' ? parseInt(g('ad-max'), 10) : 1;
   if (g('ad-qty') === 'multi' && !(mq >= 2 && mq <= 99)) { alert('「最多幾個」請填 2～99'); return }
   var item = { id: E.id, course: r.name, spec: g('ad-scope') === 'spec' ? r.spec : '', name: name, price: price, unit: g('ad-unit') === 'hour' ? 'hour' : 'fixed', maxQty: mq,
-    sort: parseInt(g('ad-sort'), 10) || 99, on: true, src: E.src || 'new', updatedAt: new Date().toISOString(), updatedBy: catBy() };
+    sort: E._new ? ((catAddonsFor(r).reduce(function(m, a){ return Math.max(m, +a.sort || 0) }, 0)) + 1) : (E.sort || 99), on: true, src: E.src || 'new', updatedAt: new Date().toISOString(), updatedBy: catBy() };
   if ((catAddons || []).some(function(a){ return a.id !== E.id && catAddonKey(a) === catAddonKey(item) })) { alert('這門課已經有同名的加購項目了：' + name); return }
   catBusy = true;
   try {
@@ -873,7 +1014,11 @@ function catAddonCheckHtml(){
     miss.push(r);
   });
   if (miss.length) h += '<div style="font-size:13.5px;margin-top:8px;line-height:1.8"><b style="color:#b5482b">說明裡寫了「可加購」、但還沒有加購項目的課（' + miss.length + '）</b>：客人在預約頁看不到這些加購，只有文字說明。<br>' +
-    miss.map(function(r){ return catEsc(r.name) + '　<span class="muted">' + catEsc(String(r.desc || '').replace(/^.*?(可加購)/, '$1')) + '</span>' }).join('<br>') + '</div>';
+    miss.map(function(r){
+      var m = catDescAddon(r);
+      return catEsc(r.name) + '　<span class="muted">' + catEsc(String(r.desc || '').replace(/^.*?(可加購)/, '$1')) + '</span>' +
+        (m ? '　<button class="btn btn-gold btn-sm" onclick="catAddonFromDesc(\'' + encodeURIComponent(r.name) + '\')">建立加購：' + catEsc(m.name) + ' +' + m.price + '</button>' : '');
+    }).join('<br>') + '</div>';
   /* 「可加購」備註文字的金額，跟實際加購價格對不上 */
   var bad = [];
   catRows.forEach(function(r){
