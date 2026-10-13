@@ -219,7 +219,7 @@ function balFormHtml(){
 async function balSave(){
   balSync();
   var b = balEdit;
-  if (!(b.style === 'B' && b.eventId) && !b.title) return alert('請填氣球上的字');
+  if (!b.eventId && !b.title) return alert('請填氣球上的字，或選一個要綁的活動');
   try { await staffApi('/staff/balloons/save', { b: { id:b.id, style:b.style, title:b.title, sub:b.sub, color:b.color, eventId:b.eventId, from:b.from, to:b.to, on:b.on !== false } }); balEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('儲存失敗：' + e.message) }
 }
