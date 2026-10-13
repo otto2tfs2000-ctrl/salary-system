@@ -24,6 +24,20 @@ var CAT_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.
 var CAT_SHEET_ID = '1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M';
 var catRows = null, catMeta = null, catSheet = null;
 var catFilter = '', catCatFilter = '', catOnFilter = '', catView = 'list', catEdit = null, catBusy = false;
+/* 分類收合狀態：記在這台電腦的瀏覽器裡（只是畫面偏好，不進資料庫） */
+var catClosed = {};
+try { catClosed = JSON.parse(localStorage.getItem('catClosed') || '{}') || {} } catch (e) { catClosed = {} }
+function catSaveClosed(){ try { localStorage.setItem('catClosed', JSON.stringify(catClosed)) } catch (e) {} }
+function catToggleCat(enc){
+  var c = decodeURIComponent(enc);
+  if (catClosed[c]) delete catClosed[c]; else catClosed[c] = 1;
+  catSaveClosed(); renderCatalog();
+}
+function catFoldAll(close){
+  catClosed = {};
+  if (close) catRows.forEach(function(r){ catClosed[r.cat || ''] = 1 });
+  catSaveClosed(); renderCatalog();
+}
 
 /* 比對試算表時看的欄位（欄位代號, 顯示名稱） */
 var CAT_CMP = [['cat', '分類'], ['desc', '說明'], ['dur', '時長'], ['price', '現行價'], ['img', '圖片'], ['on', '上架'],
@@ -185,7 +199,9 @@ function catListHtml(){
     '<select id="cat-cat" style="max-width:200px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px"><option value="">全部分類</option>' + cats.map(function(c){
       return '<option value="' + catEsc(c) + '"' + (catCatFilter === c ? ' selected' : '') + '>' + catEsc(c || '（沒分類）') + '</option>' }).join('') + '</select>' +
     '<select id="cat-on" style="max-width:130px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px"><option value="">上架＋下架</option><option value="1"' + (catOnFilter === '1' ? ' selected' : '') + '>只看上架</option>' +
-    '<option value="0"' + (catOnFilter === '0' ? ' selected' : '') + '>只看下架</option></select></div>';
+    '<option value="0"' + (catOnFilter === '0' ? ' selected' : '') + '>只看下架</option></select>' +
+    '<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFoldAll(true)">全部收起</button>' +
+    '<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="catFoldAll(false)">全部展開</button></div>';
   var list = catRows.filter(function(r){
     if (catCatFilter && r.cat !== catCatFilter) return false;
     if (catOnFilter === '1' && r.on === false) return false;
@@ -197,9 +213,18 @@ function catListHtml(){
   h += '<div class="muted" style="font-size:12.5px;margin-bottom:8px">「現行價」是預約頁現在實際在收的價格（從試算表複製）。「優惠價」「原價」是新欄位，現在還沒有任何系統在用，你可以先在這裡慢慢填；已填齊 <b>' + full + '</b> / ' + catRows.length + ' 列。</div>';
   h += '<div style="overflow-x:auto"><table><thead><tr><th>課程</th><th style="width:70px">現行價</th><th style="width:70px">優惠價</th><th style="width:70px">原價</th>' +
     '<th style="width:86px">早鳥價</th><th style="width:56px">上架</th><th style="width:76px">用料</th><th style="width:76px"></th></tr></thead><tbody>';
-  var last = null;
+  var last = null, cnt = {};
+  list.forEach(function(r){ cnt[r.cat || ''] = (cnt[r.cat || ''] || 0) + 1 });
   list.forEach(function(r){
-    if (r.cat !== last) { last = r.cat; h += '<tr><td colspan="8" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px">' + catEsc(r.cat || '（沒分類）') + '</td></tr>' }
+    /* 有在搜尋的時候一律展開，不然搜到的東西會藏在收起來的分類裡 */
+    var closed = !!catClosed[r.cat || ''] && !catFilter;
+    if (r.cat !== last) {
+      last = r.cat;
+      h += '<tr style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="8" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
+        '<span style="display:inline-block;width:18px;color:var(--gold2)">' + (closed ? '▶' : '▼') + '</span>' + catEsc(r.cat || '（沒分類）') +
+        ' <span class="muted" style="font-weight:400;font-size:12.5px">' + cnt[r.cat || ''] + ' 列</span></td></tr>';
+    }
+    if (closed) return;
     var n = catRecipeCount(r), off = r.on === false;
     h += '<tr' + (off ? ' style="opacity:.55"' : '') + '><td>' + catEsc(r.name) + (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '') +
       (r.src === 'new' ? ' <span style="font-size:11px;color:#b07a1f">新增</span>' : '') + '</td>' +
