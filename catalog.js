@@ -315,7 +315,8 @@ function catDrawModal(){
   var oldLine = !e._new ? '<div class="muted" style="font-size:12.5px;margin-bottom:6px">試算表原本的價格（舊價格，只當對照）：<b>' + (r.price ? 'NT$' + r.price.toLocaleString() : '—') + '</b>　預約頁現在還是收這個。</div>' : '';
   if (kind === 'legacy') {
     h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;line-height:1.8;margin-bottom:10px">這一列（' + catEsc(r.spec) + '）是舊的價格別列，只是為了對應「課程用料」才留著。<br>' +
-      '<b>「' + catEsc(r.name) + '」的三個價格（原價／初次體驗價／會員價）請填在「單次原價」那一列。</b></div>' + oldLine;
+      '<b>「' + catEsc(r.name) + '」的三個價格（原價／初次體驗價／會員價）請填在「單次原價」那一列。</b>' +
+      (catTierRows(r).base ? '<br><button type="button" class="btn btn-gold btn-sm" style="margin-top:8px" onclick="catOpen(\'' + catTierRows(r).base.id + '\')">前往「單次原價」那一列編輯價格</button>' : '') + '</div>' + oldLine;
   } else {
     if (kind === 'base') h += '<div class="card" style="background:#eef7f0;border-color:#b9dcc4;font-size:13px;line-height:1.8;margin-bottom:10px">「' + catEsc(r.name) + '」的三個價格都填在這一列：原價、初次體驗價、會員價。' +
       '另外「體驗價」「會員價」那兩列是舊的價格別列，先留著對應用料，不用填。<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="catFillTier()">從試算表原本三列的價格帶入</button></div>';
