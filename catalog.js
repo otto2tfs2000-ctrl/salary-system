@@ -26,7 +26,7 @@
 
 var CAT_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app';
 var CAT_SHEET_ID = '1QjiDwmPcwbmdhmNv9cz1A6veC_BbC75m1VJG85P3Q6M';
-var catRows = null, catMeta = null, catSheet = null, catAddons = null, catAddonSheet = null, catAddonEdit = null;
+var catRows = null, catMeta = null, catSheet = null, catAddons = null, catAddonSheet = null, catAddonEdit = null, catDep = null, catNotes = null, catSiteEdit = null;
 var catFilter = '', catCatFilter = '', catOnFilter = '', catView = 'list', catEdit = null, catBusy = false;
 /* 分類收合狀態：記在這台電腦的瀏覽器裡（只是畫面偏好，不進資料庫） */
 var catClosed = {};
@@ -97,6 +97,9 @@ async function catLoad(){
   var d = await catFb('GET', '/courseCatalog');
   catMeta = (d && d.meta) || null;
   catAddons = Object.keys((d && d.addons) || {}).map(function(k){ var a = d.addons[k]; a.id = a.id || k; return a });
+  var site = (d && d.site) || {};
+  var mk = function(o){ return Object.keys(o || {}).map(function(k){ var x = o[k]; x.id = x.id || k; return x }).sort(function(a, b){ return (+a.sort || 99) - (+b.sort || 99) }) };
+  catDep = mk(site.deposit); catNotes = mk(site.notices);
   catRows = Object.keys((d && d.rows) || {}).map(function(k){ var r = d.rows[k]; r.id = r.id || k; return r });
   catSortRows();
 }
@@ -206,13 +209,14 @@ function catHtml(){
     '<span style="flex:1"></span>' +
     '<button class="btn ' + (catView === 'list' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'list\';renderCatalog()">課程清單</button>' +
     '<button class="btn ' + (catView === 'check' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catShowCheck()">🔍 核對報告</button>' +
+    '<button class="btn ' + (catView === 'site' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'site\';renderCatalog()">📝 預約頁文字與訂金</button>' +
     '<button class="btn ' + (catView === 'switch' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'switch\';renderCatalog()">🔀 預約系統開關</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catCsv()">⬇ 備份 CSV</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catRows=null;catSheet=null;catAddonSheet=null;renderCatalog()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="catNew()">＋ 新增課程</button></div>';
   if (catView === 'list' && (!catAddons || !catAddons.length)) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin:8px 0">' +
     '加購項目（試算表「加購」分頁）還沒有複製進來，所以課程的編輯視窗裡看不到加購。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catImportAddons()">從試算表複製加購</button></div>';
-  h += catView === 'check' ? catCheckHtml() : catView === 'switch' ? catSwitchHtml() : catListHtml();
+  h += catView === 'check' ? catCheckHtml() : catView === 'switch' ? catSwitchHtml() : catView === 'site' ? catSiteHtml() : catListHtml();
   return h + '</div>';
 }
 function catEarlyState(r){
@@ -262,6 +266,7 @@ function catListHtml(){
     if (r.cat !== last) {
       last = r.cat;
       h += '<tr data-k="cat" data-cat="' + encodeURIComponent(r.cat || '') + '" style="cursor:pointer" onclick="catToggleCat(\'' + encodeURIComponent(r.cat || '') + '\')"><td colspan="10" style="background:var(--bg2,#f6f1e7);font-weight:600;font-size:13.5px;user-select:none">' +
+        '<span title="重新命名這個分類" onclick="event.stopPropagation();catRenameCat(\'' + encodeURIComponent(r.cat || '') + '\')" style="cursor:pointer;color:var(--text3);margin-right:4px">✎</span>' +
         (canDrag ? '<span class="cat-h" draggable="true" title="拖移整個分類" onclick="event.stopPropagation()" ondragstart="catDragStart(event,\'cat\',\'' + encodeURIComponent(r.cat || '') + '\',\'\')" ondragend="catDragEnd()">⠿</span> ' : '') +
         '<span style="display:inline-block;width:18px;color:var(--gold2)">' + (closed ? '▶' : '▼') + '</span>' + catEsc(r.cat || '（沒分類）') +
         ' <span class="muted" style="font-weight:400;font-size:12.5px">' + cnt[r.cat || ''] + ' 列</span></td></tr>';
@@ -295,6 +300,28 @@ function catListHtml(){
     var bx = document.getElementById('cat-tblbox'); if (bx) { bx.ondragover = catDragOver; bx.ondrop = catDrop; bx.ondragleave = function(e){ if (!bx.contains(e.relatedTarget)) catDropClear() } }
   }, 0);
   return h;
+}
+
+/* 分類改名：這個分類底下所有列一起改（預約頁的分頁名稱就是分類） */
+async function catRenameCat(enc){
+  if (catBusy) return;
+  var oldN = decodeURIComponent(enc), nn = prompt('把分類「' + oldN + '」改名成：', oldN);
+  if (nn === null) return; nn = nn.trim();
+  if (!nn || nn === oldN) return;
+  if (catRows.some(function(r){ return (r.cat || '') === nn })) { alert('已經有叫「' + nn + '」的分類了。要把課程搬過去，請編輯課程、把「分類」改成那個。'); return }
+  var rows = catRows.filter(function(r){ return (r.cat || '') === oldN });
+  if (!confirm('把分類「' + oldN + '」（' + rows.length + ' 列）改名成「' + nn + '」嗎？預約頁的分頁名稱會跟著變。')) return;
+  catBusy = true;
+  try {
+    var now = new Date().toISOString(), by = catBy();
+    for (var i = 0; i < rows.length; i += 10) {
+      await Promise.all(rows.slice(i, i + 10).map(function(r){ return catFb('PATCH', '/courseCatalog/rows/' + r.id, { cat: nn, updatedAt: now, updatedBy: by }) }));
+    }
+    rows.forEach(function(r){ r.cat = nn; r.updatedAt = now; r.updatedBy = by });
+    if (catClosed[oldN]) { delete catClosed[oldN]; catClosed[nn] = 1; catSaveClosed() }
+    await catLog('renameCat', { id: '', name: oldN + ' → ' + nn }, null, { count: rows.length });
+    catSortRows(); renderCatalog();
+  } catch (err) { alert('改名失敗：' + err.message + '（畫面會重新讀取）'); catRows = null; renderCatalog() } finally { catBusy = false }
 }
 
 /* ── 拖移排序（2026-10-13）──────────────────────────
@@ -417,7 +444,7 @@ var CAT_CSS = '<style>.cg{display:grid;grid-template-columns:1fr 1fr;gap:10px 20
 function catCell(lb, inner, tip, wide){ return '<div' + (wide ? ' style="grid-column:1/-1"' : '') + '><label class="cl">' + lb + '</label>' + inner + (tip ? '<div class="ct">' + tip + '</div>' : '') + '</div>' }
 function catGrid(){ return '<div class="cg">' + Array.prototype.join.call(arguments, '') + '</div>' }
 function catDrawModal(){
-  var e = catEdit, r = e.row, locked = !e._new && catRecipeCount(e.orig) > 0;
+  var e = catEdit, r = e.row, lockSpec = !e._new && catIsTier(r), nRec = !e._new ? catRecipeCount(e.orig) : 0;
   var cats = []; catRows.forEach(function(x){ if (cats.indexOf(x.cat) < 0) cats.push(x.cat) });
   var kind = !e._new && catIsLegacy(r) ? 'legacy' : !e._new && catIsBase(r) ? 'base' : 'normal';
   var sty = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px';
@@ -431,8 +458,8 @@ function catDrawModal(){
       '<option value="__new__">＋ 新增分類…</option></select>' +
       '<input id="cf-cat" type="text" placeholder="輸入新的分類名稱" style="display:none;margin-top:6px;' + sty + '">', '從現有的大項目選；要新開一個，選最下面的「＋ 新增分類」'),
     catCell('時長', catIn('cf-dur', r.dur, 'text', W, false, '例：2-2.5小時')),
-    catCell('課程名稱', catIn('cf-name', r.name, 'text', W, locked), locked ? '已建用料，名稱和規格先鎖住（改了會跟用料對不上）' : ''),
-    catCell('規格', catIn('cf-spec', r.spec, 'text', W, locked), '分價格別或尺寸時才填（體驗價／會員價／單次原價、A5透明框…），只有一種就留空'),
+    catCell('課程名稱', catIn('cf-name', r.name, 'text', W), !e._new ? '可以直接改。同一門課的所有規格會一起改名，用料、加購自動跟著搬過去' : ''),
+    catCell('規格', catIn('cf-spec', r.spec, 'text', W, lockSpec), lockSpec ? '這是價格別列（體驗價／會員價／單次原價），規格不能改' : '分價格別或尺寸時才填（體驗價／會員價／單次原價、A5透明框…），只有一種就留空'),
     catCell('說明', '<textarea id="cf-desc" rows="2" style="' + sty + ';font-family:inherit">' + catEsc(r.desc) + '</textarea>', '', true));
   h += '<div class="csec">價格</div>';
   var oldLine = !e._new ? '<div class="muted" style="font-size:12.5px;margin-bottom:6px">試算表原本的價格（舊價格，只當對照）：<b>' + (r.price ? 'NT$' + r.price.toLocaleString() : '—') + '</b>　預約頁現在還是收這個。</div>' : '';
@@ -473,7 +500,12 @@ function catDrawModal(){
   h += '<label style="font-size:14px;display:block;margin:2px 0 6px"><input type="checkbox" id="cf-on"' + (r.on !== false ? ' checked' : '') + '> 上架（在課程清單顯示）</label>';
   h += '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn btn-gold" id="cf-save" onclick="catSave()">儲存</button>' +
     '<button class="btn btn-outline" onclick="catCloseModal()">取消</button>' +
-    (e._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="catDelete()">刪除</button>') + '</div>';
+    (e._new ? '' : (function(){
+      var n = catRows.filter(function(x){ return x.name === e.orig.name }).length;
+      var b1 = '<button class="btn btn-outline" style="color:#b5482b" onclick="catDelete(false)">刪除這個規格</button>';
+      var b2 = '<button class="btn btn-outline" style="color:#b5482b" onclick="catDelete(true)">' + (n > 1 ? '刪除整門課（' + n + ' 個規格）' : '刪除這門課') + '</button>';
+      return '<span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">' + (n > 1 && !lockSpec ? b1 : '') + b2 + '</span>';
+    })()) + '</div>';
   document.getElementById('cat-modal-body').innerHTML = h;
   ['cf-po', 'cf-pm', 'cf-pf', 'cf-early', 'cf-until', 'cf-pair'].forEach(function(id){ var x = document.getElementById(id); if (x) { x.oninput = catPreview; x.onchange = catPreview } });
   catPreview();
@@ -557,6 +589,17 @@ function catFormGet(){
     on: !!(document.getElementById('cf-on') || {}).checked, sort: +o.sort || 99, minAge: parseInt(g('cf-age'), 10) || 0,
     multi: g('cf-multi') === 'Y', addon: has('cf-addon') ? catStr(g('cf-addon')) : (o.addon || ''), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
 }
+/* 用料掛在「課程名|規格」上。改名時把舊的用料複製到新名稱（舊的留著，不刪、不覆蓋新名稱已經有的）。
+   用料存在 S.recipes（跟「課程用料」分頁同一份），複製完呼叫 save() 走原本的存檔流程。 */
+function catRecipeCopy(oldKey, newKey){
+  try {
+    if (oldKey === newKey || typeof S === 'undefined' || !S.recipes) return 0;
+    var src = S.recipes[oldKey]; if (!src || !src.items || !src.items.length) return 0;
+    if (S.recipes[newKey] && S.recipes[newKey].items && S.recipes[newKey].items.length) return 0;
+    S.recipes[newKey] = JSON.parse(JSON.stringify(src));
+    return 1;
+  } catch (e) { return 0 }
+}
 async function catSave(){
   if (catBusy || !catEdit) return;
   var v = catFormGet(), e = catEdit;
@@ -575,6 +618,14 @@ async function catSave(){
   var key = catKey(v);
   if (catRows.some(function(r){ return r.id !== e.id && catKey(r) === key })) { alert('已經有同名同規格的課程了：' + key); return }
   if (v.earlyUntil && v.earlyUntil < catToday() && !confirm('早鳥截止日已經過了，存下來會是「已過期」，確定嗎？')) return;
+  /* 改名：不能撞到另一門課的名字（會把兩門課併在一起）；同一門課有好幾個規格的，一起改 */
+  if (!e._new && e.orig && v.name !== e.orig.name) {
+    if (catRows.some(function(r){ return r.name === v.name && r.name !== e.orig.name })) { alert('已經有另一門課叫「' + v.name + '」了，請換一個名字。'); return }
+    var sibN = catRows.filter(function(r){ return r.id !== e.id && r.name === e.orig.name }).length;
+    var adN0 = (catAddons || []).filter(function(a){ return a.course === e.orig.name }).length;
+    if (!confirm('要把課程名稱從「' + e.orig.name + '」改成「' + v.name + '」嗎？\n\n' + (sibN ? '這門課的其他 ' + sibN + ' 個規格也會一起改名。\n' : '') +
+      '課程用料' + (adN0 ? '、' + adN0 + ' 個加購' : '') + '會自動跟著搬到新名稱。\n已經存在的舊預約不受影響（核銷時選新的課程名稱就好）。')) return;
+  }
   catBusy = true;
   var btn = document.getElementById('cf-save'); if (btn) btn.disabled = true;
   try {
@@ -584,6 +635,9 @@ async function catSave(){
       if ((cur || '') !== (e.orig.updatedAt || '')) { alert('這一筆剛剛被別人改過了，沒有儲存。請按「↻ 重新讀取」後再改。'); return }
     }
     var row = Object.assign({}, e.orig || {}, v, { id: e.id, updatedAt: new Date().toISOString(), updatedBy: catBy() });
+    var oldName = e.orig ? e.orig.name : v.name, oldSpec = e.orig ? (e.orig.spec || '') : (v.spec || '');
+    var nameChanged = !e._new && v.name !== oldName, specChanged = !e._new && (v.spec || '') !== oldSpec;
+    var sibs = nameChanged ? catRows.filter(function(r){ return r.id !== e.id && r.name === oldName }) : [];
     if (e._new) {
       row.src = 'new'; row.ord = e.ord;
       /* 新增的課排在分類最後；同名課的新規格就跟那門課排一起 */
@@ -592,6 +646,26 @@ async function catSave(){
     }
     await catFb('PUT', '/courseCatalog/rows/' + e.id, row);
     await catLog(e._new ? 'add' : 'edit', row, e.orig, row);
+    /* 改名／改規格的連帶處理：用料（複製到新名稱，舊的留著不動）、加購、同一門課的其他規格 */
+    if (nameChanged || specChanged) {
+      var recCopied = 0, tt2 = new Date().toISOString();
+      recCopied += catRecipeCopy(oldName + (oldSpec ? '|' + oldSpec : ''), catKey(row));
+      for (var q2 = 0; q2 < sibs.length; q2++) {
+        var sb = sibs[q2];
+        await catFb('PATCH', '/courseCatalog/rows/' + sb.id, { name: v.name, updatedAt: tt2, updatedBy: catBy() });
+        recCopied += catRecipeCopy(catKey(sb), v.name + (sb.spec ? '|' + sb.spec : ''));
+        sb.name = v.name; sb.updatedAt = tt2; sb.updatedBy = catBy();
+      }
+      var adMoved = 0;
+      for (var q3 = 0; q3 < (catAddons || []).length; q3++) {
+        var ad = catAddons[q3], patch = null;
+        if (nameChanged && ad.course === oldName) patch = { course: v.name };
+        if (specChanged && oldSpec && ad.spec === oldSpec && (ad.course === oldName || ad.course === v.name)) patch = Object.assign(patch || {}, { spec: v.spec || '' });
+        if (patch) { patch.updatedAt = tt2; patch.updatedBy = catBy(); await catFb('PATCH', '/courseCatalog/addons/' + ad.id, patch); Object.assign(ad, patch); adMoved++ }
+      }
+      if (recCopied && typeof save === 'function') save();
+      await catLog('rename', { id: e.id, name: oldName, spec: oldSpec }, { name: oldName, spec: oldSpec }, { name: v.name, spec: v.spec || '', siblings: sibs.length, recipesCopied: recCopied, addonsMoved: adMoved });
+    }
     var i = catRows.findIndex(function(r){ return r.id === e.id });
     if (i >= 0) catRows[i] = row; else catRows.push(row);
     /* 圖片套用到同一門課的其他規格（預約頁用的是這門課第一個規格那列的圖，全部放一樣最保險） */
@@ -610,17 +684,32 @@ async function catSave(){
     alert('儲存失敗：' + err.message + '\n資料沒有被改動，請再試一次。');
   } finally { catBusy = false; if (btn) btn.disabled = false }
 }
-async function catDelete(){
+async function catDelete(whole){
   var e = catEdit; if (!e || e._new || catBusy) return;
-  if (catRecipeCount(e.orig)) { alert('這門課有建用料，不能直接刪除。如果不再開，請把「上架」關掉就好。'); return }
-  if (!confirm('確定刪除「' + catKey(e.orig) + '」嗎？\n會留下刪除紀錄，但畫面上無法直接復原。')) return;
+  var o = e.orig, tier = catIsTier(o);
+  var rows = (whole || tier) ? catRows.filter(function(r){ return r.name === o.name }) : [o];
+  var rest = catRows.filter(function(r){ return r.name === o.name && rows.indexOf(r) < 0 }).length;
+  var ads = (catAddons || []).filter(function(a){ return a.course === o.name && (!rest || (a.spec && rows.some(function(r){ return r.spec === a.spec }))) });
+  var recN = rows.filter(function(r){ return catRecipeCount(r) > 0 }).length;
+  var msg = '確定刪除「' + (rows.length > 1 ? o.name + '」整門課（' + rows.length + ' 個規格）' : catKey(o) + '」') + '嗎？\n\n' +
+    '・預約頁不會再出現' + (ads.length ? '\n・' + ads.length + ' 個加購項目也會一起刪掉' : '') +
+    (recN ? '\n・課程用料資料會保留（不會被刪），只是對不到課程了' : '') +
+    '\n・已經存在的舊預約不受影響\n・會留下刪除紀錄\n\n如果只是暫時不開，建議改成「下架」就好。';
+  if (!confirm(msg)) return;
   catBusy = true;
   try {
-    await catFb('DELETE', '/courseCatalog/rows/' + e.id);
-    await catLog('delete', e.orig, e.orig, null);
-    catRows = catRows.filter(function(r){ return r.id !== e.id });
+    for (var i = 0; i < rows.length; i++) {
+      await catFb('DELETE', '/courseCatalog/rows/' + rows[i].id);
+      await catLog('delete', rows[i], rows[i], null);
+    }
+    for (var j = 0; j < ads.length; j++) {
+      await catFb('DELETE', '/courseCatalog/addons/' + ads[j].id);
+      await catLog('addonDelete', { id: ads[j].id, name: ads[j].course, spec: ads[j].spec }, ads[j], null);
+    }
+    catRows = catRows.filter(function(r){ return rows.indexOf(r) < 0 });
+    catAddons = (catAddons || []).filter(function(a){ return ads.indexOf(a) < 0 });
     catCloseModal(); renderCatalog();
-  } catch (err) { alert('刪除失敗：' + err.message) } finally { catBusy = false }
+  } catch (err) { alert('刪除失敗：' + err.message + '\n（可能有一部分已經刪了，畫面會重新讀取。）'); catRows = null; catAddons = null; renderCatalog() } finally { catBusy = false }
 }
 
 /* ── 價格先帶入試算表原本的價格（只填空格；三列式課程把三列的價格整理到「單次原價」那一列）── */
@@ -1103,6 +1192,8 @@ function catPreflight(){
   });
   var names = {}; catRows.forEach(function(r){ names[r.name] = 1 });
   (catAddons || []).forEach(function(a){ if (!names[a.course]) must.push('加購「' + a.course + '・' + a.name + '」找不到對應的課程'); if (!(+a.price > 0)) must.push('加購「' + a.course + '・' + a.name + '」金額是 0') });
+  if (!(catDep && catDep.length)) note.push('「訂金方式」還沒複製進來，預約頁的付款方式還是讀試算表（到「📝 預約頁文字與訂金」複製）');
+  if (!(catNotes && catNotes.length)) note.push('「預約頁說明」還沒複製進來，預約頁的說明文字還是讀試算表（到「📝 預約頁文字與訂金」複製）');
   var noImg = on.filter(function(r){ return !r.img }).map(function(r){ return r.name }).filter(function(n, i, a){ return a.indexOf(n) === i });
   if (noImg.length) note.push(noImg.length + ' 門課還沒有圖片（預約頁會顯示預設底圖）：' + noImg.slice(0, 8).join('、') + (noImg.length > 8 ? '…' : ''));
   return { must: must, note: note, diff: diff };
@@ -1145,6 +1236,164 @@ function catSwitchHtml(){
       return '<tr' + (d.changed ? '' : ' style="opacity:.55"') + '><td>' + catEsc(d.name) + '</td><td style="font-size:12.5px">' + catEsc(d.old) + '</td>' + d.now.map(cell).join('') + '</tr>';
     }).join('') + '</tbody></table></div></div>';
   return h;
+}
+
+/* ══ 預約頁文字與訂金（2026-10-13）══════════════════════
+   客人預約最後一步的「訂金方式」（金額、LINE Pay 連結、銀行帳號）和預約頁的說明文字，以前在試算表「訂金」「說明」兩個分頁。
+   搬到這裡編輯，存在 courseCatalog/site/deposit、site/notices；有填的話預約頁就讀這裡，沒填才照舊讀試算表。 */
+var CAT_DEP_TYPE = { linepay: 'LINE Pay 連結', transfer: '銀行匯款', points: '儲值金扣點（金額單位是點）', card: '現場刷卡（不用預付）' };
+function catSiteList(kind){ return kind === 'dep' ? catDep : catNotes }
+function catSitePath(kind){ return '/courseCatalog/site/' + (kind === 'dep' ? 'deposit' : 'notices') }
+async function catReadTab(name){
+  var url = 'https://docs.google.com/spreadsheets/d/' + CAT_SHEET_ID + '/gviz/tq?sheet=' + encodeURIComponent(name) + '&tqx=out:json';
+  var t = await (await fetch(url)).text();
+  var j = JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1));
+  if (!j.table) throw new Error('讀不到試算表「' + name + '」分頁');
+  return j.table.rows.map(function(r){ return (r.c || []).map(function(c){ return c ? (c.f == null ? c.v : c.f) : '' }) });
+}
+async function catSiteImport(kind){
+  if (catBusy) return;
+  catBusy = true;
+  try {
+    var rows = await catReadTab(kind === 'dep' ? '訂金' : '說明');
+    var first = String((rows[0] || [])[0] || '').trim();
+    if (first === '名稱' || first === '類型') rows.shift();
+    var now = new Date().toISOString(), by = catBy(), t = Date.now().toString(36), put = {}, n = 0;
+    rows.forEach(function(r, i){
+      var id = (kind === 'dep' ? 'd' : 'n') + t + i, sort = parseInt(kind === 'dep' ? r[5] : r[3], 10) || (i + 1);
+      if (kind === 'dep') {
+        var nm = catStr(r[0]); if (!nm) return;
+        put[id] = { id: id, name: nm, desc: catStr(r[1]), amount: catNum(r[2]), type: catStr(r[3]).toLowerCase(), info: catStr(r[4]), sort: sort, on: String(r[6] || 'Y').trim().toUpperCase() !== 'N', updatedAt: now, updatedBy: by };
+      } else {
+        var body = catStr(r[2]); if (!body) return;
+        put[id] = { id: id, type: /重點/.test(String(r[0] || '')) ? 'key' : 'detail', title: catStr(r[1]), body: body, sort: sort, on: String(r[4] || 'Y').trim().toUpperCase() !== 'N', updatedAt: now, updatedBy: by };
+      }
+      n++;
+    });
+    if (!n) throw new Error('試算表那個分頁讀到 0 筆');
+    if (!confirm('把試算表複製進來 ' + n + ' 筆嗎？（試算表本身不會被改）')) return;
+    await catFb('PATCH', catSitePath(kind), put);
+    await catLog('siteImport', { id: '', name: kind === 'dep' ? '訂金方式匯入' : '預約頁說明匯入' }, null, { count: n });
+    var arr = Object.keys(put).map(function(k){ return put[k] }).sort(function(a, b){ return a.sort - b.sort });
+    if (kind === 'dep') catDep = (catDep || []).concat(arr); else catNotes = (catNotes || []).concat(arr);
+    renderCatalog();
+  } catch (err) { alert('複製失敗：' + err.message + '\n沒有改動任何現有資料。') } finally { catBusy = false }
+}
+function catSiteRow(kind, x, i, n){
+  var tag = x.on === false ? '<span class="muted" style="font-size:12px"> ・已隱藏</span>' : '';
+  var title, sub;
+  if (kind === 'dep') {
+    title = catEsc(x.name) + '　<span style="color:var(--gold2)">' + (x.type === 'points' ? (+x.amount || 0).toLocaleString() + ' 點' : (x.amount ? 'NT$' + (+x.amount).toLocaleString() : '現場')) + '</span>' + tag;
+    sub = catEsc(CAT_DEP_TYPE[x.type] || x.type || '') + (x.desc ? '・' + catEsc(x.desc) : '') + (x.info ? '<br><span class="muted" style="font-size:12px;white-space:pre-line">' + catEsc(String(x.info).slice(0, 120)) + '</span>' : '');
+  } else {
+    title = (x.title ? catEsc(x.title) : '<span class="muted">（沒有標題）</span>') + tag;
+    sub = '<span style="white-space:pre-line">' + catEsc(String(x.body).slice(0, 110)) + (String(x.body).length > 110 ? '…' : '') + '</span>';
+  }
+  return '<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap' + (x.on === false ? ';opacity:.55' : '') + '">' +
+    '<div style="display:flex;flex-direction:column"><button type="button" class="btn-sm" ' + (i === 0 ? 'disabled style="opacity:.3"' : '') + ' onclick="catSiteMove(\'' + kind + '\',\'' + x.id + '\',-1)">▲</button>' +
+    '<button type="button" class="btn-sm" ' + (i === n - 1 ? 'disabled style="opacity:.3"' : '') + ' onclick="catSiteMove(\'' + kind + '\',\'' + x.id + '\',1)">▼</button></div>' +
+    '<div style="flex:1 1 220px;min-width:0"><div style="font-weight:600;font-size:14px">' + title + '</div><div style="font-size:13px;margin-top:2px">' + sub + '</div></div>' +
+    '<button type="button" class="btn btn-outline btn-sm" onclick="catSiteOpen(\'' + kind + '\',\'' + x.id + '\')">編輯</button></div>';
+}
+function catSiteHtml(){
+  var h = '', dep = catDep || [], no = catNotes || [];
+  h += '<div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">💰 訂金方式' +
+    '<span style="flex:1"></span><button class="btn btn-gold btn-sm" onclick="catSiteNew(\'dep\')">＋ 新增付款方式</button></div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.7;margin:4px 0 8px">客人預約最後一步選的付款方式、金額、連結或帳號。有填這裡，預約頁就用這裡；還沒填，預約頁仍讀試算表「訂金」分頁。用 ▲▼ 換順序。</div>';
+  h += dep.length ? dep.map(function(x, i){ return catSiteRow('dep', x, i, dep.length) }).join('') :
+    '<div class="empty" style="padding:10px">還沒有資料。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catSiteImport(\'dep\')">從試算表「訂金」複製</button></div>';
+  h += '</div><div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">📝 預約頁說明文字' +
+    '<span style="flex:1"></span><button class="btn btn-gold btn-sm" onclick="catSiteNew(\'note\')">＋ 新增說明</button></div>' +
+    '<div class="muted" style="font-size:12.5px;line-height:1.7;margin:4px 0 8px"><b>重點</b>會顯示在預約頁最上面；<b>詳細</b>是點開「更多說明」才看到的（人數與課程、價格、時間、年齡、訂金、上課當天…）。有填這裡，預約頁就用這裡；還沒填，仍讀試算表「說明」分頁。</div>';
+  h += no.length ? ['key', 'detail'].map(function(t){
+    var list = no.filter(function(x){ return (x.type === 'key' ? 'key' : 'detail') === t });
+    return '<div style="font-weight:600;font-size:13px;margin:10px 0 6px;color:var(--text2)">' + (t === 'key' ? '重點（預約頁最上面）' : '詳細（更多說明）') + '</div>' +
+      (list.length ? list.map(function(x, i){ return catSiteRow('note', x, i, list.length) }).join('') : '<div class="muted" style="font-size:12.5px">沒有</div>');
+  }).join('') : '<div class="empty" style="padding:10px">還沒有資料。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catSiteImport(\'note\')">從試算表「說明」複製</button></div>';
+  return h + '</div>';
+}
+function catSiteNew(kind){
+  var list = catSiteList(kind) || [], mx = list.reduce(function(m, x){ return Math.max(m, +x.sort || 0) }, 0);
+  catSiteEdit = { kind: kind, _new: true, x: kind === 'dep' ? { id: 'd' + Date.now().toString(36), name: '', desc: '', amount: 0, type: 'linepay', info: '', sort: mx + 1, on: true }
+    : { id: 'n' + Date.now().toString(36), type: 'detail', title: '', body: '', sort: mx + 1, on: true } };
+  catSiteDraw();
+}
+function catSiteOpen(kind, id){
+  var x = (catSiteList(kind) || []).find(function(r){ return r.id === id }); if (!x) return;
+  catSiteEdit = { kind: kind, _new: false, x: JSON.parse(JSON.stringify(x)), orig: x }; catSiteDraw();
+}
+function catSiteDraw(){
+  var E = catSiteEdit, x = E.x, sty = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px';
+  var h = CAT_CSS + '<h3 style="margin:0 0 10px">' + (E._new ? '新增' : '編輯') + (E.kind === 'dep' ? '付款方式' : '說明') + '</h3>';
+  if (E.kind === 'dep') {
+    h += catGrid(
+      catCell('名稱', catIn('cs-name', x.name, 'text', '100%', false, '例：LINE Pay 訂金'), ''),
+      catCell('方式', '<select id="cs-type" style="' + sty + '">' + Object.keys(CAT_DEP_TYPE).map(function(k){ return '<option value="' + k + '"' + (x.type === k ? ' selected' : '') + '>' + CAT_DEP_TYPE[k] + '</option>' }).join('') + '</select>', '決定客人頁怎麼處理（例如儲值金扣點、現場刷卡不用預付）'),
+      catCell('金額', catIn('cs-amount', x.amount || '', 'number', '100%'), '客人要付的訂金；儲值金扣點就是點數；現場刷卡填 0'),
+      catCell('一句說明', catIn('cs-desc', x.desc, 'text', '100%', false, '例：送出後線上付款，完成截圖回傳LINE'), ''),
+      catCell('連結或帳號', '<textarea id="cs-info" rows="3" style="' + sty + ';font-family:inherit">' + catEsc(x.info) + '</textarea>', 'LINE Pay 付款連結、或銀行名稱＋帳號＋戶名。客人頁會原樣顯示', true));
+  } else {
+    h += catGrid(
+      catCell('類型', '<select id="cs-type" style="' + sty + '"><option value="key"' + (x.type === 'key' ? ' selected' : '') + '>重點（預約頁最上面）</option><option value="detail"' + (x.type !== 'key' ? ' selected' : '') + '>詳細（更多說明）</option></select>', ''),
+      catCell('標題', catIn('cs-title', x.title, 'text', '100%', false, '例：關於價格（「重點」可以不填）'), ''),
+      catCell('內容', '<textarea id="cs-body" rows="6" style="' + sty + ';font-family:inherit">' + catEsc(x.body) + '</textarea>', '', true));
+  }
+  h += '<label style="font-size:14px;display:block;margin:2px 0 8px"><input type="checkbox" id="cs-on"' + (x.on !== false ? ' checked' : '') + '> 顯示在預約頁</label>' +
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-gold" onclick="catSiteSave()">儲存</button><button class="btn btn-outline" onclick="catSiteCancel()">取消</button>' +
+    (E._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="catSiteDelete()">刪除</button>') + '</div>';
+  document.getElementById('cat-modal-body').innerHTML = h;
+  document.getElementById('cat-modal').style.display = 'block';
+}
+function catSiteCancel(){ catSiteEdit = null; document.getElementById('cat-modal').style.display = 'none' }
+async function catSiteSave(){
+  if (catBusy || !catSiteEdit) return;
+  var E = catSiteEdit, g = function(id){ var el = document.getElementById(id); return el ? el.value : '' }, x = E.x, item;
+  if (E.kind === 'dep') {
+    if (!catStr(g('cs-name'))) { alert('請填名稱'); return }
+    item = { id: x.id, name: catStr(g('cs-name')), desc: catStr(g('cs-desc')), amount: catNum(g('cs-amount')), type: g('cs-type'), info: String(g('cs-info')).trim(), sort: x.sort, on: !!document.getElementById('cs-on').checked };
+  } else {
+    if (!catStr(g('cs-body'))) { alert('請填內容'); return }
+    item = { id: x.id, type: g('cs-type') === 'key' ? 'key' : 'detail', title: catStr(g('cs-title')), body: String(g('cs-body')).trim(), sort: x.sort, on: !!document.getElementById('cs-on').checked };
+  }
+  item.updatedAt = new Date().toISOString(); item.updatedBy = catBy();
+  catBusy = true;
+  try {
+    await catFb('PUT', catSitePath(E.kind) + '/' + item.id, item);
+    await catLog(E._new ? 'siteAdd' : 'siteEdit', { id: item.id, name: item.name || item.title || '' }, E.orig || null, item);
+    var list = E.kind === 'dep' ? (catDep = catDep || []) : (catNotes = catNotes || []), i = list.findIndex(function(r){ return r.id === item.id });
+    if (i >= 0) list[i] = item; else list.push(item);
+    list.sort(function(a, b){ return (+a.sort || 99) - (+b.sort || 99) });
+    catSiteCancel(); renderCatalog();
+  } catch (err) { alert('儲存失敗：' + err.message + '\n沒有改動資料，請再試一次。') } finally { catBusy = false }
+}
+async function catSiteDelete(){
+  var E = catSiteEdit; if (!E || E._new || catBusy) return;
+  if (!confirm('確定刪除「' + (E.x.name || E.x.title || '這則說明') + '」嗎？\n會留下刪除紀錄，但畫面上無法直接復原。')) return;
+  catBusy = true;
+  try {
+    await catFb('DELETE', catSitePath(E.kind) + '/' + E.x.id);
+    await catLog('siteDelete', { id: E.x.id, name: E.x.name || E.x.title || '' }, E.orig, null);
+    if (E.kind === 'dep') catDep = catDep.filter(function(r){ return r.id !== E.x.id }); else catNotes = catNotes.filter(function(r){ return r.id !== E.x.id });
+    catSiteCancel(); renderCatalog();
+  } catch (err) { alert('刪除失敗：' + err.message) } finally { catBusy = false }
+}
+/* ▲▼ 換順序：同一組（付款方式／說明的重點或詳細）裡跟旁邊那個對調，整組重新編號 */
+async function catSiteMove(kind, id, dir){
+  if (catBusy) return;
+  var all = catSiteList(kind) || [], me = all.find(function(r){ return r.id === id }); if (!me) return;
+  var grp = kind === 'dep' ? all : all.filter(function(r){ return (r.type === 'key' ? 'key' : 'detail') === (me.type === 'key' ? 'key' : 'detail') });
+  var i = grp.indexOf(me), j = i + dir; if (j < 0 || j >= grp.length) return;
+  grp = grp.slice(); grp.splice(i, 1); grp.splice(j, 0, me);
+  var changed = []; grp.forEach(function(r, k){ if ((+r.sort || 0) !== k + 1) changed.push({ r: r, sort: k + 1 }) });
+  catBusy = true;
+  try {
+    var now = new Date().toISOString(), by = catBy();
+    await Promise.all(changed.map(function(c){ return catFb('PATCH', catSitePath(kind) + '/' + c.r.id, { sort: c.sort, updatedAt: now, updatedBy: by }) }));
+    changed.forEach(function(c){ c.r.sort = c.sort });
+    all.sort(function(a, b){ return (+a.sort || 99) - (+b.sort || 99) });
+    await catLog('siteReorder', { id: '', name: me.name || me.title || '' }, null, { count: changed.length });
+    renderCatalog();
+  } catch (err) { alert('排序沒有存好：' + err.message); catRows = null; renderCatalog() } finally { catBusy = false }
 }
 
 /* ── 備份 CSV（下載到自己電腦）── */
