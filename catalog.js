@@ -4,7 +4,7 @@
    目標：把「課程／價格（優惠價、原價、早鳥價）／用料」放在同一個畫面管理，
    之後預約頁、會員扣點、LINE 預約、核銷都改讀這一份，不再各讀各的。
 
-   加購（2026-10-13）：courseCatalog/addons/{id} = { course 課程名稱, spec 規格（空＝這門課所有規格）, name 加購名稱, price, unit fixed|hour（固定金額／每小時）, sort, on }。
+   加購（2026-10-13）：courseCatalog/addons/{id} = { course 課程名稱, spec 規格（空＝這門課所有規格）, name 加購名稱, price, unit fixed|hour（固定金額／每小時）, maxQty（1＝只能加購 1 個；>1＝客人可以選數量，最多幾個，價格是每個的價）, sort, on }。
    對應試算表「加購」分頁；在課程編輯視窗裡管理。用「課程名稱＋規格」對應課程列（規格留空＝每個規格都有）。
 
    第一階段的鐵則（大熊要求）：先不動會員預約和扣課系統。
@@ -651,7 +651,11 @@ function catAddonsFor(r){
   return (catAddons || []).filter(function(a){ return a.course === r.name && (!a.spec || a.spec === r.spec) && a.on !== false })
     .sort(function(x, y){ return (+x.sort || 99) - (+y.sort || 99) });
 }
-function catAddonPriceTxt(a){ return (a.unit === 'hour' ? '每小時 ' : '+') + 'NT$' + (+a.price || 0).toLocaleString() }
+function catAddonQty(a){ return Math.max(1, Math.min(99, parseInt(a.maxQty, 10) || 1)) }
+function catAddonPriceTxt(a){
+  var q = catAddonQty(a);
+  return (a.unit === 'hour' ? '每小時 ' : '+') + 'NT$' + (+a.price || 0).toLocaleString() + (q > 1 ? '／個（可選 1～' + q + ' 個）' : '');
+}
 async function catReadAddons(){
   var url = 'https://docs.google.com/spreadsheets/d/' + CAT_SHEET_ID + '/gviz/tq?sheet=' + encodeURIComponent('加購') + '&tqx=out:json';
   var t = await (await fetch(url)).text();
@@ -728,10 +732,12 @@ function catAddonDraw(){
       '<input id="ad-name" placeholder="加購名稱（例：雙層流動）" value="' + catEsc(E.name) + '" style="flex:1 1 180px;min-width:150px;' + sty + '">' +
       '<input id="ad-price" type="number" min="0" step="1" onwheel="this.blur()" placeholder="金額" value="' + catEsc(E.price || '') + '" style="width:100px;' + sty + '">' +
       '<select id="ad-unit" style="' + sty + '"><option value="fixed"' + (E.unit !== 'hour' ? ' selected' : '') + '>固定金額</option><option value="hour"' + (E.unit === 'hour' ? ' selected' : '') + '>每小時</option></select></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><select id="ad-qty" onchange="catAddonQtyUi()" style="' + sty + '"><option value="one"' + (catAddonQty(E) > 1 ? '' : ' selected') + '>只能加購 1 個</option><option value="multi"' + (catAddonQty(E) > 1 ? ' selected' : '') + '>客人可以選數量</option></select>' +
+      '<span id="ad-maxbox" style="' + (catAddonQty(E) > 1 ? '' : 'display:none;') + '"><span class="muted" style="font-size:12.5px">最多</span> <input id="ad-max" type="number" min="2" max="99" step="1" onwheel="this.blur()" value="' + (catAddonQty(E) > 1 ? catAddonQty(E) : 10) + '" style="width:70px;' + sty + '"> <span class="muted" style="font-size:12.5px">個（上面的金額是每個的價）</span></span></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><select id="ad-scope" style="' + sty + '"><option value="all"' + (E.spec ? '' : ' selected') + '>這門課所有規格都有</option>' +
       (r.spec ? '<option value="spec"' + (E.spec ? ' selected' : '') + '>只有「' + catEsc(r.spec) + '」這個規格</option>' : '') + '</select>' +
       '<span class="muted" style="font-size:12.5px">顯示順序</span><input id="ad-sort" type="number" min="1" step="1" onwheel="this.blur()" value="' + catEsc(E.sort || '') + '" style="width:70px;' + sty + '"></div>' +
-      '<div class="muted" style="font-size:12px;margin-bottom:8px">固定金額：加購一次收這個價。每小時：客人選幾小時就乘幾倍（例如地毯這種計時的課）。</div>' +
+      '<div class="muted" style="font-size:12px;margin-bottom:8px">固定金額：加購一次收這個價。每小時：客人選幾小時就乘幾倍（例如地毯這種計時的課）。可以選數量：客人想加購幾個就乘幾倍（例如加購 8 個杯墊，每個 300 ＝ 2,400）。</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-gold btn-sm" onclick="catAddonSave()">儲存這個加購</button>' +
       '<button type="button" class="btn btn-outline btn-sm" onclick="catAddonEdit=null;catAddonDraw()">取消</button>' +
       (E._new ? '' : '<button type="button" class="btn btn-outline btn-sm" style="margin-left:auto;color:#b5482b" onclick="catAddonDelete()">刪除</button>') + '</div>' +
@@ -739,7 +745,11 @@ function catAddonDraw(){
   } else h += '<button type="button" class="btn btn-outline btn-sm" onclick="catAddonNew()">＋ 新增加購項目</button>';
   box.innerHTML = h;
 }
-function catAddonNew(){ catAddonEdit = { _new: true, id: 'a' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), name: '', price: 0, unit: 'fixed', spec: '', sort: ((catAddonsFor(catEdit.orig || catEdit.row).length) + 1) }; catAddonDraw() }
+function catAddonQtyUi(){
+  var q = document.getElementById('ad-qty'), b = document.getElementById('ad-maxbox');
+  if (q && b) b.style.display = q.value === 'multi' ? '' : 'none';
+}
+function catAddonNew(){ catAddonEdit = { _new: true, id: 'a' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), name: '', price: 0, unit: 'fixed', maxQty: 1, spec: '', sort: ((catAddonsFor(catEdit.orig || catEdit.row).length) + 1) }; catAddonDraw() }
 function catAddonOpen(id){
   var a = (catAddons || []).find(function(x){ return x.id === id }); if (!a) return;
   catAddonEdit = JSON.parse(JSON.stringify(a)); catAddonDraw();
@@ -750,7 +760,9 @@ async function catAddonSave(){
   var name = catStr(g('ad-name')), price = catNum(g('ad-price'));
   if (!name) { alert('請填加購名稱'); return }
   if (!price) { alert('請填金額'); return }
-  var item = { id: E.id, course: r.name, spec: g('ad-scope') === 'spec' ? r.spec : '', name: name, price: price, unit: g('ad-unit') === 'hour' ? 'hour' : 'fixed',
+  var mq = g('ad-qty') === 'multi' ? parseInt(g('ad-max'), 10) : 1;
+  if (g('ad-qty') === 'multi' && !(mq >= 2 && mq <= 99)) { alert('「最多幾個」請填 2～99'); return }
+  var item = { id: E.id, course: r.name, spec: g('ad-scope') === 'spec' ? r.spec : '', name: name, price: price, unit: g('ad-unit') === 'hour' ? 'hour' : 'fixed', maxQty: mq,
     sort: parseInt(g('ad-sort'), 10) || 99, on: true, src: E.src || 'new', updatedAt: new Date().toISOString(), updatedBy: catBy() };
   if ((catAddons || []).some(function(a){ return a.id !== E.id && catAddonKey(a) === catAddonKey(item) })) { alert('這門課已經有同名的加購項目了：' + name); return }
   catBusy = true;
