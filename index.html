@@ -66,6 +66,7 @@
   <div class="tab" data-tab="finance" onclick="switchTab('finance')">💵 報表</div>
   <div class="tab" data-tab="consumables" onclick="switchTab('consumables')">🧴 耗材記帳</div>
   <div class="tab" data-tab="inventory" onclick="switchTab('inventory')">📦 庫存盤點</div>
+  <div class="tab" data-tab="catalog" onclick="switchTab('catalog')">📚 課程管理</div>
   <div class="tab" data-tab="recipe" onclick="switchTab('recipe')">🎨 課程用料</div>
   <div class="tab" data-tab="quote" onclick="switchTab('quote')">🧮 報價</div>
   <div class="tab" data-tab="salary" onclick="switchTab('salary')">💰 本月薪資 🔒</div>
@@ -75,6 +76,16 @@
 <div id="tab-today" class="page active"><div id="bkRoot"></div></div>
 
 <div id="tab-sched" class="page"><div id="schedRoot"></div></div>
+
+<div id="tab-catalog" class="page">
+  <h2>課程管理</h2>
+  <p class="muted" style="font-size:12.5px;margin-bottom:12px">課程、價格（優惠價、原價、早鳥價）和用料放在同一個地方管理。目前是整理與核對階段，還沒有連動預約和扣點。</p>
+  <div id="catalog-body"></div>
+</div>
+
+<div id="cat-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;overflow:auto;padding:20px 12px">
+  <div class="card" style="max-width:640px;margin:0 auto"><div id="cat-modal-body"></div></div>
+</div>
 
 <div id="tab-recipe" class="page">
   <h2>課程用料與毛利</h2>
@@ -482,12 +493,13 @@
 </div>
 
 <script src="auth.js?v=20261012a"></script>
-<script src="app.js?v=20261010b"></script>
+<script src="app.js?v=20261013a"></script>
 <script src="consumables.js?v=20260922a"></script>
 <script src="inventory.js?v=20260927a"></script>
 <script src="booking.js?v=20261013a"></script>
 <script src="member.js?v=20261009b"></script>
 <script src="recipe.js?v=20260901a"></script>
+<script src="catalog.js?v=20261013a"></script>
 <script src="quote.js?v=20260914d"></script>
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20260814a"></script>
