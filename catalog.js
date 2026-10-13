@@ -187,35 +187,41 @@ async function renderCatalog(){
   }
 }
 function catIsLive(){ return !!(catMeta && catMeta.live === true) }
+var catAdv = false;
 function catBanner(){
-  if (catIsLive()) return '<div class="card" style="background:#eef7f0;border-color:#b9dcc4;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
-    '🟢 <b>預約系統現在讀這裡</b><br>客人的預約頁、後台登記、課程用料、AI 客服，現在都讀「課程管理」的資料。你改價格、加購、順序、圖片，<b>大約 1 分鐘內客人就看得到</b>。' +
-    '<br><button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="catView=\'switch\';renderCatalog()">開關與切換前檢查</button></div>';
-  return '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
-    '🧪 <b>預約系統現在還是讀試算表</b><br>這裡的課程是從試算表「複製」過來的，<b>改這裡不會影響</b>預約頁、會員扣點、LINE 預約和核銷。確認資料都對之後，到「開關與切換前檢查」一鍵切換。' +
-    '<br><button class="btn btn-gold btn-sm" style="margin-top:6px" onclick="catView=\'switch\';renderCatalog()">開關與切換前檢查</button></div>';
+  if (catIsLive()) return '<div style="font-size:13.5px;color:#2e7d4f;margin:0 0 10px">✓ 改完按「儲存」，客人約 1 分鐘內就會看到。</div>';
+  return '<div class="card" style="background:#fff0f0;border-color:#e6b3b3;font-size:14px;line-height:1.8;margin-bottom:12px">⚠ 客人現在<b>看不到</b>這裡的修改（預約頁還在讀舊的試算表）。' +
+    '<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catSetLive(true)">讓客人看到這裡的資料</button></div>';
 }
+/* 右下角小提示：存好了、客人什麼時候看得到 */
+function catToast(msg){
+  var el = document.getElementById('cat-toast');
+  if (!el) { el = document.createElement('div'); el.id = 'cat-toast';
+    el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1e2b4f;color:#fff;padding:12px 22px;border-radius:12px;font-size:15px;z-index:1200;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:90vw;text-align:center;transition:opacity .3s';
+    document.body.appendChild(el) }
+  el.textContent = msg; el.style.opacity = 1; clearTimeout(el._t); el._t = setTimeout(function(){ el.style.opacity = 0 }, 3800);
+}
+function catSavedMsg(){ return catIsLive() ? '已儲存 ✓　客人約 1 分鐘內看得到' : '已儲存（客人還看不到：預約頁還沒切換到這裡）' }
 function catHtml(){
   var h = catBanner();
   if (!catRows.length) {
     return h + '<div class="card"><div class="card-title">還沒有課程資料</div>' +
-      '<div class="muted" style="font-size:13.5px;line-height:1.8;margin-bottom:12px">按下面的按鈕，會把試算表「課程」分頁目前的每一列複製進來。' +
-      '試算表本身不會被改動，匯入前也會先把試算表原樣備份一份。</div>' +
       '<button class="btn btn-gold" onclick="catImportAll()">從試算表匯入全部課程</button></div>';
   }
-  var on = catRows.filter(function(r){ return r.on !== false }).length;
-  h += '<div class="card"><div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">課程管理' +
-    '<span class="muted" style="font-size:12.5px;font-weight:400">共 ' + catRows.length + ' 列・上架 ' + on + ' 列</span>' +
-    '<span style="flex:1"></span>' +
+  h += '<div class="card"><div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
     '<button class="btn ' + (catView === 'list' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'list\';renderCatalog()">課程清單</button>' +
-    '<button class="btn ' + (catView === 'check' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catShowCheck()">🔍 核對報告</button>' +
     '<button class="btn ' + (catView === 'site' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'site\';renderCatalog()">📝 預約頁文字與訂金</button>' +
+    '<span style="flex:1"></span>' +
+    '<button class="btn btn-outline btn-sm" onclick="catAdv=!catAdv;renderCatalog()">⋯ 進階</button>' +
+    '<button class="btn btn-gold btn-sm" onclick="catNew()">＋ 新增課程</button></div>';
+  if (catAdv || catView === 'check' || catView === 'switch') h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;padding:8px 10px;background:var(--bg2,#f6f1e7);border-radius:10px;align-items:center"><span class="muted" style="font-size:12.5px">進階：</span>' +
+    '<button class="btn ' + (catView === 'check' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catShowCheck()">🔍 核對報告</button>' +
     '<button class="btn ' + (catView === 'switch' ? 'btn-gold' : 'btn-outline') + ' btn-sm" onclick="catView=\'switch\';renderCatalog()">🔀 預約系統開關</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catCsv()">⬇ 備份 CSV</button>' +
     '<button class="btn btn-outline btn-sm" onclick="catRows=null;catSheet=null;catAddonSheet=null;renderCatalog()">↻ 重新讀取</button>' +
-    '<button class="btn btn-gold btn-sm" onclick="catNew()">＋ 新增課程</button></div>';
+    '<button class="btn btn-outline btn-sm" title="把還沒填的價格先帶入試算表原本的價格" onclick="catFillAllOrig()">價格先帶入試算表</button></div>';
   if (catView === 'list' && (!catAddons || !catAddons.length)) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin:8px 0">' +
-    '加購項目（試算表「加購」分頁）還沒有複製進來，所以課程的編輯視窗裡看不到加購。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catImportAddons()">從試算表複製加購</button></div>';
+    '還沒有加購項目。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catImportAddons()">從試算表複製加購</button></div>';
   h += catView === 'check' ? catCheckHtml() : catView === 'switch' ? catSwitchHtml() : catView === 'site' ? catSiteHtml() : catListHtml();
   return h + '</div>';
 }
@@ -243,19 +249,13 @@ function catListHtml(){
     if (catOnFilter === '1' && r.on === false) return false;
     if (catOnFilter === '0' && r.on !== false) return false;
     if (catFilter && (r.name + r.spec + r.cat).indexOf(catFilter) < 0) return false;
+    if (catIsLegacy(r)) return false;      /* 舊的價格別列只是為了對應用料，不在清單上顯示 */
     return true;
   });
-  var elig = catRows.filter(function(r){ return !catIsLegacy(r) }), done = elig.filter(function(r){ return r.pOrig > 0 }).length;
-  var legN = catRows.length - elig.length;
-  h += '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:8px">' +
-    '<b>原價</b>：單次、或來很多次的非會員付的價格，也是課程卡片先顯示的價格。<b>會員價（優惠價）</b>：會員付的價格；一般活動課的「優惠價」也填這格，第一次來的客人同樣適用。' +
-    '<b>初次體驗價</b>（選填）：第一次來上這門課的客人付的價格，繪畫課這類體驗價和會員價不同的才填，沒填就跟會員價一樣。<b>早鳥價</b>：特定課程的限時價，所有人都適用，到截止日自動結束。<br>' +
-    '這些價格現在還沒有任何系統在用，可以慢慢填。灰色小字是試算表原本的價格，預約頁現在還是收那個。<br>' +
-    '已填原價 <b>' + done + '</b> / ' + elig.length + ' 列' + (legN ? '（選圖繪畫、創作繪畫、邏輯素描的「體驗價」「會員價」兩列，共 ' + legN + ' 列，只是舊的價格別列，這三門課的價格填在「單次原價」那一列）' : '') + '</div>';
   var canDrag = !catFilter && !catCatFilter && !catOnFilter;
   h += '<style>#cat-tblbox th{position:sticky;top:0;z-index:3}#cat-tblbox tr.cat-ins-before td{box-shadow:inset 0 3px 0 #c9a24a}#cat-tblbox tr.cat-ins-after td{box-shadow:inset 0 -3px 0 #c9a24a}' +
     '#cat-tblbox .cat-h{cursor:grab;color:var(--text3);font-size:17px;user-select:none;padding:0 4px}#cat-tblbox .cat-h:hover{color:var(--gold2)}</style>';
-  h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' + (canDrag ? '🖐 要換順序：按住每門課左邊的 ⠿ 往上或往下拖（同一個分類裡）；按住分類標題左邊的 ⠿ 可以拖整個分類。放開就存好，預約頁之後也會照這個順序。' : '要拖移排序，請先清掉上面的搜尋和篩選。') + '</div>';
+  h += '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' + (canDrag ? '按住左邊 ⠿ 拖移換順序　✎ 改分類名稱　點「上架／下架」立刻生效' : '要拖移排序，請先清掉搜尋和篩選') + '</div>';
   h += '<div id="cat-tblbox" style="overflow:auto;max-height:calc(100vh - 150px)"><table><thead><tr><th style="width:30px"></th><th>課程</th><th style="width:80px">原價</th><th style="width:96px">會員價<br><span style="font-weight:400;font-size:11px">（優惠價）</span></th><th style="width:84px">初次體驗價</th>' +
     '<th style="width:96px">早鳥價</th><th style="width:56px">上架</th><th style="width:66px">加購</th><th style="width:76px">用料</th><th style="width:76px"></th></tr></thead><tbody>';
   var last = null, cnt = {}, lastCat2 = null, lastName2 = null;
@@ -272,11 +272,11 @@ function catListHtml(){
         ' <span class="muted" style="font-weight:400;font-size:12.5px">' + cnt[r.cat || ''] + ' 列</span></td></tr>';
     }
     if (closed) return;
-    var n = catRecipeCount(r), off = r.on === false;
+    var n = catIsBase(r) ? catRows.filter(function(x){ return x.name === r.name && catIsTier(x) }).reduce(function(m, x){ return m + catRecipeCount(x) }, 0) : catRecipeCount(r), off = r.on === false;
     var firstOfCourse = r.cat !== lastCat2 || r.name !== lastName2; lastCat2 = r.cat; lastName2 = r.name;
     var ec = encodeURIComponent(r.cat || ''), en = encodeURIComponent(r.name || '');
     h += '<tr data-k="course" data-cat="' + ec + '" data-course="' + en + '"' + (off ? ' style="opacity:.55"' : '') + '><td style="text-align:center">' +
-      (canDrag && firstOfCourse ? '<span class="cat-h" draggable="true" title="按住拖移，換這門課的順序" ondragstart="catDragStart(event,\'course\',\'' + en + '\',\'' + ec + '\')" ondragend="catDragEnd()">⠿</span>' : '') + '</td><td>' + catEsc(r.name) + (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '') +
+      (canDrag && firstOfCourse ? '<span class="cat-h" draggable="true" title="按住拖移，換這門課的順序" ondragstart="catDragStart(event,\'course\',\'' + en + '\',\'' + ec + '\')" ondragend="catDragEnd()">⠿</span>' : '') + '</td><td>' + catEsc(r.name) + (catIsBase(r) ? '<span class="muted" style="font-size:13px">（體驗／會員／原價三種價格）</span>' : (r.spec ? '<span class="muted" style="font-size:13px">（' + catEsc(r.spec) + '）</span>' : '')) +
       (r.src === 'new' ? ' <span style="font-size:11px;color:#b07a1f">新增</span>' : '') + '</td>' +
       (catIsLegacy(r) ? '<td colspan="4" class="muted" style="font-size:12px">舊的價格別列（試算表 ' + (r.price ? r.price.toLocaleString() : '—') + '）・價格請看「單次原價」那一列</td>' :
       '<td style="text-align:right">' + (r.pOrig ? r.pOrig.toLocaleString() :
@@ -284,7 +284,7 @@ function catListHtml(){
       '<td style="text-align:right">' + (r.pMember ? r.pMember.toLocaleString() : '<span class="muted">—</span>') + '</td>' +
       '<td style="text-align:right">' + (r.pFirst ? r.pFirst.toLocaleString() : '<span class="muted">—</span>') + '</td>' +
       '<td style="text-align:right;font-size:13px">' + catEarlyState(r) + '</td>') +
-      '<td style="text-align:center">' + (off ? '<span class="muted">下架</span>' : '✓') + '</td>' +
+      '<td style="text-align:center"><button type="button" class="btn-sm" style="white-space:nowrap;' + (off ? 'background:#eee;color:#888' : 'background:#e4f3e7;color:#2e7d4f;border-color:#9CCB9F') + '" title="點一下切換上架／下架" onclick="catToggleOn(\'' + r.id + '\')">' + (off ? '下架中' : '上架中') + '</button></td>' +
       '<td>' + (catAddonsFor(r).length ? '<button class="btn-sm" style="white-space:nowrap" title="打開編輯視窗看加購項目" onclick="catOpen(\'' + r.id + '\')">' + catAddonsFor(r).length + ' 項</button>' : '<span class="muted">—</span>') + '</td>' +
       '<td>' + (n ? '<button class="btn-sm" style="white-space:nowrap" onclick="catGoRecipe(\'' + r.id + '\')">' + n + ' 項</button>' : '<span class="muted">—</span>') + '</td>' +
       '<td><button class="btn-sm" style="white-space:nowrap" onclick="catOpen(\'' + r.id + '\')">編輯</button></td></tr>';
@@ -302,6 +302,21 @@ function catListHtml(){
   return h;
 }
 
+/* 清單上直接點「上架中／下架中」立刻切換（價格別課程三列一起） */
+async function catToggleOn(id){
+  if (catBusy) return;
+  var r = catRows.find(function(x){ return x.id === id }); if (!r) return;
+  var to = r.on === false, targets = catIsTier(r) ? catRows.filter(function(x){ return x.name === r.name && catIsTier(x) }) : [r];
+  catBusy = true;
+  try {
+    var now = new Date().toISOString(), by = catBy();
+    await Promise.all(targets.map(function(x){ return catFb('PATCH', '/courseCatalog/rows/' + x.id, { on: to, updatedAt: now, updatedBy: by }) }));
+    targets.forEach(function(x){ x.on = to; x.updatedAt = now; x.updatedBy = by });
+    await catLog('toggle', { id: r.id, name: r.name, spec: r.spec }, { on: !to }, { on: to, rows: targets.length });
+    renderCatalog();
+    catToast((to ? '已上架「' : '已下架「') + r.name + (catIsTier(r) ? '' : (r.spec ? '（' + r.spec + '）' : '')) + '」　' + (catIsLive() ? '客人約 1 分鐘內' + (to ? '看得到' : '看不到') : '（客人還看不到：預約頁還沒切換到這裡）'));
+  } catch (err) { alert('切換失敗：' + err.message) } finally { catBusy = false }
+}
 /* 分類改名：這個分類底下所有列一起改（預約頁的分頁名稱就是分類） */
 async function catRenameCat(enc){
   if (catBusy) return;
@@ -449,17 +464,17 @@ function catDrawModal(){
   var kind = !e._new && catIsLegacy(r) ? 'legacy' : !e._new && catIsBase(r) ? 'base' : 'normal';
   var sty = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px';
   var W = '100%';
-  var h = CAT_CSS + '<h3 style="margin:0 0 4px">' + (e._new ? '新增課程' : catEsc(r.name) + (r.spec ? '（' + catEsc(r.spec) + '）' : '')) + '</h3>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:12px">第一階段：存在這裡不會影響預約頁和扣點。</div>';
+  var h = CAT_CSS + '<h3 style="margin:0 0 10px">' + (e._new ? '新增課程' : catEsc(r.name) + (catIsBase(r) ? '' : (r.spec ? '（' + catEsc(r.spec) + '）' : ''))) + '</h3>' +
+    '<label style="display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#f6f1e7;font-size:15px;cursor:pointer"><input type="checkbox" id="cf-on" style="width:18px;height:18px"' + (r.on !== false ? ' checked' : '') + '> <b>上架</b><span class="muted" style="font-size:13px">（勾起來客人才看得到、才能預約）</span></label>';
   h += catGrid(
     catCell('分類', '<select id="cf-catsel" onchange="catCatSel()" style="' + sty + '">' +
       (!r.cat ? '<option value="" selected disabled>請選擇分類…</option>' : '') +
       cats.map(function(c){ return '<option value="' + catEsc(c) + '"' + (c === r.cat ? ' selected' : '') + '>' + catEsc(c || '（沒分類）') + '</option>' }).join('') +
       '<option value="__new__">＋ 新增分類…</option></select>' +
-      '<input id="cf-cat" type="text" placeholder="輸入新的分類名稱" style="display:none;margin-top:6px;' + sty + '">', '從現有的大項目選；要新開一個，選最下面的「＋ 新增分類」'),
+      '<input id="cf-cat" type="text" placeholder="輸入新的分類名稱" style="display:none;margin-top:6px;' + sty + '">', '要新開分類，選最下面'),
     catCell('時長', catIn('cf-dur', r.dur, 'text', W, false, '例：2-2.5小時')),
-    catCell('課程名稱', catIn('cf-name', r.name, 'text', W), !e._new ? '可以直接改。同一門課的所有規格會一起改名，用料、加購自動跟著搬過去' : ''),
-    catCell('規格', catIn('cf-spec', r.spec, 'text', W, lockSpec), lockSpec ? '這是價格別列（體驗價／會員價／單次原價），規格不能改' : '分價格別或尺寸時才填（體驗價／會員價／單次原價、A5透明框…），只有一種就留空'),
+    catCell('課程名稱', catIn('cf-name', r.name, 'text', W), !e._new ? '同一門課的所有規格會一起改名' : ''),
+    catCell('規格', catIn('cf-spec', r.spec, 'text', W, lockSpec), lockSpec ? '價格別列，規格不能改' : '尺寸或款式；只有一種就留空'),
     catCell('說明', '<textarea id="cf-desc" rows="2" style="' + sty + ';font-family:inherit">' + catEsc(r.desc) + '</textarea>', '', true));
   h += '<div class="csec">價格</div>';
   var oldLine = !e._new ? '<div class="muted" style="font-size:12.5px;margin-bottom:6px">試算表原本的價格（舊價格，只當對照）：<b>' + (r.price ? 'NT$' + r.price.toLocaleString() : '—') + '</b>　預約頁現在還是收這個。</div>' : '';
@@ -469,16 +484,16 @@ function catDrawModal(){
       (catTierRows(r).base ? '<br><button type="button" class="btn btn-gold btn-sm" style="margin-top:8px" onclick="catOpen(\'' + catTierRows(r).base.id + '\')">前往「單次原價」那一列編輯價格</button>' : '') + '</div>' + oldLine;
   } else {
     if (kind === 'base') h += '<div class="card" style="background:#eef7f0;border-color:#b9dcc4;font-size:13px;line-height:1.8;margin-bottom:10px">「' + catEsc(r.name) + '」的三個價格都填在這一列：原價、初次體驗價、會員價。' +
-      '另外「體驗價」「會員價」那兩列是舊的價格別列，先留著對應用料，不用填。<br><button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="catFillTier()">從試算表原本三列的價格帶入</button></div>';
+      '</div>';
     h += catGrid(
       catCell('原價', catIn('cf-po', r.pOrig || '', 'number', W) +
         (kind === 'normal' && r.price > 0 ? '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="catFillOrig()">帶入試算表價格 ' + r.price.toLocaleString() + '</button>' : ''),
-        '單次、或來很多次的非會員付這個價；課程卡片先顯示它'),
-      catCell('會員價（優惠價）', catIn('cf-pm', r.pMember || '', 'number', W), '會員付這個價；活動課的「優惠價」也填這裡（第一次來的客人也適用）。留空＝沒有優惠'),
-      catCell('初次體驗價（選填）', catIn('cf-pf', r.pFirst || '', 'number', W), '第一次來上這門課的客人付這個價（例如繪畫體驗課）。留空＝跟會員價一樣'),
-      catCell('兩人價（選填）', catIn('cf-pair', r.pair || '', 'number', W), '兩人同行的總價；留空＝沒有優惠'),
-      catCell('早鳥價（選填）', catIn('cf-early', r.early || '', 'number', W), '截止日前預約的所有人（含會員）都付這個價'),
-      catCell('早鳥截止', catIn('cf-until', r.earlyUntil, 'date', W), '最後一天，含當天；過了自動恢復'));
+        '一般客人付的價'),
+      catCell('會員價（優惠價）', catIn('cf-pm', r.pMember || '', 'number', W), '會員付的價（活動課的優惠價也填這裡）'),
+      catCell('初次體驗價（選填）', catIn('cf-pf', r.pFirst || '', 'number', W), '第一次來的客人；留空＝同會員價'),
+      catCell('兩人價（選填）', catIn('cf-pair', r.pair || '', 'number', W), '兩人同行的總價'),
+      catCell('早鳥價（選填）', catIn('cf-early', r.early || '', 'number', W), '截止日前所有人都付這個價'),
+      catCell('早鳥截止', catIn('cf-until', r.earlyUntil, 'date', W), '最後一天（含當天）'));
     h += '<div id="cf-preview" style="background:#f6f1e7;border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.9;margin:4px 0 10px"></div>' + oldLine;
   }
   h += '<div class="csec">加購項目</div>' +
@@ -492,13 +507,12 @@ function catDrawModal(){
       '<button type="button" class="btn btn-outline btn-sm" onclick="catClearImg()">清除</button><div id="cf-imgst" class="muted" style="font-size:12px;margin-top:4px"></div>' +
       '<input id="cf-img" type="text" value="' + catEsc(r.img || '') + '" placeholder="或直接貼圖片網址" oninput="catImgPv()" style="margin-top:6px;' + sty + ';font-size:13px"></div></div>' +
       (sameN > 1 ? '<label style="display:block;font-size:13px;margin-top:6px"><input type="checkbox" id="cf-imgall" checked> 同一門課的所有規格都用這張（共 ' + sameN + ' 列）</label>' : ''),
-      '預約頁的課程卡片會顯示這張圖。上傳時會自動縮小成手機用的大小，載入很快。不要貼 Google 雲端連結（慢、容易顯示不出來）', true),
+      '上傳會自動縮小成手機用的大小', true),
     catCell('最小年齡', catIn('cf-age', r.minAge || '', 'number', W)),
     catCell('可加堂', '<select id="cf-multi" style="' + sty + '"><option value="N"' + (r.multi ? '' : ' selected') + '>否</option><option value="Y"' + (r.multi ? ' selected' : '') + '>是</option></select>'),
-    catCell('佔位', catIn('cf-seats', r.seats || '', 'number', W), '一組佔幾個位子（地毯課填 3）；留空＝一般'),
-    catCell('計時', catIn('cf-hourly', r.hourly || '', 'number', W), '每小時多少錢；留空＝不是計時課'));
-  h += '<label style="font-size:14px;display:block;margin:2px 0 6px"><input type="checkbox" id="cf-on"' + (r.on !== false ? ' checked' : '') + '> 上架（在課程清單顯示）</label>';
-  h += '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn btn-gold" id="cf-save" onclick="catSave()">儲存</button>' +
+    catCell('佔位', catIn('cf-seats', r.seats || '', 'number', W), '佔幾個位子（地毯填 3）'),
+    catCell('計時', catIn('cf-hourly', r.hourly || '', 'number', W), '每小時多少錢（計時課才填）'));
+  h += '<div style="position:sticky;bottom:0;background:#fff;padding:12px 0 4px;margin-top:14px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;z-index:5"><button class="btn btn-gold" id="cf-save" onclick="catSave()" style="min-width:110px">儲存</button>' +
     '<button class="btn btn-outline" onclick="catCloseModal()">取消</button>' +
     (e._new ? '' : (function(){
       var n = catRows.filter(function(x){ return x.name === e.orig.name }).length;
@@ -679,7 +693,7 @@ async function catSave(){
       }
       if (others.length) await catLog('imgAll', { id: e.id, name: v.name }, null, { img: v.img, count: others.length });
     }
-    catSortRows(); catCloseModal(); renderCatalog();
+    catSortRows(); catCloseModal(); renderCatalog(); catToast(catSavedMsg());
   } catch (err) {
     alert('儲存失敗：' + err.message + '\n資料沒有被改動，請再試一次。');
   } finally { catBusy = false; if (btn) btn.disabled = false }
@@ -1079,7 +1093,7 @@ async function catAddonSave(){
     await catLog(E._new ? 'addonAdd' : 'addonEdit', { id: item.id, name: item.course, spec: item.spec }, E._new ? null : E, item);
     var i = (catAddons || []).findIndex(function(a){ return a.id === E.id });
     if (i >= 0) catAddons[i] = item; else (catAddons = catAddons || []).push(item);
-    catAddonEdit = null; catAddonDraw(); renderCatalog();
+    catAddonEdit = null; catAddonDraw(); renderCatalog(); catToast(catSavedMsg());
   } catch (err) { alert('儲存失敗：' + err.message + '\n沒有改動資料，請再試一次。') } finally { catBusy = false }
 }
 async function catAddonDelete(){
@@ -1201,9 +1215,8 @@ function catPreflight(){
 async function catSetLive(on){
   if (catBusy) return;
   var pf = catPreflight();
-  var msg = on ? ('要把預約系統切換成讀「課程管理」嗎？\n\n切換後（約 1 分鐘內）：客人預約頁、後台登記、課程用料、AI 客服都改讀這裡，價格會照客人身分（會員／新客／一般）自動算。' +
-      (pf.must.length ? '\n\n⚠ 檢查報告還有 ' + pf.must.length + ' 個必看的問題沒處理，確定仍要切換？' : '') + '\n\n之後隨時可以再關回去。')
-    : '要把預約系統切回讀「試算表」嗎？（約 1 分鐘內生效，課程管理的資料不會被刪）';
+  var msg = on ? ('要讓客人預約頁、後台登記改用這裡的資料嗎？（約 1 分鐘生效，隨時可以切回去）' + (pf.must.length ? '\n\n⚠ 還有 ' + pf.must.length + ' 個地方價格跟試算表不一樣，建議先到「進階→預約系統開關」看一下。' : ''))
+    : '要切回讀「試算表」嗎？（約 1 分鐘生效，這裡的資料不會被刪）';
   if (!confirm(msg)) return;
   catBusy = true;
   try {
@@ -1212,7 +1225,7 @@ async function catSetLive(on){
     await catLog(on ? 'liveOn' : 'liveOff', { id: '', name: on ? '預約系統切換成讀課程管理' : '預約系統切回讀試算表' }, null, m);
     catMeta = Object.assign({}, catMeta || {}, m);
     renderCatalog();
-    alert(on ? '已切換：預約系統改讀課程管理（約 1 分鐘內生效）。\n建議現在打開客人預約頁看一下價格。' : '已切回：預約系統讀回試算表（約 1 分鐘內生效）。');
+    catToast(on ? '已切換 ✓　客人約 1 分鐘內改看這裡的資料' : '已切回試算表（約 1 分鐘內生效）');
   } catch (err) { alert('切換失敗：' + err.message + '\n沒有改動任何設定。') } finally { catBusy = false }
 }
 function catSwitchHtml(){
@@ -1299,12 +1312,12 @@ function catSiteHtml(){
   var h = '', dep = catDep || [], no = catNotes || [];
   h += '<div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">💰 訂金方式' +
     '<span style="flex:1"></span><button class="btn btn-gold btn-sm" onclick="catSiteNew(\'dep\')">＋ 新增付款方式</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.7;margin:4px 0 8px">客人預約最後一步選的付款方式、金額、連結或帳號。有填這裡，預約頁就用這裡；還沒填，預約頁仍讀試算表「訂金」分頁。用 ▲▼ 換順序。</div>';
+    '<div class="muted" style="font-size:12.5px;margin:4px 0 8px">客人預約時選的付款方式。▲▼ 換順序。</div>';
   h += dep.length ? dep.map(function(x, i){ return catSiteRow('dep', x, i, dep.length) }).join('') :
     '<div class="empty" style="padding:10px">還沒有資料。<button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="catSiteImport(\'dep\')">從試算表「訂金」複製</button></div>';
   h += '</div><div class="card" style="margin:8px 0"><div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">📝 預約頁說明文字' +
     '<span style="flex:1"></span><button class="btn btn-gold btn-sm" onclick="catSiteNew(\'note\')">＋ 新增說明</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.7;margin:4px 0 8px"><b>重點</b>會顯示在預約頁最上面；<b>詳細</b>是點開「更多說明」才看到的（人數與課程、價格、時間、年齡、訂金、上課當天…）。有填這裡，預約頁就用這裡；還沒填，仍讀試算表「說明」分頁。</div>';
+    '<div class="muted" style="font-size:12.5px;margin:4px 0 8px"><b>重點</b>顯示在預約頁最上面；<b>詳細</b>點開「更多說明」才看到。</div>';
   h += no.length ? ['key', 'detail'].map(function(t){
     var list = no.filter(function(x){ return (x.type === 'key' ? 'key' : 'detail') === t });
     return '<div style="font-weight:600;font-size:13px;margin:10px 0 6px;color:var(--text2)">' + (t === 'key' ? '重點（預約頁最上面）' : '詳細（更多說明）') + '</div>' +
@@ -1363,7 +1376,7 @@ async function catSiteSave(){
     var list = E.kind === 'dep' ? (catDep = catDep || []) : (catNotes = catNotes || []), i = list.findIndex(function(r){ return r.id === item.id });
     if (i >= 0) list[i] = item; else list.push(item);
     list.sort(function(a, b){ return (+a.sort || 99) - (+b.sort || 99) });
-    catSiteCancel(); renderCatalog();
+    catSiteCancel(); renderCatalog(); catToast(catSavedMsg());
   } catch (err) { alert('儲存失敗：' + err.message + '\n沒有改動資料，請再試一次。') } finally { catBusy = false }
 }
 async function catSiteDelete(){
