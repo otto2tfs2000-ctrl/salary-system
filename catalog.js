@@ -166,13 +166,22 @@ function catGoRecipe(id){
 }
 
 /* ── 畫面 ── */
+/* 重畫畫面前先記住表格捲到哪，畫完再捲回去（不然每存一筆就跳回第一個，要重新往下拉） */
+var catScroll = null;
+function catSaveScroll(){ var bx = document.getElementById('cat-tblbox'); if (bx) catScroll = { box: bx.scrollTop, page: window.pageYOffset || 0 } }
 async function renderCatalog(){
   var el = document.getElementById('catalog-body'); if (!el) return;
+  catSaveScroll();
   if (!catRows) {
     el.innerHTML = '<div class="empty">載入課程中…</div>';
     try { await catLoad() } catch (e) { el.innerHTML = '<div class="empty">讀不到課程資料：' + catEsc(e.message) + '</div>'; return }
   }
   el.innerHTML = catHtml();
+  if (catScroll) {
+    var bx = document.getElementById('cat-tblbox');
+    if (bx) { bx.scrollTop = catScroll.box; window.scrollTo(0, catScroll.page) }
+    catScroll = null;
+  }
 }
 function catBanner(){
   return '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13.5px;line-height:1.8;margin-bottom:12px">' +
