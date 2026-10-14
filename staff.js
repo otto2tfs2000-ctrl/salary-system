@@ -38,7 +38,9 @@ var STAFF_TABS = [
   { k:"finance",     n:"報表" },
   { k:"consumables", n:"耗材記帳" },
   { k:"inventory",   n:"庫存盤點" },
+  { k:"catalog",     n:"課程管理" },
   { k:"recipe",      n:"課程用料" },
+  { k:"quote",       n:"報價" },
   { k:"salary",      n:"本月薪資" },
   { k:"settings",    n:"老師設定" }
 ];
