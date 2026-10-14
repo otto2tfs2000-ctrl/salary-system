@@ -467,7 +467,7 @@ function qgSpreadHeads(c){
 function qgNewCase(venue){
   venue = venue || 'in';
   var lecOn = venue === 'out';   // 外派預設付講師費、也另外跟客人收；內場預設只有人次獎金。兩個都可以自己改
-  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), mat:'', stdMat:300, gm:60, price:1200, auto:true, course:'', anchor:'',
+  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), matFixed:'', matVar:'', sizePct:100, gm:60, price:1200, auto:true, course:'', anchor:'',
             trans:0, haul:0, misc:0, lost:0, staff:qgDefaultStaff(venue, lecOn) };
   qgSpreadHeads(c);
   return c;
@@ -545,7 +545,12 @@ function qgCompute(c, p){
   var n = Math.max(1, qN(c.n)), hrs = Math.max(0.5, qN(c.hrs));
   var hq = qN(p.gHq) / 100, tax = qN(p.gTax) / 100, gm = qN(c.gm) / 100;
   var isOut = c.venue === 'out';
-  var mat = n * qN(c.mat);
+  /* 材料＝固定材料（畫布五號以下同價，不隨尺寸變）＋隨尺寸材料（膠、水晶、金箔、顏料…）× 用量比例。
+     基準尺寸＝用量比例 100% 那一款；換尺寸只改用量比例，價差照成本轉嫁 */
+  var matFixed = qN(c.matFixed), matVar = qN(c.matVar);
+  var sizePct = (c.sizePct === '' || c.sizePct === null || c.sizePct === undefined) ? 100 : qN(c.sizePct);
+  var matPer = matFixed + matVar * sizePct / 100, stdMat = matFixed + matVar;
+  var mat = n * matPer;
   var lecFees = 0, headFees = 0;
   c.staff.forEach(function(r){
     var f = qgRowFee(r, p), ex = qN(r.extra);
@@ -564,8 +569,7 @@ function qgCompute(c, p){
   };
   /* 材料比「標準材料」貴（客人升級）多出來的錢＝轉嫁成本：先拿標準材料算目標利潤，再把差額連總部 10% 一起補上去，
      這樣材料升級不會被乘上利潤率（以前材料多 200，每人價會漲 700）。新客價對照也加同樣的差額 */
-  var stdMat = (c.stdMat === '' || c.stdMat === null || c.stdMat === undefined) ? qN(c.mat) : qN(c.stdMat);
-  var matDiffPer = qN(c.mat) - stdMat, matDiff = n * matDiffPer;
+  var matDiffPer = matPer - stdMat, matDiff = n * matDiffPer;
   var costStd = cost - matDiff, pass = matDiff / (1 - hq);
   var Rbe = Math.max(0, cost / (1 - hq) - lecRev);
   var tgtDen = 1 - hq - gm;
@@ -582,7 +586,7 @@ function qgCompute(c, p){
   var headSum = c.staff.filter(function(r){ return r.mode === 'head'; })
                        .reduce(function(s, r){ return s + qN(r.heads); }, 0);
   return {
-    n:n, hrs:hrs, tax:tax, hq:hq, gm:gm, gmHi:gmHi, isOut:isOut, auto:!!c.auto, anchor:anchor, anchorRaw:anchorRaw, anchorNet:anchorNet, matDiffPer:matDiffPer, stdMat:stdMat,
+    n:n, hrs:hrs, tax:tax, hq:hq, gm:gm, gmHi:gmHi, isOut:isOut, auto:!!c.auto, anchor:anchor, anchorRaw:anchorRaw, anchorNet:anchorNet, matDiffPer:matDiffPer, stdMat:stdMat, matPer:matPer, matFixed:matFixed, matVar:matVar, sizePct:sizePct,
     price:price, perTax:price*(1+tax), recPerTax:recPerTax,
     mat:mat, fees:fees, lecFees:lecFees, headFees:headFees, trans:trans, haul:haul, misc:misc, lost:lost, cost:cost,
     lecRev:lecRev, lecRevTax:lecRev*(1+tax), R:R, rev:rev, revTax:rev*(1+tax), hqFee:hqFee, profit:profit, margin: rev > 0 ? profit/rev : 0,
@@ -636,8 +640,9 @@ function qgSkeleton(){
   h +=   '<div class="form-grid">';
   h +=     qgField('qg-n', '報名人數', c.n, 1);
   h +=     qgField('qg-hrs', '上課時長（小時）', c.hrs, 0.5, '一堂＝這個時數，按小時報價時用來換算');
-  h +=     qgField('qg-mat', '材料成本／人（必填）', c.mat, 10, '這一場實際要用的，客人要升級材料就改這格');
-  h +=     qgField('qg-std', '標準材料／人（新客價那個版本）', c.stdMat, 10, '這門課平常的材料。實際材料比它貴的部分，照成本轉嫁，不乘利潤率');
+  h +=     qgField('qg-matFixed', '固定材料／人（必填）', c.matFixed, 10, '不隨尺寸變的：畫布（五號以下同價）、框、包裝');
+  h +=     qgField('qg-matVar', '隨尺寸材料／人（基準尺寸）', c.matVar, 10, '膠、水晶、金箔、顏料…：填「基準尺寸」那一款的合計');
+  h +=     qgField('qg-sizePct', '這次的尺寸用量 %', c.sizePct, 5, '基準尺寸＝100。縮小例：膠 150 克變 110 克，填 73。隨尺寸材料會乘這個比例');
   h +=     qgField('qg-gm', '目標利潤率 %', c.gm, 5, '系統建議價＝讓這場賺到這個比例（還沒扣房租薪水）');
   h +=     qgField('qg-price', '報價每人（未稅）', c.price, 50, '<span id="qg-priceHint"></span>');
   h +=   '</div>';
@@ -730,10 +735,10 @@ function qgRenderStaff(){
 }
 
 function qgBindEvents(){
-  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-std':'stdMat', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
+  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
   Object.keys(map).forEach(function(id){
     document.getElementById(id).addEventListener('input', function(){
-      qgCase[map[id]] = (id === 'qg-std' && this.value === '') ? '' : qN(this.value);   // 標準材料留空＝不做材料差額調整
+      qgCase[map[id]] = (id === 'qg-sizePct' && this.value === '') ? '' : qN(this.value);   // 用量比例留空＝100
       if (id === 'qg-n') { qgSpreadHeads(qgCase); qgRenderStaff(); }
       qgRecalc();
     });
@@ -766,8 +771,10 @@ function qgBindEvents(){
     qgCase.auto = auto;
     qgSyncPmode(); qgRecalc();
   });
-  document.getElementById('qg-mat').addEventListener('input', function(){
-    qgCase.mat = this.value === '' ? '' : qN(this.value); qgRecalc();
+  ['qg-matFixed','qg-matVar'].forEach(function(id){
+    document.getElementById(id).addEventListener('input', function(){
+      qgCase[id.slice(3)] = this.value === '' ? '' : qN(this.value); qgRecalc();
+    });
   });
 
   var venueWrap = document.getElementById('qg-venue');
@@ -900,7 +907,8 @@ function qgSyncPmode(){
 function qgRecalc(){
   var c = qgCase, p = qgParams();
   var r = qgCompute(c, p);
-  var matMissing = c.mat === '' || c.mat === null || c.mat === undefined;
+  var blank = function(v){ return v === '' || v === null || v === undefined; };
+  var matMissing = blank(c.matFixed) && blank(c.matVar);
   var dash = function(v){ return matMissing ? '—' : qFmt(v); };
   var pct = function(v){ return (Math.round(v * 1000) / 10).toFixed(1) + '%'; };
 
@@ -921,7 +929,7 @@ function qgRecalc(){
     var L = [];
     if (matMissing) L.push('先填材料成本，才算得出建議價。');
     else {
-      var costParts = ['材料 ' + qFmt(r.mat), '人次獎金 ' + qFmt(r.headFees)];
+      var costParts = ['材料 ' + qFmt(r.mat) + '（每人 ' + qFmt(r.matPer) + '）', '人次獎金 ' + qFmt(r.headFees)];
       if (r.lecFees) costParts.push('講師費 ' + qFmt(r.lecFees));
       if (r.trans + r.haul) costParts.push('交通搬運 ' + qFmt(r.trans + r.haul));
       if (r.misc) costParts.push('雜支 ' + qFmt(r.misc));
@@ -929,8 +937,8 @@ function qgRecalc(){
       L.push('這場多花的成本 <b>' + qFmt(r.cost) + '</b>（' + costParts.join('＋') + '）。房租薪水是本來就要付的，團班不分攤。');
       var T = function(x){ return qFmt(x.perTax); };
       L.push('每人（含稅）：打平 <b>' + T(r.be) + '</b>｜目標利潤 ' + Math.round(r.gm * 100) + '% → <b>' + T(r.tgt) + '</b>' +
-        (r.anchor > 0 ? '｜新客價 ' + qFmt(r.anchorRaw) + (r.matDiffPer ? '（材料換成這場的 ' + qFmt(qN(c.mat)) + ' 後，同等級約 <b>' + qFmt(r.anchor) + '</b>）' : '') + '，團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%' : ''));
-      if (r.matDiffPer) L.push('材料比標準版（' + qFmt(r.stdMat) + '）' + (r.matDiffPer > 0 ? '貴' : '便宜') + ' ' + qFmt(Math.abs(r.matDiffPer)) + '／人，這一段照成本轉嫁、不乘利潤率。');
+        (r.anchor > 0 ? '｜新客價 ' + qFmt(r.anchorRaw) + (r.matDiffPer ? '（材料換成這場的 ' + qFmt(r.matPer) + ' 後，同等級約 <b>' + qFmt(r.anchor) + '</b>）' : '') + '，團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%' : ''));
+      if (r.matDiffPer) L.push('這次尺寸用量 ' + Math.round(r.sizePct) + '%：每人材料 ' + qFmt(r.matPer) + '（基準尺寸 ' + qFmt(r.stdMat) + '，' + (r.matDiffPer >= 0 ? '多' : '少') + ' ' + qFmt(Math.abs(r.matDiffPer)) + '），這一段照成本轉嫁、不乘利潤率。');
       if (!r.isOut) L.push('<span style="color:var(--text3)">參考：如果房租薪水也分攤（每教學小時 ' + qFmt(qN(p.gHourCost)) + ' × ' + r.hrs + ' 小時 ＝ ' + qFmt(r.allocHr) + '），這場分攤後還剩 <b>' + qFmt(r.afterAlloc) + '</b>' + (r.afterAlloc < 0 ? '（分攤後是虧的，但團班是填空位，房租本來就要付）' : '') + '。只供參考，不影響報價。</span>');
       if (!c.auto) L.push('你自己訂的是每人 <b>' + qFmt(r.perTax) + '</b>，系統建議 ' + qFmt(r.recPerTax) + '。');
     }
@@ -977,7 +985,7 @@ function qgRecalc(){
   var bd = document.getElementById('qg-breakdown');
   if (bd) {
     bd.innerHTML = matMissing ? '<p class="muted">填了材料成本才會出現拆解。</p>' :
-      qRow('材料　' + r.n + ' 人 × ' + qFmt(qN(c.mat)), r.mat) +
+      qRow('材料　' + r.n + ' 人 × ' + qFmt(r.matPer) + '（固定 ' + qFmt(r.matFixed) + '＋隨尺寸 ' + qFmt(r.matVar) + '×' + Math.round(r.sizePct) + '%）', r.mat) +
       qRow('人次獎金（老師、行政每教一位 ' + qN(p.gHead) + '）', r.headFees) +
       qRow('講師費' + (r.lecFees ? (r.lecRev ? '（另收，代收代付）' : '（沒另外收）') : '（這場沒有）'), r.lecFees) +
       (r.isOut ? qRow('交通＋搬運', r.trans + r.haul) : '') +
