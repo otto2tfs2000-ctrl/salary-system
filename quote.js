@@ -414,6 +414,7 @@ function qCopyText(){
    ・講師費獨立一條：這場付不付（外派預設付，上班時間內也可以勾）、另不另外跟客人收
      （收＝代收代付；不收＝老闆的局，講師費照付，算進每人價）
    ・打平價＝剛好不虧；建議價＝照目標利潤率；新客價只當「對照」，不限制報價
+   ・材料升級（比「標準材料」貴）多出來的錢照成本轉嫁（連總部 10% 一起補），不乘利潤率；新客價對照也跟著加同樣的差額
    切到「自己訂價」就用手填的每人價，系統算利潤率。
    參數（講師費等級、人頭獎金、稅、總部、保證人數）存 S.quoteParams 的 g* 欄位，跟全站一起同步。
    ══════════════════════════════════════════════════════════ */
@@ -466,7 +467,7 @@ function qgSpreadHeads(c){
 function qgNewCase(venue){
   venue = venue || 'in';
   var lecOn = venue === 'out';   // 外派預設付講師費、也另外跟客人收；內場預設只有人次獎金。兩個都可以自己改
-  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), mat:'', gm:30, price:1200, auto:true, course:'', anchor:'',
+  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), mat:'', stdMat:300, gm:60, price:1200, auto:true, course:'', anchor:'',
             trans:0, haul:0, misc:0, lost:0, staff:qgDefaultStaff(venue, lecOn) };
   qgSpreadHeads(c);
   return c;
@@ -561,12 +562,19 @@ function qgCompute(c, p){
     var rv = R + lecRev, pr = rv * (1 - hq) - cost;
     return { R:R, perTax:R * (1 + tax) / n, perHr:R / hrs, profit:pr, margin: rv > 0 ? pr / rv : 0 };
   };
+  /* 材料比「標準材料」貴（客人升級）多出來的錢＝轉嫁成本：先拿標準材料算目標利潤，再把差額連總部 10% 一起補上去，
+     這樣材料升級不會被乘上利潤率（以前材料多 200，每人價會漲 700）。新客價對照也加同樣的差額 */
+  var stdMat = (c.stdMat === '' || c.stdMat === null || c.stdMat === undefined) ? qN(c.mat) : qN(c.stdMat);
+  var matDiffPer = qN(c.mat) - stdMat, matDiff = n * matDiffPer;
+  var costStd = cost - matDiff, pass = matDiff / (1 - hq);
   var Rbe = Math.max(0, cost / (1 - hq) - lecRev);
   var tgtDen = 1 - hq - gm;
-  var Rtgt = tgtDen > 0 ? Math.max(Rbe, cost / tgtDen - lecRev) : Rbe;
+  var Rtgt = tgtDen > 0 ? Math.max(Rbe, costStd / tgtDen - lecRev + pass) : Rbe;
   var gmHi = Math.min(0.8, gm + 0.2), hiDen = 1 - hq - gmHi;
-  var Rhi = hiDen > 0 ? Math.max(Rtgt, cost / hiDen - lecRev) : Rtgt;
-  var anchor = qN(c.anchor), anchorNet = anchor / (1 + tax);
+  var Rhi = hiDen > 0 ? Math.max(Rtgt, costStd / hiDen - lecRev + pass) : Rtgt;
+  var anchorRaw = qN(c.anchor);
+  var anchorNet = anchorRaw > 0 ? anchorRaw / (1 + tax) + matDiffPer / (1 - hq) : 0;
+  var anchor = anchorRaw > 0 ? anchorNet * (1 + tax) : 0;
   var recPerTax = Math.ceil(Rtgt * (1 + tax) / n / 50 - 1e-9) * 50;   // 報給家長好聽：含稅往上取整到 50
   var price = c.auto ? recPerTax / (1 + tax) : qN(c.price);
   var R = price * n, rev = R + lecRev, hqFee = rev * hq, profit = rev - hqFee - cost;
@@ -574,7 +582,7 @@ function qgCompute(c, p){
   var headSum = c.staff.filter(function(r){ return r.mode === 'head'; })
                        .reduce(function(s, r){ return s + qN(r.heads); }, 0);
   return {
-    n:n, hrs:hrs, tax:tax, hq:hq, gm:gm, gmHi:gmHi, isOut:isOut, auto:!!c.auto, anchor:anchor, anchorNet:anchorNet,
+    n:n, hrs:hrs, tax:tax, hq:hq, gm:gm, gmHi:gmHi, isOut:isOut, auto:!!c.auto, anchor:anchor, anchorRaw:anchorRaw, anchorNet:anchorNet, matDiffPer:matDiffPer, stdMat:stdMat,
     price:price, perTax:price*(1+tax), recPerTax:recPerTax,
     mat:mat, fees:fees, lecFees:lecFees, headFees:headFees, trans:trans, haul:haul, misc:misc, lost:lost, cost:cost,
     lecRev:lecRev, lecRevTax:lecRev*(1+tax), R:R, rev:rev, revTax:rev*(1+tax), hqFee:hqFee, profit:profit, margin: rev > 0 ? profit/rev : 0,
@@ -627,7 +635,8 @@ function qgSkeleton(){
   h +=   '<div class="form-grid">';
   h +=     qgField('qg-n', '報名人數', c.n, 1);
   h +=     qgField('qg-hrs', '上課時長（小時）', c.hrs, 0.5, '一堂＝這個時數，按小時報價時用來換算');
-  h +=     qgField('qg-mat', '材料成本／人（必填）', c.mat, 10);
+  h +=     qgField('qg-mat', '材料成本／人（必填）', c.mat, 10, '這一場實際要用的，客人要升級材料就改這格');
+  h +=     qgField('qg-std', '標準材料／人（新客價那個版本）', c.stdMat, 10, '這門課平常的材料。實際材料比它貴的部分，照成本轉嫁，不乘利潤率');
   h +=     qgField('qg-gm', '目標利潤率 %', c.gm, 5, '系統建議價＝讓這場賺到這個利潤率');
   h +=     qgField('qg-price', '報價每人（未稅）', c.price, 50, '<span id="qg-priceHint"></span>');
   h +=   '</div>';
@@ -720,10 +729,10 @@ function qgRenderStaff(){
 }
 
 function qgBindEvents(){
-  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
+  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-std':'stdMat', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
   Object.keys(map).forEach(function(id){
     document.getElementById(id).addEventListener('input', function(){
-      qgCase[map[id]] = qN(this.value);
+      qgCase[map[id]] = (id === 'qg-std' && this.value === '') ? '' : qN(this.value);   // 標準材料留空＝不做材料差額調整
       if (id === 'qg-n') { qgSpreadHeads(qgCase); qgRenderStaff(); }
       qgRecalc();
     });
@@ -919,7 +928,8 @@ function qgRecalc(){
       L.push('這場多花的成本 <b>' + qFmt(r.cost) + '</b>（' + costParts.join('＋') + '）。房租薪水是本來就要付的，團班不分攤。');
       var T = function(x){ return qFmt(x.perTax); };
       L.push('每人（含稅）：打平 <b>' + T(r.be) + '</b>｜目標利潤 ' + Math.round(r.gm * 100) + '% → <b>' + T(r.tgt) + '</b>' +
-        (r.anchor > 0 ? '｜新客價 ' + qFmt(r.anchor) + '（團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%）' : ''));
+        (r.anchor > 0 ? '｜新客價 ' + qFmt(r.anchorRaw) + (r.matDiffPer ? '（材料換成這場的 ' + qFmt(qN(c.mat)) + ' 後，同等級約 <b>' + qFmt(r.anchor) + '</b>）' : '') + '，團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%' : ''));
+      if (r.matDiffPer) L.push('材料比標準版（' + qFmt(r.stdMat) + '）' + (r.matDiffPer > 0 ? '貴' : '便宜') + ' ' + qFmt(Math.abs(r.matDiffPer)) + '／人，這一段照成本轉嫁、不乘利潤率。');
       if (!c.auto) L.push('你自己訂的是每人 <b>' + qFmt(r.perTax) + '</b>，系統建議 ' + qFmt(r.recPerTax) + '。');
     }
     why.innerHTML = L.map(function(x){ return '<div>' + x + '</div>'; }).join('');
@@ -982,7 +992,7 @@ function qgRecalc(){
     if (r.profit < -1) warns.push(['var(--red)', '這個價格會倒貼 ' + qFmt(-r.profit) + ' 元（至少要報每人 ' + qFmt(r.be.perTax) + '，含稅）。']);
     else warns.push(['var(--green)', '可以接，利潤率 ' + pct(r.margin) + '。真的要讓價，最低守在每人 ' + qFmt(r.be.perTax) + '（含稅），再低就是貼錢做。']);
     if (r.lecFees > 0 && !r.lecRev) warns.push(['var(--gold2)', '講師費 ' + qFmt(r.lecFees) + ' 沒另外跟客人收：已經算進每人價。報得比建議低，這筆就是你自己扛。']);
-    if (r.anchor > 0 && r.perTax > r.anchor + 1) warns.push(['var(--gold2)', '比這門課的新客價（' + qFmt(r.anchor) + '）還貴，家長一比會覺得團班沒優惠。']);
+    if (r.anchor > 0 && r.perTax > r.anchor + 1) warns.push(['var(--gold2)', '比同等材料的新客價（' + qFmt(r.anchor) + '）還貴，家長一比會覺得團班沒優惠。']);
   }
   if (!r.isOut && r.n > 25) warns.push(['var(--gold2)', '超過外場團班容量（25 人），需加開小教室並多配一位老師。']);
   if (r.hasHead && r.headSum !== Math.round(r.n)) warns.push(['var(--gold2)', '人次獎金分配的人數（' + r.headSum + '）跟報名人數（' + r.n + '）不符。']);
