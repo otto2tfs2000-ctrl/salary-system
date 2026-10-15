@@ -619,11 +619,11 @@ function qgSkeleton(){
   h += '<div class="card" id="qg-hero" style="border-left:4px solid var(--gold)">';
   h +=   '<div style="font-size:13px;color:var(--text3)" id="qg-heroLbl">跟家長報每人（含稅）</div>';
   h +=   '<div style="font-family:var(--serif);font-size:42px;font-weight:400;color:var(--text);margin:2px 0 6px">NT$ <span id="qg-per">—</span></div>';
-  h +=   '<div style="font-size:14px;color:var(--text2)">淨利率 <span id="qg-margin">—</span>｜分攤房租薪水後淨賺 NT$ <span id="qg-profit">—</span>｜這場貢獻 NT$ <span id="qg-contrib">—</span>｜未稅每人 <span id="qg-perNet">—</span></div>';
+  h +=   '<div style="font-size:14px;color:var(--text2)">淨利率 <span id="qg-margin">—</span>｜分攤房租薪水後淨賺 NT$ <span id="qg-profit">—</span>｜這場貢獻 NT$ <span id="qg-contrib">—</span></div>';
   h +=   '<div id="qg-lecLine" style="font-size:14px;color:var(--text2);margin-top:6px"></div>';
   h +=   '<div class="stat-grid" style="margin-top:14px;margin-bottom:0">';
-  h +=     '<div class="stat-card"><div class="lbl">報價總額（未稅）</div><div class="val" style="font-size:19px" id="qg-rev">—</div></div>';
-  h +=     '<div class="stat-card"><div class="lbl">報價總額（含稅）</div><div class="val" style="font-size:19px" id="qg-revTax">—</div></div>';
+  h +=     '<div class="stat-card"><div class="lbl">報價總額（含稅，開發票金額）</div><div class="val" style="font-size:19px" id="qg-revTax">—</div></div>';
+  h +=     '<div class="stat-card"><div class="lbl">每小時（含稅）</div><div class="val" style="font-size:19px" id="qg-perHr">—</div></div>';
   h +=     '<div class="stat-card"><div class="lbl">保證計費人數</div><div class="val" style="font-size:19px" id="qg-guar">—</div></div>';
   h +=   '</div>';
   h +=   '<div id="qg-why" style="margin-top:14px;font-size:14px;line-height:1.8;padding:12px 14px;border-radius:10px;background:var(--bg2,rgba(0,0,0,.03))"></div>';
@@ -654,7 +654,7 @@ function qgSkeleton(){
   h +=     qgField('qg-sizePct', '這次的尺寸用量 %', c.sizePct, 5, '基準尺寸＝100。縮小例：膠 150 克變 110 克，填 73。隨尺寸材料會乘這個比例');
   h +=     qgField('qg-gm', '目標淨利率 %', c.gm, 5, '扣完材料、獎金、總部、連占用教室的房租薪水都扣掉之後，你想留下的比例');
   h +=     qgField('qg-buffer', '準備＋收拾時間（小時）', c.buffer, 0.5, '上課前準備、下課後收拾，教室被占用但沒在收錢的時間（內場才算）');
-  h +=     qgField('qg-price', '報價每人（未稅）', c.price, 50, '<span id="qg-priceHint"></span>');
+  h +=     qgField('qg-price', '報價每人（含稅）', Math.round(c.price * (1 + qN(p.gTax) / 100)), 50, '<span id="qg-priceHint"></span>');
   h +=   '</div>';
   h +=   '<div class="fg" style="margin-top:4px"><label>報價方式</label><div class="store-tabs" id="qg-pmode" style="margin-bottom:0">';
   h +=     '<button type="button" class="store-btn'+(c.auto?' active':'')+'" data-v="auto">自動（系統建議）</button>';
@@ -684,7 +684,7 @@ function qgSkeleton(){
 
   h += '<div class="card">';
   h +=   '<div class="card-title">價位對照：打平 → 利潤 → 新客價（客人要按小時報，看「每小時」那欄）</div>';
-  h +=   '<div style="overflow-x:auto"><table><thead><tr><th></th><th>課程費（未稅）</th><th>每人（含稅）</th><th>每小時（未稅）</th><th>淨利率</th><th>分攤後淨賺</th><th>這場貢獻</th></tr></thead><tbody id="qg-tiers"></tbody></table></div>';
+  h +=   '<div style="overflow-x:auto"><table><thead><tr><th></th><th>課程費（含稅）</th><th>每人（含稅）</th><th>每小時（含稅）</th><th>淨利率</th><th>分攤後淨賺</th><th>這場貢獻</th></tr></thead><tbody id="qg-tiers"></tbody></table></div>';
   h +=   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">';
   h +=     '<button class="btn btn-gold" id="qg-copy">複製報價文字</button>';
   h +=     '<button class="btn btn-outline" id="qg-reset">回到預設條件</button>';
@@ -748,7 +748,7 @@ function qgBindEvents(){
   var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-buffer':'buffer', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
   Object.keys(map).forEach(function(id){
     document.getElementById(id).addEventListener('input', function(){
-      qgCase[map[id]] = (id === 'qg-sizePct' && this.value === '') ? '' : qN(this.value);   // 用量比例留空＝100
+      qgCase[map[id]] = (id === 'qg-sizePct' && this.value === '') ? '' : (id === 'qg-price' ? qN(this.value) / (1 + qN(qgParams().gTax) / 100) : qN(this.value));   // 用量比例留空＝100；報價每人填含稅，內部換成未稅算
       if (id === 'qg-n') { qgSpreadHeads(qgCase); qgRenderStaff(); }
       qgRecalc();
     });
@@ -770,7 +770,7 @@ function qgBindEvents(){
   qgFillCourses();
   document.getElementById('qg-price').addEventListener('focus', function(){
     if (!qgCase.auto) return;
-    qgCase.auto = false; qgCase.price = qN(this.value);
+    qgCase.auto = false; qgCase.price = qN(this.value) / (1 + qN(qgParams().gTax) / 100);
     qgSyncPmode(); qgRecalc();
   });
   document.getElementById('qg-pmode').addEventListener('click', function(e){
@@ -951,7 +951,7 @@ function qgRecalc(){
 
   // 自動模式：每人價由系統填，欄位變唯讀樣式；點進去就切成自己訂價
   var pi = document.getElementById('qg-price');
-  if (pi && c.auto) pi.value = matMissing ? '' : Math.round(r.price);
+  if (pi && c.auto) pi.value = matMissing ? '' : Math.round(r.perTax);
   if (pi) { pi.readOnly = !!c.auto; pi.style.opacity = c.auto ? '0.75' : ''; }
   qSetText('qg-priceHint', c.auto ? '系統算的，點一下就能自己改' : '自己填的，想回到建議價按「自動」');
   qSetText('qg-heroLbl', (c.auto ? '系統建議：跟家長報每人（含稅）' : '跟家長報每人（含稅）｜自己訂的價') + (r.lecRev ? '｜課程費，講師費另計' : ''));
@@ -982,7 +982,6 @@ function qgRecalc(){
     why.innerHTML = L.map(function(x){ return '<div>' + x + '</div>'; }).join('');
   }
   qSetText('qg-per', matMissing ? '先填材料成本' : qFmt(r.perTax));
-  qSetText('qg-perNet', dash(r.price));
 
   // 換行時保留輸入中的焦點：只更新費用文字，不重畫人員列
   document.querySelectorAll('#qg-staff .qg-row').forEach(function(el){
@@ -998,14 +997,14 @@ function qgRecalc(){
   qSetText('qg-margin', matMissing ? '—' : pct(r.margin));
   qSetText('qg-profit', dash(r.net));
   qSetText('qg-contrib', dash(r.profit));
-  qSetText('qg-rev', qFmt(r.rev));
+  qSetText('qg-perHr', dash(r.R * (1 + r.tax) / r.hrs));
   qSetText('qg-revTax', qFmt(r.revTax));
   qSetText('qg-guar', r.guarantee + ' 人');
 
   var tierRow = function(label, x, always){
     var show = function(v){ return always || !matMissing ? v : '—'; };
     return '<tr'+(always?' style="font-weight:600"':'')+'><td>'+label+'</td>' +
-      '<td>'+show(qFmt(x.R))+'</td><td>'+show(qFmt(x.perTax))+'</td><td>'+show(qFmt(x.perHr))+'</td>' +
+      '<td>'+show(qFmt(x.R * (1 + r.tax)))+'</td><td>'+show(qFmt(x.perTax))+'</td><td>'+show(qFmt(x.perHr * (1 + r.tax)))+'</td>' +
       '<td>'+show(pct(x.margin))+'</td><td>'+show(qFmt(x.net))+'</td><td>'+show(qFmt(x.profit))+'</td></tr>';
   };
   var anchorX = null;
@@ -1025,6 +1024,8 @@ function qgRecalc(){
   var bd = document.getElementById('qg-breakdown');
   if (bd) {
     bd.innerHTML = matMissing ? '<p class="muted">填了材料成本才會出現拆解。</p>' :
+      qRow('開給客人的發票金額（含稅）', r.revTax) +
+      qRow('扣營業稅 ' + qN(p.gTax) + '%（代收，不是你的錢）', -(r.revTax - r.rev)) +
       qRow('材料　' + r.n + ' 人 × ' + qFmt(r.matPer) + '（固定 ' + qFmt(r.matFixed) + '＋隨尺寸 ' + qFmt(r.matVar) + '×' + Math.round(r.sizePct) + '%）', r.mat) +
       qRow('人次獎金（老師、行政每教一位 ' + qN(p.gHead) + '）', r.headFees) +
       qRow('講師費' + (r.lecFees ? (r.lecRev ? '（另收，代收代付）' : '（沒另外收）') : '（這場沒有）'), r.lecFees) +
@@ -1035,7 +1036,7 @@ function qgRecalc(){
       '<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:4px;font-weight:600"><span>這場貢獻（還沒扣房租薪水）</span><span>' + qFmt(r.profit) + '</span></div>' +
       (r.isOut ? '' : qRow('場次成本　占用 ' + r.occHrs + ' 小時 × ' + qFmt(qN(p.gHourCost)), r.occ) +
         '<div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:4px;font-weight:600"><span>分攤房租薪水後淨賺</span><span>' + qFmt(r.net) + '</span></div>') +
-      '<p class="muted" style="margin-top:10px">營業稅 ' + qN(p.gTax) + '% 是代收，加在未稅價上面，不算進成本也不算進利潤。</p>';
+      '<p class="muted" style="margin-top:10px">總部 ' + qN(p.gHq) + '% 是照扣掉營業稅後的營業額算。</p>';
   }
 
   var warns = [];
@@ -1066,7 +1067,7 @@ function qgCopyText(){
     '地點：' + (r.isOut ? '貴單位場地（老師到府授課）' : '本工作室四樓') + '\n' +
     '每人：NT$ ' + qFmt(r.perTax) + '（含稅）' + (r.lecRev ? '，課程費' : '') + '\n' +
     (r.lecRev ? '講師費：NT$ ' + qFmt(r.lecRevTax) + '（含稅）\n' : '') +
-    '總價：NT$ ' + qFmt(r.revTax) + '（含 ' + qN(p.gTax) + '% 營業稅，未稅 NT$ ' + qFmt(r.rev) + '）\n' +
+    '總價：NT$ ' + qFmt(r.revTax) + '（含 ' + qN(p.gTax) + '% 營業稅）\n' +
     '含材料、教具與全程教學指導。\n' +
     (r.isOut ? '最低以 ' + qN(p.gOutMin) + ' 人計費。' : '實到少於 ' + r.guarantee + ' 人仍以 ' + r.guarantee + ' 人計費。');
   if (navigator.clipboard && navigator.clipboard.writeText){
