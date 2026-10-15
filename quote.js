@@ -857,6 +857,22 @@ function qgBindEvents(){
   });
 }
 
+/* 從「課程用料」配方找這門課＋規格的底座成本（畫布、框、托盤…，庫存盤點裡的單位成本×數量）。
+   配方的 key 是「課程名|規格」；課程管理的規格尾巴可能帶「（單次原價）」，所以去掉再比，比不到再用開頭比對 */
+function qgRecipeBase(r){
+  try {
+    if (typeof rcCost !== 'function' || !S.recipes || !r) return null;
+    var spec = String(r.spec || '').replace(/（?單次原價）?/, '').trim();
+    var keys = [r.name + '|' + String(r.spec || '').trim(), r.name + '|' + spec];
+    var key = keys.find(function(k){ return S.recipes[k] && S.recipes[k].items && S.recipes[k].items.length; });
+    if (!key) {
+      var pre = r.name + '|' + spec;
+      key = Object.keys(S.recipes).find(function(k){ return k.indexOf(pre) === 0 && S.recipes[k].items && S.recipes[k].items.length; });
+    }
+    return key ? { key:key, cost:Math.round(rcCost(key)) } : null;
+  } catch (e) { return null; }
+}
+
 /* 帶入課程：新客價寫進欄位；setHrs＝第一次選這門課時，順便把時長帶成課程時長 */
 function qgApplyCourse(setHrs){
   var r = qgCourseById(qgCase.course), ai = document.getElementById('qg-anchor');
@@ -869,7 +885,14 @@ function qgApplyCourse(setHrs){
   var a = qgAnchorOf(r, Math.max(0.5, qN(qgCase.hrs)));
   qgCase.anchor = a.v || '';
   if (ai) ai.value = qgCase.anchor;
-  qSetText('qg-courseHint', a.v ? '帶入的是「' + a.src + '」' + qFmt(a.v) + ' 元' : '這門課在課程管理沒有價格，請自己填新客價');
+  var base = setHrs ? qgRecipeBase(r) : null;   // 第一次選課才帶底座成本，之後你手改的不會被蓋掉
+  if (setHrs) {   // 沒有配方就清空，不要留著上一門課的數字
+    qgCase.matFixed = base ? base.cost : '';
+    var mfi = document.getElementById('qg-matFixed'); if (mfi) mfi.value = qgCase.matFixed;
+  }
+  qSetText('qg-courseHint', (a.v ? '帶入的是「' + a.src + '」' + qFmt(a.v) + ' 元' : '這門課在課程管理沒有價格，請自己填新客價') +
+    (base ? '　｜固定材料帶入 ' + qFmt(base.cost) + '（課程用料「' + base.key + '」的底座成本）；膠、水晶、金箔、顏料還沒在配方裡，請填下面「隨尺寸材料」' : (setHrs ? '　｜這門課在「課程用料」還沒有配方，固定材料請自己填' : '')));
+  if (setHrs) qgRecalc();
 }
 async function qgFillCourses(){
   var sel = document.getElementById('qg-course'); if (!sel) return;
