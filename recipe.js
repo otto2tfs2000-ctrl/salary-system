@@ -198,12 +198,12 @@ function rcDrawModal(c, r){
   h += '<h3 style="margin:0 0 2px">' + c.name + (c.spec ? '（' + c.spec + '）' : '') + '</h3>';
   h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
 
-  h += '<table><thead><tr><th>材料</th><th style="width:110px">二選一群組<br><span style="font-size:12px;color:var(--text3)">同名＝擇一</span></th><th style="width:70px">用量</th><th style="width:60px">隨尺寸<br><span style="font-size:12px;color:var(--text3)">尺寸變小用量跟著少</span></th><th style="width:64px">單位成本</th><th style="width:64px">小計</th><th style="width:44px"></th></tr></thead><tbody>';
+  h += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th style="min-width:130px">材料</th><th style="width:84px" title="同名＝核銷時擇一扣">二選一群組</th><th style="width:66px">用量</th><th style="width:56px" title="勾了：尺寸變小，用量跟著變少">隨尺寸</th><th style="width:60px">單位成本</th><th style="width:60px">小計</th><th style="width:40px"></th></tr></thead><tbody>';
   (r.items || []).forEach(function(x, i){
     var m = rcMat(x.id);
     var sub = m ? (+m.cost || 0) * (+x.qty || 0) : 0;
     h += '<tr><td>' + (m ? m.name + '<span class="muted" style="font-size:12.5px">（' + (m.unit || '') + '）</span>' : '<span style="color:var(--red)">材料已刪除</span>') + '</td>';
-    h += '<td><input style="width:100px;font-size:13.5px" placeholder="—" value="' + String(x.grp || '').replace(/"/g,'&quot;') +
+    h += '<td><input style="width:76px;font-size:13.5px" placeholder="—" value="' + String(x.grp || '').replace(/"/g,'&quot;') +
          '" onchange="rcSetGrp(' + i + ',this.value)"></td>';
     h += '<td><input class="in-num" type="number" min="0" step="any" style="width:62px" value="' + (x.qty || 0) +
          '" onwheel="this.blur()" onchange="rcSetQty(' + i + ',this.value)"></td>';
@@ -212,8 +212,9 @@ function rcDrawModal(c, r){
     h += '<td style="text-align:right">' + Math.round(sub).toLocaleString() + '</td>';
     h += '<td><button class="btn-del btn-sm" onclick="rcDel(' + i + ')">✕</button></td></tr>';
   });
-  h += '</tbody></table>';
+  h += '</tbody></table></div>';
   h += '<div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.7">'
+    + '<b>隨尺寸</b>：勾了代表尺寸變小時這項用量跟著變少（膠、水晶、金箔、顏料）；畫布、框、托盤不勾。<br>'
     + '同一個群組名稱的材料，核銷時只會扣其中一個，由老師當場選。'
     + '例如畫布填「畫布」，20cm方和4F各一列，核銷時二選一。留空的照舊每次都扣。</div>';
   if (!(r.items || []).length) h += '<div class="empty" style="padding:14px">還沒有材料，從下方加入</div>';
