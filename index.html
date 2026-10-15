@@ -430,6 +430,18 @@
       <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="一個多少錢（克、張、條…算每一個單位）" onwheel="this.blur()"></div>
       <div class="fg"><label class="chk top" style="margin-top:22px"><input type="checkbox" id="inv-new-nostock"><span>只算成本（不盤點、核銷時不扣庫存）</span></label></div>
     </div>
+    <details style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:10px 14px" id="inv-bulk-box">
+      <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">📋 一次貼上多筆（從表格或我整理好的清單複製）</summary>
+      <div class="muted" style="font-size:13px;margin:8px 0;line-height:1.7">一行一個品項，格式：<b>類別，名稱，單位，單位成本</b>（逗號或 Tab 分隔，從 Excel／試算表整欄複製貼上也可以）。<br>
+      類別要用下拉裡的名稱（畫布、顏料、膠體、水晶、金箔、熱熔膠、紙杯、紙盤、隱性耗材…）。名稱重複的會跳過、不會蓋掉。膠體、水晶、金箔、熱熔膠、紙杯、紙盤、隱性耗材預設「只算成本」。</div>
+      <textarea id="inv-bulk-text" rows="8" style="width:100%;font-size:14px" placeholder="膠體,環氧快乾膠,克,0.477">膠體,環氧快乾膠,克,0.477
+水晶,水晶碎石（平價）,克,0.2
+水晶,水晶碎石（中價）,克,0.45
+水晶,水晶碎石（貴價）,克,1.3
+金箔,銅箔,張,4.85
+隱性耗材,每人次耗材費（顏料等）,人次,15</textarea>
+      <div style="margin-top:8px"><button class="btn btn-gold" onclick="bulkImportInvItems(this)">匯入這些品項</button></div>
+    </details>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-gold" onclick="addInvItem(this)">+ 新增品項</button>
       <button class="btn btn-outline" onclick="batchImportItems()">📥 匯入預設品項清單</button>
@@ -502,7 +514,7 @@
 <script src="auth.js?v=20261012a"></script>
 <script src="app.js?v=20261013a"></script>
 <script src="consumables.js?v=20261015a"></script>
-<script src="inventory.js?v=20261015a"></script>
+<script src="inventory.js?v=20261015b"></script>
 <script src="booking.js?v=20261013b"></script>
 <script src="member.js?v=20261009b"></script>
 <script src="recipe.js?v=20261015a"></script>

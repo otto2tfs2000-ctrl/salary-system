@@ -860,6 +860,40 @@ function showInvImage(itemId) {
   document.body.appendChild(overlay);
 }
 
+/* 一次貼上多筆品項：每行「類別，名稱，單位，單位成本[，只算成本]」，逗號或 Tab 分隔。
+   名稱重複的跳過（不蓋掉）；沒成本的留空。膠體／水晶／金箔／熱熔膠／紙杯／紙盤／隱性耗材預設「只算成本」。 */
+var INV_COST_ONLY_CATS = ['膠體','水晶','金箔','熱熔膠','紙杯','紙盤','隱性耗材'];
+async function bulkImportInvItems(btn) {
+  var ta = document.getElementById('inv-bulk-text');
+  var lines = String(ta ? ta.value : '').split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+  if (!lines.length) { alert('請先貼上要匯入的品項'); return; }
+  var st = getInvStore();
+  var maxOrder = st.items.reduce(function(m, it){ return Math.max(m, getInvItemOrder(it)); }, -1);
+  var added = [], skipped = [], errors = [], toAdd = [], stamp = Date.now();
+  lines.forEach(function(line, i) {
+    var f = line.split(/\t|,|，/).map(function(x){ return x.trim(); });
+    var cat = f[0], name = f[1], unit = f[2] || '個', costRaw = f[3];
+    if (!cat || !name) { errors.push('第 ' + (i + 1) + ' 行：缺少類別或名稱（' + line + '）'); return; }
+    if (INV_CATS.indexOf(cat) === -1) { errors.push('第 ' + (i + 1) + ' 行：「' + cat + '」不是有效的類別（' + name + '）'); return; }
+    var cost = costRaw === undefined || costRaw === '' ? 0 : parseFloat(costRaw);
+    if (isNaN(cost)) { errors.push('第 ' + (i + 1) + ' 行：單位成本不是數字（' + name + '：' + costRaw + '）'); return; }
+    if (st.items.some(function(it){ return it.name === name; })) { skipped.push(name); return; }
+    var noStock = f[4] !== undefined && f[4] !== '' ? /^(1|y|yes|是|true|v|✓)$/i.test(f[4]) : INV_COST_ONLY_CATS.indexOf(cat) >= 0;
+    maxOrder += 1;
+    toAdd.push({ id: stamp + i, cat: cat, name: name, unit: unit, safeStock: 0, cost: cost, price: null, order: maxOrder, noStock: noStock });
+    added.push(name);
+  });
+  if (errors.length) { alert('有 ' + errors.length + ' 行沒辦法匯入，整批都還沒存，請改完再按一次：\n\n' + errors.join('\n')); return; }
+  toAdd.forEach(function(it){ st.items.push(it); });
+  if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; }
+  var ok = await saveNow();
+  if (btn) { btn.disabled = false; btn.textContent = '匯入這些品項'; }
+  renderInvItemList();
+  renderInventory();
+  alert((ok ? '✅ 已匯入並存進雲端：' : '⚠️ 已匯入但雲端同步失敗（只留在這台電腦），請檢查網路後按「立即儲存並確認」：') + added.length + ' 項' +
+    (skipped.length ? '\n已經有、略過：' + skipped.join('、') : ''));
+}
+
 async function addInvItem(btn) {
   var cat = document.getElementById('inv-new-cat').value;
   var name = document.getElementById('inv-new-name').value.trim();
