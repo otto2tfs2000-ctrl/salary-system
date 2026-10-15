@@ -57,13 +57,29 @@ function rcMaterials(){
 function rcMat(id){
   return rcMaterials().find(function(m){ return String(m.id) === String(id) }) || null;
 }
+/* 這些分類的材料，尺寸一變用量就跟著變（膠、水晶、金箔、顏料…）；畫布、框、托盤、隱性耗材不隨尺寸變。
+   加進配方時預設勾「隨尺寸」，可以自己改 */
+var RC_SCALE_CATS = ['顏料','膠體','水晶','金箔','熱熔膠','樹脂','溶劑'];
+
+/* 一份配方拆成：固定材料（不隨尺寸）、隨尺寸材料，再各自加損耗。成本不含損耗的小計也一併回傳 */
+function rcParts(key){
+  var r = rcData()[key], out = { fixed:0, scal:0, waste:0, raw:0 };
+  if (!r || !r.items) return out;
+  out.waste = Math.max(0, +r.waste || 0);
+  r.items.forEach(function(x){
+    var m = rcMat(x.id); if (!m) return;
+    var sub = (+m.cost || 0) * (+x.qty || 0);
+    out.raw += sub;
+    if (x.scale) out.scal += sub; else out.fixed += sub;
+  });
+  var k = 1 + out.waste / 100;
+  out.fixedW = out.fixed * k; out.scalW = out.scal * k;
+  return out;
+}
+
 function rcCost(key){
-  var r = rcData()[key];
-  if (!r || !r.items) return 0;
-  return r.items.reduce(function(s, x){
-    var m = rcMat(x.id);
-    return s + (m ? (+m.cost || 0) * (+x.qty || 0) : 0);
-  }, 0);
+  var p = rcParts(key);
+  return p.raw * (1 + p.waste / 100);   // 含損耗
 }
 
 async function rcLoadCourses(){
@@ -182,7 +198,7 @@ function rcDrawModal(c, r){
   h += '<h3 style="margin:0 0 2px">' + c.name + (c.spec ? '（' + c.spec + '）' : '') + '</h3>';
   h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
 
-  h += '<table><thead><tr><th>材料</th><th style="width:110px">二選一群組<br><span style="font-size:12px;color:var(--text3)">同名＝擇一</span></th><th style="width:70px">用量</th><th style="width:64px">單位成本</th><th style="width:64px">小計</th><th style="width:44px"></th></tr></thead><tbody>';
+  h += '<table><thead><tr><th>材料</th><th style="width:110px">二選一群組<br><span style="font-size:12px;color:var(--text3)">同名＝擇一</span></th><th style="width:70px">用量</th><th style="width:60px">隨尺寸<br><span style="font-size:12px;color:var(--text3)">尺寸變小用量跟著少</span></th><th style="width:64px">單位成本</th><th style="width:64px">小計</th><th style="width:44px"></th></tr></thead><tbody>';
   (r.items || []).forEach(function(x, i){
     var m = rcMat(x.id);
     var sub = m ? (+m.cost || 0) * (+x.qty || 0) : 0;
@@ -191,6 +207,7 @@ function rcDrawModal(c, r){
          '" onchange="rcSetGrp(' + i + ',this.value)"></td>';
     h += '<td><input class="in-num" type="number" min="0" step="any" style="width:62px" value="' + (x.qty || 0) +
          '" onwheel="this.blur()" onchange="rcSetQty(' + i + ',this.value)"></td>';
+    h += '<td style="text-align:center"><input type="checkbox"' + (x.scale ? ' checked' : '') + ' onchange="rcSetScale(' + i + ',this.checked)"></td>';
     h += '<td style="text-align:right">' + (m ? (+m.cost || 0).toLocaleString() : '—') + '</td>';
     h += '<td style="text-align:right">' + Math.round(sub).toLocaleString() + '</td>';
     h += '<td><button class="btn-del btn-sm" onclick="rcDel(' + i + ')">✕</button></td></tr>';
@@ -220,8 +237,15 @@ function rcDrawModal(c, r){
   });
   h += '</select></div>';
 
+  h += '<div class="row" style="margin-top:12px;gap:10px;align-items:center;flex-wrap:wrap">';
+  h += '<label style="font-size:14px">損耗 %</label><input id="rc-waste" class="in-num" type="number" min="0" step="1" style="width:70px" placeholder="例：7" value="' + (r.waste || '') + '" onwheel="this.blur()">';
+  h += '<span class="muted" style="font-size:13px">潑灑、試色、失敗重做。整份配方統一加，建議 5–10</span></div>';
+
+  var pp = rcParts(rcKey(c));
   h += '<div class="card" style="margin-top:16px">';
   h += '<div class="row" style="gap:18px;flex-wrap:wrap">';
+  h += '<div><div class="muted" style="font-size:13.5px">固定材料</div><div style="font-size:17px">$' + Math.round(pp.fixedW).toLocaleString() + '</div></div>';
+  h += '<div><div class="muted" style="font-size:13.5px">隨尺寸材料</div><div style="font-size:17px">$' + Math.round(pp.scalW).toLocaleString() + '</div></div>';
   h += '<div><div class="muted" style="font-size:13.5px">材料成本</div><div style="font-size:19px">$' + Math.round(cost).toLocaleString() + '</div></div>';
   h += '<div><div class="muted" style="font-size:13.5px">毛利</div><div style="font-size:19px;color:var(--gold2)">$' + gross.toLocaleString() + '</div></div>';
   h += '<div><div class="muted" style="font-size:13.5px">毛利率</div><div style="font-size:19px;color:' + (rate < 50 ? 'var(--red)' : 'var(--gold2)') + '">' + (c.price ? rate + '%' : '—') + '</div></div>';
@@ -240,7 +264,8 @@ function rcDrawModal(c, r){
     if (!this.value) return;
     var r2 = rcData()[rcOpen];
     if (r2.items.some(function(x){ return String(x.id) === String(this.value) }, this)) { alert('已經加過這項材料了'); this.value = ''; return; }
-    r2.items.push({ id: this.value, qty: 1 });
+    var mm = rcMat(this.value);
+    r2.items.push({ id: this.value, qty: 1, scale: !!(mm && RC_SCALE_CATS.indexOf(mm.cat) >= 0) });
     save(); rcDrawModal(c, r2);
   };
   var cp = document.getElementById('rc-copy');
@@ -255,6 +280,8 @@ function rcDrawModal(c, r){
   };
   var nt = document.getElementById('rc-note');
   nt.onchange = function(){ rcData()[rcOpen].note = this.value; save(); };
+  var ws = document.getElementById('rc-waste');
+  if (ws) ws.onchange = function(){ rcData()[rcOpen].waste = Math.max(0, parseFloat(this.value) || 0); save(); rcDrawModal(c, rcData()[rcOpen]); };
 }
 
 /* 群組名稱。同一課程裡填一樣名稱的材料＝核銷時擇一扣，
@@ -262,6 +289,14 @@ function rcDrawModal(c, r){
 function rcSetGrp(i, v){
   var r = rcData()[rcOpen]; if (!r) return;
   r.items[i].grp = String(v || '').trim();
+  save();
+  var c = rcCourses.find(function(x){ return rcKey(x) === rcOpen });
+  if (c) rcDrawModal(c, r);
+}
+
+function rcSetScale(i, on){
+  var r = rcData()[rcOpen]; if (!r) return;
+  r.items[i].scale = !!on;
   save();
   var c = rcCourses.find(function(x){ return rcKey(x) === rcOpen });
   if (c) rcDrawModal(c, r);

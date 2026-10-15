@@ -70,6 +70,11 @@ function getInvStore() {
 function getInvItems() {
   return getInvStore().items;
 }
+/* 要盤點、要警示、要訂貨的品項：排除「只算成本」的（膠、水晶、金箔、隱性耗材…這類只拿來算課程成本，
+   不盤點也不扣庫存）。課程用料選單、成本計算仍然用 getInvItems()，看得到全部 */
+function getStockItems() {
+  return getInvStore().items.filter(function(m){ return !m.noStock; });
+}
 
 // 不依賴目前選的店，直接指定店別取資料（給跨店操作用）
 function getInvStoreByName(store) {
@@ -324,7 +329,7 @@ function consumeInvForBooking(bookingId, dateStr, items, picks, skipCats) {
   var skipSet = {};
   (skipCats || []).forEach(function(c){ if (c) skipSet[c] = true });
   var matById = {};
-  if (Object.keys(skipSet).length) getInvItems().forEach(function(m){ matById[String(m.id)] = m });
+  getInvItems().forEach(function(m){ matById[String(m.id)] = m });
   var pool = {};                           // itemId -> 合併後的用量
   items.forEach(function(it) {
     var name = String(it.name || '').trim();
@@ -349,6 +354,7 @@ function consumeInvForBooking(bookingId, dateStr, items, picks, skipCats) {
       var g = String(x.grp || '').trim();
       if (g && chosen[g] !== String(x.id)) return;   // 這組沒選到它，不扣
       var mat = matById[String(x.id)];
+      if (mat && mat.noStock) return;                 // 「只算成本」的材料（膠、水晶、金箔、隱性耗材…）不扣庫存
       if (mat && skipSet[mat.cat]) return;            // 加購已經扣過同分類的東西，這裡不重複扣
       var q = (+x.qty || 0) * n;
       if (q > 0) pool[x.id] = (pool[x.id] || 0) + q;
@@ -884,8 +890,10 @@ async function addInvItem(btn) {
     var maxOrder = st.items.reduce(function(m, it){ return Math.max(m, getInvItemOrder(it)); }, -1);
     newOrder = maxOrder + 1;
   }
+  var nsEl = document.getElementById('inv-new-nostock');
+  var noStock = (nsEl && nsEl.checked) || cat === '隱性耗材';
   st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe,
-                  cost: cost, price: null, order: newOrder });
+                  cost: cost, price: null, order: newOrder, noStock: noStock });
   /* 老闆反應過填完按「新增品項」，畫面看起來沒存到——原本只呼叫 save()，
      那是背景防抖，800ms 後才真的寫 Firebase，失敗的話只有角落一行小字提示，
      很容易錯過，看起來就像「明明填了卻不見」。這裡改成新增當下就立即存、
@@ -896,6 +904,7 @@ async function addInvItem(btn) {
   document.getElementById('inv-new-name').value = '';
   document.getElementById('inv-new-safe').value = '';
   if (costEl) costEl.value = '';
+  if (nsEl) nsEl.checked = false;
   renderInvItemList();
   renderInventory();
   if (!ok) {
@@ -1164,7 +1173,7 @@ function renderInvItemList() {
     html += '</div>';
 
     if (isOpen) {
-      html += '<table style="margin-top:4px"><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody>';
+      html += '<table style="margin-top:4px"><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th title="勾了就只拿來算課程成本：不盤點、核銷時不扣庫存">只算成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody>';
       catItems.forEach(function(it) {
         html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
           'ondragstart="invHandleDragStart(event,'+it.id+')" '+
@@ -1195,6 +1204,7 @@ function renderInvItemList() {
         html += '<td>'+imgHtml+'</td>';
         html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)" title="這個品項一個單位多少錢，用來算課程成本與毛利"></td>';
+        html += '<td style="text-align:center"><input type="checkbox"'+(it.noStock?' checked':'')+' onchange="updateInvItemField('+it.id+',\'noStock\',this.checked)" title="勾了就只拿來算課程成本：不盤點、核銷時不扣庫存"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
         html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
@@ -1321,7 +1331,7 @@ function computeOrderQty(itemId, weekKey, safeStock) {
 
 // ── 本週盤點表 ──────────────────────────────────────────
 function renderInvWeekTable() {
-  var items = getInvItems();
+  var items = getStockItems();
   var weekKey = invCurWeek;
   document.getElementById('inv-week-label').textContent = invWeekLabel(weekKey);
   var el = document.getElementById('inv-week-table');
@@ -1495,7 +1505,7 @@ function autoSaveInvItem(itemId) {
 }
 
 function saveInvWeek() {
-  var items = getInvItems();
+  var items = getStockItems();
   var weekKey = invCurWeek;
   var st = getInvStore();
   if (!st.weeks[weekKey]) st.weeks[weekKey] = {};
@@ -1522,7 +1532,7 @@ function saveInvWeek() {
 var invCountOCRRows = [];
 
 function printInvBlankSheet() {
-  var items = sortInvItems(getInvItems());
+  var items = sortInvItems(getStockItems());
   if (items.length === 0) { alert('尚無品項，請先新增品項。'); return; }
   var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
   var weekKey = invCurWeek;
@@ -1597,7 +1607,7 @@ function printInvBlankSheet() {
 }
 
 function parseInvCountOCRText(text) {
-  var items = sortInvItems(getInvItems());
+  var items = sortInvItems(getStockItems());
   var rows = [];
   var lines = (text || '').split(/\n+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
   lines.forEach(function(line) {
@@ -1619,7 +1629,7 @@ function handleInvCountPhoto(event) {
   if (!file || !area) return;
   area.innerHTML = '<div class="info-box">🤖 Claude AI 讀取手寫盤點表中（約 10~20 秒）。數字會先進預覽表，確認後才回填。</div>';
 
-  var items = sortInvItems(getInvItems());
+  var items = sortInvItems(getStockItems());
 
   fileToOCRBase64(file, 1568).then(function(b64) {
     return claudeOCR([b64], 'countsheet');
@@ -1709,7 +1719,7 @@ function toggleInvRestockLog() {
 function renderInvRestockItemSelect() {
   var sel = document.getElementById('inv-restock-item');
   if (!sel) return;
-  var items = sortInvItems(getInvItems());
+  var items = sortInvItems(getStockItems());
   var keepVal = sel.value;
   if (items.length === 0) {
     sel.innerHTML = '<option value="">請先到「管理品項清單」新增品項</option>';
@@ -1900,7 +1910,7 @@ function renderBatchRestockPreview() {
     wrap.innerHTML = '';
     return;
   }
-  var items = sortInvItems(getInvItems());
+  var items = sortInvItems(getStockItems());
   var itemOptions = '<option value="">— 未對應，請手動選 —</option>' + items.map(function(it){
     return '<option value="'+it.id+'">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.name+'（'+it.unit+'）</option>';
   }).join('');
@@ -2048,7 +2058,7 @@ function getInvCautionLine(safeStock) {
 // 這是共用邏輯：renderInvSummaryBar（大字摘要）跟 renderInvAlerts（詳細清單）都呼叫這個，
 // 確保兩處顯示的數字永遠一致，不會出現「摘要寫3項要訂貨，下面清單卻列出4項」這種對不上的情況。
 function classifyInvItems() {
-  var items = getInvItems();
+  var items = getStockItems();
   var weekKey = invCurWeek;
   var lowStock = [];
   var caution = [];
@@ -2082,7 +2092,7 @@ function renderInvSummaryBar() {
   var el = document.getElementById('inv-summary-bar');
   if (!el) return;
   var c = classifyInvItems();
-  var items = getInvItems();
+  var items = getStockItems();
 
   function block(label, count, colorVar) {
     var color = count > 0 ? colorVar : 'var(--text3)';
@@ -2103,7 +2113,7 @@ function renderInvSummaryBar() {
 
 function renderInvAlerts() {
   var c = classifyInvItems();
-  var items = getInvItems();
+  var items = getStockItems();
   var lowStock = c.lowStock, caution = c.caution, runningOut = c.runningOut;
 
   var el = document.getElementById('inv-alert-area');
@@ -2288,7 +2298,7 @@ async function renderInvShortageForecast() {
 }
 
 function renderInvStats() {
-  var items = getInvItems();
+  var items = getStockItems();
   var weekKey = invCurWeek;
   var st = getInvStore();
   var allWeeks = Object.keys(st.weeks).sort();
@@ -2378,7 +2388,7 @@ function renderInventory() {
 }
 
 function dlInventoryExcel() {
-  var items = getInvItems();
+  var items = getStockItems();
   var st = getInvStore();
   var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
   var weekKey = invCurWeek;

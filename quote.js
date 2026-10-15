@@ -869,7 +869,9 @@ function qgRecipeBase(r){
       var pre = r.name + '|' + spec;
       key = Object.keys(S.recipes).find(function(k){ return k.indexOf(pre) === 0 && S.recipes[k].items && S.recipes[k].items.length; });
     }
-    return key ? { key:key, cost:Math.round(rcCost(key)) } : null;
+    if (!key) return null;
+    var pp = typeof rcParts === 'function' ? rcParts(key) : null;
+    return pp ? { key:key, fixed:Math.round(pp.fixedW), scal:Math.round(pp.scalW), cost:Math.round(rcCost(key)) } : { key:key, fixed:Math.round(rcCost(key)), scal:0, cost:Math.round(rcCost(key)) };
   } catch (e) { return null; }
 }
 
@@ -886,12 +888,14 @@ function qgApplyCourse(setHrs){
   qgCase.anchor = a.v || '';
   if (ai) ai.value = qgCase.anchor;
   var base = setHrs ? qgRecipeBase(r) : null;   // 第一次選課才帶底座成本，之後你手改的不會被蓋掉
-  if (setHrs) {   // 沒有配方就清空，不要留著上一門課的數字
-    qgCase.matFixed = base ? base.cost : '';
-    var mfi = document.getElementById('qg-matFixed'); if (mfi) mfi.value = qgCase.matFixed;
+  if (setHrs) {   // 沒有配方就清空，不要留著上一門課的數字；有配方就把「固定」和「隨尺寸」兩塊分別帶入，尺寸用量歸 100
+    qgCase.matFixed = base ? base.fixed : '';
+    qgCase.matVar = base && base.scal ? base.scal : '';
+    qgCase.sizePct = 100;
+    ['qg-matFixed','qg-matVar','qg-sizePct'].forEach(function(id){ var e = document.getElementById(id); if (e) e.value = qgCase[id.slice(3)]; });
   }
   qSetText('qg-courseHint', (a.v ? '帶入的是「' + a.src + '」' + qFmt(a.v) + ' 元' : '這門課在課程管理沒有價格，請自己填新客價') +
-    (base ? '　｜固定材料帶入 ' + qFmt(base.cost) + '（課程用料「' + base.key + '」的底座成本）；膠、水晶、金箔、顏料還沒在配方裡，請填下面「隨尺寸材料」' : (setHrs ? '　｜這門課在「課程用料」還沒有配方，固定材料請自己填' : '')));
+    (base ? '　｜材料從課程用料「' + base.key + '」帶入：固定 ' + qFmt(base.fixed) + '、隨尺寸 ' + qFmt(base.scal) + (base.scal ? '' : '（這份配方還沒有膠、水晶、金箔、顏料，請到課程用料補，或直接填下面「隨尺寸材料」）') : (setHrs ? '　｜這門課在「課程用料」還沒有配方，固定材料請自己填' : '')));
   if (setHrs) qgRecalc();
 }
 async function qgFillCourses(){

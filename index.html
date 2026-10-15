@@ -228,6 +228,13 @@
       <div class="fg"><label>類別</label>
         <select id="cm-cat">
           <option value="顏料">🎨 顏料</option>
+          <option value="膠體">🧴 膠體（環氧、AB膠…）</option>
+          <option value="水晶">🔮 水晶（碎石、水晶砂…）</option>
+          <option value="金箔">✨ 金箔／銅箔</option>
+          <option value="熱熔膠">🔥 熱熔膠</option>
+          <option value="紙杯">🥤 紙杯</option>
+          <option value="紙盤">🍽 紙盤</option>
+          <option value="隱性耗材">🧾 隱性耗材（紙巾、手套、圍裙…）</option>
           <option value="畫布">🖼 畫布/畫板</option>
           <option value="紙張">📄 紙張/素描本</option>
           <option value="筆刷">🖌 筆刷/工具</option>
@@ -420,7 +427,8 @@
       <div class="fg"><label>品項名稱</label><input id="inv-new-name" placeholder="例：白色壓克力顏料"></div>
       <div class="fg"><label>單位</label><input id="inv-new-unit" placeholder="例：瓶、包、捲、張" value="個"></div>
       <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於此數警示" onwheel="this.blur()"></div>
-      <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="一個多少錢" onwheel="this.blur()"></div>
+      <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="一個多少錢（克、張、條…算每一個單位）" onwheel="this.blur()"></div>
+      <div class="fg"><label class="chk top" style="margin-top:22px"><input type="checkbox" id="inv-new-nostock"><span>只算成本（不盤點、核銷時不扣庫存）</span></label></div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-gold" onclick="addInvItem(this)">+ 新增品項</button>
@@ -493,13 +501,13 @@
 
 <script src="auth.js?v=20261012a"></script>
 <script src="app.js?v=20261013a"></script>
-<script src="consumables.js?v=20260922a"></script>
-<script src="inventory.js?v=20260927a"></script>
+<script src="consumables.js?v=20261015a"></script>
+<script src="inventory.js?v=20261015a"></script>
 <script src="booking.js?v=20261013b"></script>
 <script src="member.js?v=20261009b"></script>
-<script src="recipe.js?v=20261013b"></script>
+<script src="recipe.js?v=20261015a"></script>
 <script src="catalog.js?v=20261013n"></script>
-<script src="quote.js?v=20261015b"></script>
+<script src="quote.js?v=20261015c"></script>
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20260814a"></script>
 <script src="staff.js?v=20261014a"></script>
