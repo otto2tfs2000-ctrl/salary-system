@@ -209,7 +209,7 @@ function rcAddOpts(mats, q){
 function rcDrawModal(c, r){
   var mats = rcMaterials(), cost = rcCost(rcKey(c));
   var gross = c.price - cost, rate = c.price ? Math.round(gross / c.price * 100) : 0;
-  var h = '';
+  var h = '<style>#rc-modal-body table td,#rc-modal-body table th{font-size:15px}#rc-modal-body input,#rc-modal-body select,#rc-modal-body textarea{font-size:15px !important}#rc-modal-body label{font-size:15px}</style>';
   h += '<h3 style="margin:0 0 2px">' + c.name + (c.spec ? '（' + c.spec + '）' : '') + '</h3>';
   h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
 
@@ -248,19 +248,24 @@ function rcDrawModal(c, r){
   h += '</select></div>';
 
   h += '<div class="row" style="margin-top:12px;gap:10px;align-items:center;flex-wrap:wrap">';
-  h += '<label style="font-size:14px">損耗 %</label><input id="rc-waste" class="in-num" type="number" min="0" step="1" style="width:70px" placeholder="例：7" value="' + (r.waste || '') + '" onwheel="this.blur()">';
-  h += '<span class="muted" style="font-size:13px">潑灑、試色、失敗重做。整份配方統一加，建議 5–10</span></div>';
+  h += '<label style="font-size:15px">損耗 %</label><input id="rc-waste" class="in-num" type="number" min="0" step="1" style="width:70px" placeholder="例：7" value="' + (r.waste || '') + '" onwheel="this.blur()">';
+  h += '<span class="muted" style="font-size:14px">潑灑、試色、失敗重做。整份配方統一加，建議 5–10</span></div>';
 
   var pp = rcParts(rcKey(c));
+  var stat = function(label, val, color, big){
+    return '<div style="text-align:center;padding:10px 4px;background:var(--bg3,rgba(0,0,0,.03));border-radius:10px">' +
+      '<div class="muted" style="font-size:14.5px;margin-bottom:4px">' + label + '</div>' +
+      '<div style="font-size:' + (big ? 24 : 20) + 'px;font-weight:600' + (color ? ';color:' + color : '') + '">' + val + '</div></div>';
+  };
   h += '<div class="card" style="margin-top:16px">';
-  h += '<div class="row" style="gap:18px;flex-wrap:wrap">';
-  h += '<div><div class="muted" style="font-size:13.5px">固定材料</div><div style="font-size:17px">$' + Math.round(pp.fixedW).toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:13.5px">隨尺寸材料</div><div style="font-size:17px">$' + Math.round(pp.scalW).toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:13.5px">材料成本</div><div style="font-size:19px">$' + Math.round(cost).toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:13.5px">毛利</div><div style="font-size:19px;color:var(--gold2)">$' + gross.toLocaleString() + '</div></div>';
-  h += '<div><div class="muted" style="font-size:13.5px">毛利率</div><div style="font-size:19px;color:' + (rate < 50 ? 'var(--red)' : 'var(--gold2)') + '">' + (c.price ? rate + '%' : '—') + '</div></div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">';
+  h += stat('固定材料', '$' + Math.round(pp.fixedW).toLocaleString());
+  h += stat('隨尺寸材料', '$' + Math.round(pp.scalW).toLocaleString());
+  h += stat('材料成本', '$' + Math.round(cost).toLocaleString(), '', true);
+  h += stat('毛利', '$' + Math.round(gross).toLocaleString(), 'var(--gold2)');
+  h += stat('毛利率', (c.price ? rate + '%' : '—'), c.price && rate < 50 ? 'var(--red)' : 'var(--gold2)');
   h += '</div>';
-  h += '<div class="muted" style="font-size:12.5px;margin-top:8px">只算材料，不含人事與場地。</div>';
+  h += '<div class="muted" style="font-size:14px;margin-top:10px">只算材料，不含人事與場地。</div>';
   h += '</div>';
 
   h += '<div class="fg" style="margin-top:14px"><label>備註</label>' +
