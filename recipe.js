@@ -191,6 +191,21 @@ function rcCloseModal(){
   rcOpen = null; save(); renderRecipe();
 }
 
+/* 「加入材料」下拉的選項：有打字就只留名稱或分類對得上的 */
+function rcAddOpts(mats, q){
+  q = String(q || '').trim().toLowerCase();
+  var h = '<option value="">＋ 加入材料' + (q ? '（符合的在下面）' : '') + '</option>', lastCat = null, n = 0;
+  mats.forEach(function(m){
+    if (q && (m.name + (m.cat || '')).toLowerCase().indexOf(q) < 0) return;
+    if (m.cat !== lastCat) { if (lastCat !== null) h += '</optgroup>'; h += '<optgroup label="' + (m.cat || '未分類') + '">'; lastCat = m.cat; }
+    h += '<option value="' + m.id + '">' + m.name + (m.cost ? '　$' + m.cost : '　未填成本') + '</option>';
+    n++;
+  });
+  if (lastCat !== null) h += '</optgroup>';
+  if (q && !n) h = '<option value="">找不到「' + q + '」，請先到庫存盤點新增這個材料</option>';
+  return h;
+}
+
 function rcDrawModal(c, r){
   var mats = rcMaterials(), cost = rcCost(rcKey(c));
   var gross = c.price - cost, rate = c.price ? Math.round(gross / c.price * 100) : 0;
@@ -219,18 +234,12 @@ function rcDrawModal(c, r){
     + '例如畫布填「畫布」，20cm方和4F各一列，核銷時二選一。留空的照舊每次都扣。</div>';
   if (!(r.items || []).length) h += '<div class="empty" style="padding:14px">還沒有材料，從下方加入</div>';
 
-  h += '<div class="row" style="margin-top:12px;gap:8px">';
-  h += '<select id="rc-add" style="flex:1"><option value="">＋ 加入材料</option>';
-  var lastCat = '';
-  mats.forEach(function(m){
-    if (m.cat !== lastCat) { if (lastCat) h += '</optgroup>'; h += '<optgroup label="' + (m.cat || '未分類') + '">'; lastCat = m.cat; }
-    h += '<option value="' + m.id + '">' + m.name + (m.cost ? '　$' + m.cost : '　未填成本') + '</option>';
-  });
-  if (lastCat) h += '</optgroup>';
-  h += '</select></div>';
+  h += '<div style="margin-top:12px">';
+  h += '<input id="rc-addq" placeholder="🔍 搜尋要加入的材料（例：環氧、水晶、5F、銅箔）" style="width:100%;font-size:16px;padding:9px 12px;box-sizing:border-box">';
+  h += '<select id="rc-add" style="width:100%;margin-top:6px;font-size:16px;padding:9px 10px">' + rcAddOpts(mats, '') + '</select></div>';
 
   h += '<div class="row" style="margin-top:14px;gap:8px;align-items:center">';
-  h += '<select id="rc-copy" style="flex:1"><option value="">從其他課程複製材料…</option>';
+  h += '<select id="rc-copy" style="flex:1;font-size:16px;padding:9px 10px"><option value="">從其他課程複製材料…</option>';
   (rcCourses || []).forEach(function(o){
     var k = rcKey(o), rr = rcData()[k];
     if (k === rcKey(c) || !rr || !rr.items || !rr.items.length) return;
@@ -261,6 +270,11 @@ function rcDrawModal(c, r){
   document.getElementById('rc-modal-body').innerHTML = h;
 
   var add = document.getElementById('rc-add');
+  var addq = document.getElementById('rc-addq');
+  if (addq) addq.oninput = function(){
+    add.innerHTML = rcAddOpts(mats, this.value);
+    add.size = this.value.trim() ? Math.min(9, add.options.length) : 1;   // 有打字就把符合的整排攤開，不用再點開小小的下拉
+  };
   add.onchange = function(){
     if (!this.value) return;
     var r2 = rcData()[rcOpen];
