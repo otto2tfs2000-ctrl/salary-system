@@ -429,6 +429,10 @@ var QG_PARAM_LABELS = [
   ['gHead','人次獎金／每位學生（老師、行政）'], ['gMaster','主教每堂'], ['gAssist','助教每堂'], ['gJunior','小老師每堂'],
   ['gHourCost','每小時房租薪水成本（占用時數×這個，算進報價）'], ['gHq','總部管理費 %'], ['gTax','營業稅 %'], ['gOutMin','外派最低計費人數'], ['gInTol','內場容許差額（人）']
 ];
+/* 目標淨利率固定（扣完材料、獎金、總部 10%、房租薪水分攤之後留下的比例），內場／外派分開。
+   2026-10-15 大熊定：內場 33%、外派 35%（council 建議內場 30–35%、外派 35%）。不放在畫面上，避免被隨手改；要調只改這兩行 */
+var QG_GM_IN = 33, QG_GM_OUT = 35;
+function qgGmOf(venue){ return venue === 'out' ? QG_GM_OUT : QG_GM_IN; }
 var QG_LEVELS = { master:'主教', assist:'助教', junior:'小老師' };
 var QG_ROLES  = { teacher:'老師', admin:'行政', sales:'業務' };
 var QG_MODES  = { head:'人頭', session:'按堂', none:'不發' };
@@ -458,6 +462,30 @@ function qgDefaultStaff(venue, lecOn){
   });
 }
 
+/* 帶課老師幾位：看人員列裡角色是「老師」的有幾列。改這個數字＝增減老師列（第一位主教，其餘助教） */
+function qgTeacherCount(){
+  return qgCase.staff.filter(function(r){ return r.role === 'teacher'; }).length;
+}
+function qgSetTeacherCount(k){
+  k = Math.max(0, Math.min(20, Math.round(k)));
+  var cur = qgTeacherCount();
+  while (cur < k) {
+    var first = !qgCase.staff.some(function(r){ return r.role === 'teacher'; });
+    var row = { name:'', role:'teacher', level:first ? 'master' : 'assist', mode:qgDefaultMode('teacher', qgCase.lecOn), heads:0, extra:0 };
+    var at = 0; qgCase.staff.forEach(function(r, i){ if (r.role === 'teacher') at = i + 1; });   // 插在最後一位老師後面，行政、業務維持在下面
+    qgCase.staff.splice(at, 0, row); cur++;
+  }
+  while (cur > k) {
+    for (var i = qgCase.staff.length - 1; i >= 0; i--) { if (qgCase.staff[i].role === 'teacher') { qgCase.staff.splice(i, 1); break; } }
+    cur--;
+  }
+  qgSpreadHeads(qgCase);
+}
+function qgSyncTeacherCount(){
+  var e = document.getElementById('qg-tcount');
+  if (e && document.activeElement !== e) e.value = qgTeacherCount();
+}
+
 /* 把報名人數平均分給計費方式為「人頭」的人，餘數從第一位開始多分一位 */
 function qgSpreadHeads(c){
   var heads = c.staff.filter(function(r){ return r.mode === 'head'; });
@@ -470,7 +498,7 @@ function qgSpreadHeads(c){
 function qgNewCase(venue){
   venue = venue || 'in';
   var lecOn = venue === 'out';   // 外派預設付講師費、也另外跟客人收；內場預設只有人次獎金。兩個都可以自己改
-  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), matFixed:'', matVar:'', sizePct:100, buffer:1, gm:30, price:1200, auto:true, course:'', anchor:'',
+  var c = { venue:venue, lecOn:lecOn, lecCharge:lecOn, n:(venue==='out'?20:25), hrs:(venue==='out'?2:2.5), matFixed:'', matVar:'', sizePct:100, buffer:1, gm:qgGmOf(venue), price:1200, auto:true, course:'', anchor:'',
             trans:0, haul:0, misc:0, lost:0, staff:qgDefaultStaff(venue, lecOn) };
   qgSpreadHeads(c);
   return c;
@@ -546,7 +574,7 @@ function qgOverhead(p){
 /* 純計算：不碰畫面，方便驗算 */
 function qgCompute(c, p){
   var n = Math.max(1, qN(c.n)), hrs = Math.max(0.5, qN(c.hrs));
-  var hq = qN(p.gHq) / 100, tax = qN(p.gTax) / 100, gm = qN(c.gm) / 100;
+  var hq = qN(p.gHq) / 100, tax = qN(p.gTax) / 100, gm = qgGmOf(c.venue) / 100;   // 淨利率固定（內場／外派各一個），不吃畫面上的值
   var isOut = c.venue === 'out';
   /* 材料＝固定材料（畫布五號以下同價，不隨尺寸變）＋隨尺寸材料（膠、水晶、金箔、顏料…）× 用量比例。
      基準尺寸＝用量比例 100% 那一款；換尺寸只改用量比例，價差照成本轉嫁 */
@@ -560,6 +588,9 @@ function qgCompute(c, p){
     if (r.mode === 'session') lecFees += f;            // 按堂講師費（含加發）
     else { headFees += f - ex; lecFees += ex; }       // 人次獎金；加發算講師費那一類
   });
+  /* 人次獎金＝每教一位學生 50，總額跟「老師有幾位、每位帶幾個」無關；有人按人頭計費就一定照報名人數算，
+     不然人頭欄位漏填（或被改成 0）價格會偏低。每位分到幾個只影響各自的費用顯示 */
+  if (c.staff.some(function(r){ return r.mode === 'head'; })) headFees = Math.round(n) * qN(p.gHead);
   var fees = lecFees + headFees;
   var trans = isOut ? qN(c.trans) : 0, haul = isOut ? qN(c.haul) : 0;
   var misc = qN(c.misc), lost = qN(c.lost);
@@ -640,26 +671,37 @@ function qgSkeleton(){
          '<span>這場要付講師費給老師（非上班時間、晚上、週日一定要；上班時間內的外派自己決定。沒勾＝只有每位學生 50 元的人次獎金）</span></label>';
   h +=   '<label class="chk top" id="qg-lecChargeWrap" style="margin-bottom:14px;'+(c.lecOn?'':'display:none')+'"><input type="checkbox" id="qg-lecCharge"'+(c.lecCharge?' checked':'')+'>' +
          '<span>講師費另外跟客人收（老闆的局收不到就不要勾：講師費照付，但要從每人價裡賺回來）</span></label>';
-  h +=   '<div class="form-grid" style="margin-bottom:6px">';
-  h +=     '<div class="fg" style="grid-column:span 2"><label>上什麼課（從課程管理帶入新客價，可不選）</label>' +
+  h +=   '<div class="qg-sec">課程</div>';
+  h +=   '<div class="qg-grid">';
+  h +=     '<div class="fg qg-span3"><label>上什麼課</label>' +
            '<select id="qg-course"><option value="">— 不選，自己填新客價 —</option></select>' +
-           '<div class="muted" style="font-size:12px;margin-top:4px;line-height:1.5" id="qg-courseHint"></div></div>';
-  h +=     qgField('qg-anchor', '這門課新客價（含稅／每人，只當對照）', c.anchor, 50, '一個人自己來要付多少。只用來對照，不會限制報價');
+           '<div class="qg-hint" id="qg-courseHint">從課程管理帶入新客價與材料，可不選</div></div>';
+  h +=     qgField('qg-anchor', '新客價（含稅／人）', c.anchor, 50, '一個人自己來要付多少，只拿來對照');
   h +=   '</div>';
-  h +=   '<div class="form-grid">';
+  h +=   '<div class="qg-sec">場次</div>';
+  h +=   '<div class="qg-grid">';
   h +=     qgField('qg-n', '報名人數', c.n, 1);
-  h +=     qgField('qg-hrs', '上課時長（小時）', c.hrs, 0.5, '一堂＝這個時數，按小時報價時用來換算');
-  h +=     qgField('qg-matFixed', '固定材料／人（必填）', c.matFixed, 10, '不隨尺寸變的：畫布（五號以下同價）、框、包裝');
-  h +=     qgField('qg-matVar', '隨尺寸材料／人（基準尺寸）', c.matVar, 10, '膠、水晶、金箔、顏料…：填「基準尺寸」那一款的合計');
-  h +=     qgField('qg-sizePct', '這次的尺寸用量 %', c.sizePct, 5, '基準尺寸＝100。縮小例：膠 150 克變 110 克，填 73。隨尺寸材料會乘這個比例');
-  h +=     qgField('qg-gm', '目標淨利率 %', c.gm, 5, '扣完材料、獎金、總部、連占用教室的房租薪水都扣掉之後，你想留下的比例');
-  h +=     qgField('qg-buffer', '準備＋收拾時間（小時）', c.buffer, 0.5, '上課前準備、下課後收拾，教室被占用但沒在收錢的時間（內場才算）');
-  h +=     qgField('qg-price', '報價每人（含稅）', Math.round(c.price * (1 + qN(p.gTax) / 100)), 50, '<span id="qg-priceHint"></span>');
+  h +=     qgField('qg-hrs', '上課時長（小時）', c.hrs, 0.5, '按小時報價時用來換算');
+  h +=     qgField('qg-tcount', '帶課老師（位）', qgTeacherCount(), 1, '主教1位，其餘助教；細節在下面「帶課人員」');
+  h +=     qgField('qg-buffer', '準備＋收拾（小時）', c.buffer, 0.5, '教室被占用但沒收錢的時間，只有內場算');
   h +=   '</div>';
-  h +=   '<div class="fg" style="margin-top:4px"><label>報價方式</label><div class="store-tabs" id="qg-pmode" style="margin-bottom:0">';
-  h +=     '<button type="button" class="store-btn'+(c.auto?' active':'')+'" data-v="auto">自動（系統建議）</button>';
-  h +=     '<button type="button" class="store-btn'+(!c.auto?' active':'')+'" data-v="manual">自己訂價</button>';
-  h +=   '</div></div>';
+  h +=   '<div class="qg-sec">材料（每人）</div>';
+  h +=   '<div class="qg-grid">';
+  h +=     qgField('qg-matFixed', '固定材料', c.matFixed, 10, '畫布、框、包裝，不隨尺寸變');
+  h +=     qgField('qg-matVar', '隨尺寸材料', c.matVar, 10, '膠、水晶、金箔、顏料：基準尺寸那款的合計');
+  h +=     '<div class="fg"><label>這次的尺寸用量 %</label>' +
+           '<input type="number" id="qg-sizePct" value="'+c.sizePct+'" min="0" step="5" onwheel="this.blur()">' +
+           '<div class="qg-pills" id="qg-sizeBtns"><button type="button" data-p="100">100</button><button type="button" data-p="90">90</button><button type="button" data-p="80">80</button><button type="button" data-p="70">70</button><button type="button" data-p="60">60</button></div></div>';
+  h +=   '</div>';
+  h +=   '<div class="qg-note" id="qg-sizeNote"></div>';
+  h +=   '<div class="qg-sec">報價</div>';
+  h +=   '<div class="qg-grid">';
+  h +=     qgField('qg-price', '報價每人（含稅）', Math.round(c.price * (1 + qN(p.gTax) / 100)), 50, '<span id="qg-priceHint"></span>');
+  h +=     '<div class="fg qg-span2"><label>報價方式</label><div class="store-tabs" id="qg-pmode" style="margin-bottom:0">';
+  h +=       '<button type="button" class="store-btn'+(c.auto?' active':'')+'" data-v="auto">自動（系統建議）</button>';
+  h +=       '<button type="button" class="store-btn'+(!c.auto?' active':'')+'" data-v="manual">自己訂價</button>';
+  h +=     '</div><div class="qg-hint" id="qg-gmHint"></div></div>';
+  h +=   '</div>';
   h += '</div>';
 
   h += '<div class="card">';
@@ -674,7 +716,7 @@ function qgSkeleton(){
 
   h += '<div class="card">';
   h +=   '<div class="card-title">其他成本</div>';
-  h +=   '<div class="form-grid">';
+  h +=   '<div class="qg-grid">';
   h +=     qgField('qg-trans', '交通費', c.trans, 100);
   h +=     qgField('qg-haul', '搬運／車資', c.haul, 100);
   h +=     qgField('qg-misc', '其他雜支', c.misc, 100, '布置、清潔、包材等');
@@ -724,7 +766,7 @@ function qgRenderStaff(){
   qgCase.staff.forEach(function(r, i){
     var rate = qgLecRate(r.name);
     h += '<div class="qg-row" data-i="'+i+'" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">';
-    h +=   '<div class="form-grid">';
+    h +=   '<div class="qg-grid qg-five">';
     h +=     '<div class="fg"><label>姓名</label><input type="text" data-k="name" list="qg-names" value="'+qgEsc(r.name)+'" placeholder="可留白"></div>';
     h +=     '<div class="fg"><label>角色</label><select data-k="role">'+qgOpts(QG_ROLES, r.role)+'</select></div>';
     h +=     '<div class="fg"><label>計費方式</label><select data-k="mode">'+qgOpts(QG_MODES, r.mode)+'</select></div>';
@@ -745,13 +787,23 @@ function qgRenderStaff(){
 }
 
 function qgBindEvents(){
-  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-gm':'gm', 'qg-buffer':'buffer', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
+  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-buffer':'buffer', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
   Object.keys(map).forEach(function(id){
     document.getElementById(id).addEventListener('input', function(){
       qgCase[map[id]] = (id === 'qg-sizePct' && this.value === '') ? '' : (id === 'qg-price' ? qN(this.value) / (1 + qN(qgParams().gTax) / 100) : qN(this.value));   // 用量比例留空＝100；報價每人填含稅，內部換成未稅算
       if (id === 'qg-n') { qgSpreadHeads(qgCase); qgRenderStaff(); }
       qgRecalc();
     });
+  });
+  document.getElementById('qg-tcount').addEventListener('input', function(){
+    if (this.value === '') return;
+    qgSetTeacherCount(qN(this.value)); qgRenderStaff(); qgRecalc();
+  });
+  document.getElementById('qg-sizeBtns').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    qgCase.sizePct = qN(b.dataset.p);
+    document.getElementById('qg-sizePct').value = qgCase.sizePct;
+    qgRecalc();
   });
   document.getElementById('qg-anchor').addEventListener('input', function(){
     qgCase.anchor = this.value === '' ? '' : qN(this.value);
@@ -831,6 +883,7 @@ function qgBindEvents(){
       if (k === 'role' || k === 'mode') qgSpreadHeads(qgCase);
     }
     qgRenderStaff();   // 姓名改完重畫一次，倍率標示才會跟上
+    qgSyncTeacherCount();
     qgRecalc();
   });
   box.addEventListener('click', function(e){
@@ -838,6 +891,7 @@ function qgBindEvents(){
     qgCase.staff.splice(+b.dataset.del, 1);
     qgSpreadHeads(qgCase);
     qgRenderStaff();
+    qgSyncTeacherCount();
     qgRecalc();
   });
 
@@ -845,6 +899,7 @@ function qgBindEvents(){
     qgCase.staff.push({ name:'', role:'teacher', level:'assist', mode:qgDefaultMode('teacher', qgCase.lecOn), heads:0, extra:0 });
     qgSpreadHeads(qgCase);
     qgRenderStaff();
+    qgSyncTeacherCount();
     qgRecalc();
   });
   document.getElementById('qg-spread').addEventListener('click', function(){
@@ -972,6 +1027,10 @@ function qgRecalc(){
       if (r.misc) costParts.push('雜支 ' + qFmt(r.misc));
       if (r.lost) costParts.push('擠掉的營收 ' + qFmt(r.lost));
       L.push('這場多花的成本 <b>' + qFmt(r.cost) + '</b>（' + costParts.join('＋') + '）。');
+      var tN = c.staff.filter(function(x){ return x.role === 'teacher'; }).length, aN = c.staff.filter(function(x){ return x.role === 'admin'; }).length, sN = c.staff.filter(function(x){ return x.role === 'sales'; }).length;
+      L.push('帶課人員：老師 <b>' + tN + '</b> 位' + (aN ? '、行政 ' + aN + ' 位' : '') + (sN ? '、業務 ' + sN + ' 位' : '') + '｜' +
+        (r.hasHead ? '人次獎金 ' + qFmt(r.headFees) + '（' + r.n + ' 人 × ' + qN(p.gHead) + '，不管幾位老師分，總額一樣）' : '這場沒有人次獎金') +
+        (r.lecFees ? '｜講師費 ' + qFmt(r.lecFees) + '（按堂，每多一位老師就多一份）' : '') + '。');
       if (!r.isOut) L.push('場次成本：占用教室 <b>' + r.occHrs + '</b> 小時（上課 ' + r.hrs + '＋準備收拾 ' + r.buffer + '）× 每小時 ' + qFmt(qN(p.gHourCost)) + ' ＝ <b>' + qFmt(r.occ) + '</b>，平均每人 ' + qFmt(r.occ / r.n) + '（人越少每人分攤越多）。');
       var T = function(x){ return qFmt(x.perTax); };
       L.push('每人（含稅）：現金底線 ' + T(r.cash) + '｜打平（連場次成本） <b>' + T(r.be) + '</b>｜目標淨利 ' + Math.round(r.gm * 100) + '% → <b>' + T(r.tgt) + '</b>' +
@@ -982,6 +1041,22 @@ function qgRecalc(){
     why.innerHTML = L.map(function(x){ return '<div>' + x + '</div>'; }).join('');
   }
   qSetText('qg-per', matMissing ? '先填材料成本' : qFmt(r.perTax));
+  var gh = document.getElementById('qg-gmHint');
+  if (gh) gh.textContent = (r.isOut ? '外派' : '內場') + '目標淨利率固定 ' + Math.round(r.gm * 100) + '%（扣完材料、獎金、總部、房租薪水分攤後留下的比例），不能在這裡改';
+
+  // 尺寸用量的效果：跟 100% 比，每人材料和報價差多少
+  var sn = document.getElementById('qg-sizeNote');
+  if (sn) {
+    var b100 = qgCompute(Object.assign({}, c, { sizePct:100 }), p);
+    var dMat = r.matPer - b100.matPer, dPrice = r.recPerTax - b100.recPerTax, dExact = r.tgt.perTax - b100.tgt.perTax;
+    var sg = function(v){ return (v > 0 ? '+' : (v < 0 ? '－' : '±')) + qFmt(Math.abs(v)); };
+    var tx;
+    if (blank(c.matVar)) tx = '「隨尺寸材料」還沒填，尺寸用量不會影響價格。膠、水晶、金箔、顏料這類會隨尺寸變的材料填在那一格。';
+    else if (r.sizePct === 100) tx = '目前是基準尺寸。要做小一點：按 90／80／70，或直接填 %（只會縮「隨尺寸材料」這 ' + qFmt(r.matVar) + '）。畫布、框換小一號，請到上面「上什麼課」改選小尺寸那門課。';
+    else tx = '<b>尺寸 ' + Math.round(r.sizePct) + '%</b>：每人材料 ' + qFmt(b100.matPer) + ' → <b>' + qFmt(r.matPer) + '</b>（' + sg(dMat) + '）｜建議每人報價 ' + qFmt(b100.recPerTax) + ' → <b>' + qFmt(r.recPerTax) + '</b>（' + sg(dPrice) + '，精算差 ' + sg(Math.round(dExact)) + '，報價取整到 50）。' +
+      (c.auto ? '' : '<span style="color:var(--gold2)">　你現在是「自己訂價」，不會跟著變；切回「自動」才會連動。</span>');
+    sn.innerHTML = tx;
+  }
 
   // 換行時保留輸入中的焦點：只更新費用文字，不重畫人員列
   document.querySelectorAll('#qg-staff .qg-row').forEach(function(el){
@@ -1049,7 +1124,10 @@ function qgRecalc(){
     if (r.anchor > 0 && r.perTax > r.anchor + 1) warns.push(['var(--gold2)', '比同等材料的新客價（' + qFmt(r.anchor) + '）還貴，家長一比會覺得團班沒優惠。' + (r.n < 15 && !r.isOut ? '這團人數少，場次成本分攤不掉，建議設最低人數，或跟客人收低消、併到別的班。' : '')]);
   }
   if (!r.isOut && r.n > 25) warns.push(['var(--gold2)', '超過外場團班容量（25 人），需加開小教室並多配一位老師。']);
-  if (r.hasHead && r.headSum !== Math.round(r.n)) warns.push(['var(--gold2)', '人次獎金分配的人數（' + r.headSum + '）跟報名人數（' + r.n + '）不符。']);
+  if (r.hasHead && r.headSum !== Math.round(r.n)) warns.push(['var(--gold2)', '下面「帶幾位學生」加起來是 ' + r.headSum + '，跟報名人數 ' + r.n + ' 不符（價格已照報名人數算，按「把人數平均分給按人頭的人」可以對齊）。']);
+  var teachers = c.staff.filter(function(x){ return x.role === 'teacher'; });
+  if (!teachers.length) warns.push(['var(--red)', '還沒有帶課老師。「帶課老師」填幾位，講師費／人次獎金才算得準。']);
+  else if (r.lecFees > 0 && teachers.some(function(x){ return !String(x.name || '').trim(); })) warns.push(['var(--gold2)', '有老師還沒填姓名：講師費先按標準費率算。老師有個人倍率的，填了姓名才會套用，價格會有些差。']);
   if (r.isOut && r.n < qN(p.gOutMin)) warns.push(['var(--gold2)', '外派未滿 ' + qN(p.gOutMin) + ' 人，將按 ' + r.guarantee + ' 人收費。']);
   if (c.staff.length) warns.push(['var(--text3)', '帶課配比：每位帶課者平均帶 ' + r.perStaff.toFixed(1) + ' 人。']);
 

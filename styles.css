@@ -514,3 +514,26 @@ async function stKillInvite(k){
   setInterval(tick, 500);
   setTimeout(tick, 200);
 })();
+
+/* 團班報價：欄位分區、對齊（每格頂端對齊，標籤一律單行，提示字放下面不撐高同一列） */
+.qg-sec{font-size:13px;font-weight:600;color:var(--gold2);letter-spacing:.5px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--border)}
+.qg-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;align-items:start;margin-bottom:6px}
+.qg-grid .fg label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:none;letter-spacing:0}
+.qg-span2{grid-column:span 2}
+.qg-span3{grid-column:span 3}
+.qg-hint{font-size:12px;color:var(--text3);margin-top:4px;line-height:1.5}
+.qg-note{font-size:13.5px;line-height:1.7;color:var(--text2);background:var(--bg2,rgba(0,0,0,.03));border-radius:10px;padding:10px 14px;margin:10px 0 4px}
+.qg-pills{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.qg-pills button{border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:999px;padding:3px 11px;font-size:13px;cursor:pointer;font-family:inherit}
+.qg-pills button:hover{border-color:var(--gold);color:var(--gold2)}
+@media (max-width:760px){
+  .qg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qg-span3{grid-column:span 2}
+}
+@media (max-width:420px){
+  .qg-grid{grid-template-columns:1fr}
+  .qg-span2,.qg-span3{grid-column:auto}
+}
+.qg-five{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:760px){ .qg-five{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:420px){ .qg-five{grid-template-columns:1fr} }
