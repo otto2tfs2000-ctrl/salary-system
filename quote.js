@@ -749,6 +749,12 @@ function qgSkeleton(){
   h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
   h += '</div>';
 
+  h += '<div class="card">';
+  h +=   '<div class="card-title">預算入口：對方說預算，哪些「尺寸 × 人數」做得到</div>';
+  h +=   '<div class="qg-grid">' + qgField('qg-budget', '對方預算（每人，含稅）', c.budget || '', 50, '填了就會標出哪些做得到；沒填就只列價格') + '</div>';
+  h +=   '<div id="qg-budgetOut" style="margin-top:6px"></div>';
+  h += '</div>';
+
   h += '<div class="card" id="qg-caps"></div>';
 
   h += '<div class="card">';
@@ -805,7 +811,7 @@ function qgRenderStaff(){
 }
 
 function qgBindEvents(){
-  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-buffer':'buffer', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost' };
+  var map = { 'qg-n':'n', 'qg-hrs':'hrs', 'qg-price':'price', 'qg-buffer':'buffer', 'qg-sizePct':'sizePct', 'qg-trans':'trans', 'qg-haul':'haul', 'qg-misc':'misc', 'qg-lost':'lost', 'qg-budget':'budget' };
   Object.keys(map).forEach(function(id){
     document.getElementById(id).addEventListener('input', function(){
       qgCase[map[id]] = (id === 'qg-sizePct' && this.value === '') ? '' : (id === 'qg-price' ? qN(this.value) / (1 + qN(qgParams().gTax) / 100) : qN(this.value));   // 用量比例留空＝100；報價每人填含稅，內部換成未稅算
@@ -967,6 +973,65 @@ function qgBindEvents(){
     qgCase = qgNewCase(qgCase.venue);
     renderQuote();
   });
+}
+
+/* 人數對照表、預算入口共用的人數檔：內場 8／12（小教室滿）／15／20／25（大教室滿）；外派從最低計費人數起每 5 人一檔 */
+function qgNs(isOut, p){ return isOut ? [qN(p.gOutMin), qN(p.gOutMin) + 5, qN(p.gOutMin) + 10] : [8, 12, 15, 20, 25]; }
+
+/* 預算入口的「列」：這門課有基底材尺寸下拉就一款一列（照面積由大到小），每列用配方重算材料；沒有就退而求其次列耗材用量 % */
+function qgBudgetRows(){
+  var c = qgCase, gs = c.recipeKey ? qgRecipeGroups(c.recipeKey) : [], sg = qgSizeGroup(gs);
+  if (sg && typeof rcParts === 'function') {
+    return sg.opts.slice().sort(function(a, b){ return (b.area - a.area) || (b.cost - a.cost); }).map(function(o){
+      var pick = Object.assign({}, c.pick); pick[sg.grp] = o.id;
+      if (o.area) gs.forEach(function(g){ if (g.grp === sg.grp) return; var m = qgNearestOpt(g, o.area, 0.05); if (m) pick[g.grp] = m.id; });
+      var pp = rcParts(c.recipeKey, pick);
+      return { label:o.name, area:o.area, over:{ matFixed:Math.round(pp.fixedW), matVar:pp.scalW > 0 ? Math.round(pp.scalW) : '', sizePct:(c.baseArea && o.area) ? Math.round(o.area / c.baseArea * 100) : 100 } };
+    });
+  }
+  return [100, 90, 80, 70, 60].map(function(pc){ return { label:'耗材用量 ' + pc + '%', area:0, over:{ sizePct:pc } }; });
+}
+function qgRenderBudget(r, matMissing){
+  var out = document.getElementById('qg-budgetOut'); if (!out) return;
+  if (matMissing) { out.innerHTML = '<p class="muted">先填材料成本（或上面選一門有配方的課），才算得出各尺寸的價格。</p>'; return; }
+  var c = qgCase, p = qgParams(), B = qN(c.budget), ns = qgNs(r.isOut, p), rows = qgBudgetRows(), name = qgCourseName();
+  var up = function(v, step){ return Math.ceil(v / step - 1e-9) * step; };
+  var grid = rows.map(function(row){
+    return ns.map(function(nn){
+      var x = qgCompute(Object.assign({}, c, row.over, { n:nn, auto:true }), p);
+      var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = x.recPerTax, cap = qgCapFor(name, nn);
+      return { lo:lo, mid:mid, over:!!(cap && row.area && row.area > cap.area * 1.02), st: !B ? '' : (mid <= B ? 'ok' : (lo <= B ? 'low' : 'no')) };
+    });
+  });
+  var mark = { ok:['✓', 'var(--green)'], low:['△', 'var(--gold2)'], no:['✕', 'var(--red)'] };
+  var h = '<div style="overflow-x:auto"><table><thead><tr><th>' + (rows[0] && rows[0].area ? '基底材尺寸' : '材料用量') + '</th>' +
+    ns.map(function(nn){ return '<th>' + nn + ' 人</th>'; }).join('') + '</tr></thead><tbody>';
+  rows.forEach(function(row, i){
+    h += '<tr><td>' + qgEsc(row.label) + '</td>';
+    ns.forEach(function(nn, j){
+      var g = grid[i][j], m = mark[g.st];
+      h += '<td' + (g.over ? ' style="opacity:.55"' : '') + '>建議 ' + qFmt(g.mid) + (m ? ' <b style="color:' + m[1] + '">' + m[0] + '</b>' : '') +
+        '<div class="muted" style="font-size:12px">最低 ' + qFmt(g.lo) + (g.over ? '　<span style="color:var(--gold2)">超過尺寸上限</span>' : '') + '</div></td>';
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  if (B) {
+    h += '<div style="margin-top:12px;line-height:1.9">';
+    ns.forEach(function(nn, j){
+      var best = null, low = null;
+      rows.forEach(function(row, i){ var g = grid[i][j]; if (g.over) return; if (!best && g.st === 'ok') best = { row:row, g:g }; if (!low && g.st === 'low') low = { row:row, g:g }; });
+      var t;
+      if (best) t = '基底材最大可以做「' + qgEsc(best.row.label) + '」，建議價 ' + qFmt(best.g.mid) + '，在預算內';
+      else if (low) t = '「' + qgEsc(low.row.label) + '」要壓到最低可接價 ' + qFmt(low.g.lo) + ' 才接得到（只給重要客戶）';
+      else { var lastG = grid[rows.length - 1][j]; t = '預算不夠，連最小的「' + qgEsc(rows[rows.length - 1].label) + '」最低也要 ' + qFmt(lastG.lo); }
+      h += '<div><b>' + nn + ' 人</b>：' + t + '</div>';
+    });
+    h += '</div>';
+  }
+  h += '<div class="qg-hint" style="margin-top:8px">✓ 建議價在預算內　△ 要壓到最低可接價才做得到　✕ 連最低可接價都超過預算。每一格都用這門課的配方重新算材料，不看你上面手改的材料數字；價格往上取整。' +
+    (rows[0] && rows[0].area ? '' : '這門課沒有基底材尺寸下拉，這裡只能列耗材用量；要換小一號的基底材，請改選小尺寸那門課。') + '</div>';
+  out.innerHTML = h;
 }
 
 /* ── 尺寸上限（依現場空間，大熊自己訂）──────────────────────────
@@ -1317,7 +1382,7 @@ function qgRecalc(){
     var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = r.isOut ? '最低可接價（再低倒貼）' : '最低可接價（再低虧本）';
     if (matMissing) byN.innerHTML = '<tr><td colspan="7" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
     else {
-      var ns = r.isOut ? [qN(p.gOutMin), qN(p.gOutMin) + 5, qN(p.gOutMin) + 10] : [8, 12, 15, 20, 25];
+      var ns = qgNs(r.isOut, p);
       var up = function(v, step){ return Math.ceil(v / step - 1e-9) * step; };
       var capName = qgCourseName(), curSz2 = qgCurSize();
       var rowsN = ns.map(function(nn){
@@ -1333,6 +1398,7 @@ function qgRecalc(){
       byN.innerHTML = rowsN.join('');
     }
   }
+  qgRenderBudget(r, matMissing);
 
   var bd = document.getElementById('qg-breakdown');
   if (bd) {
