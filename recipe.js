@@ -215,7 +215,7 @@ function rcDrawModal(c, r){
   h += '<h3 style="margin:0 0 2px">' + c.name + (c.spec ? '（' + c.spec + '）' : '') + '</h3>';
   h += '<div class="muted" style="font-size:13.5px;margin-bottom:14px">售價 $' + c.price.toLocaleString() + '</div>';
 
-  h += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th style="min-width:130px">材料</th><th style="width:84px" title="同名＝核銷時擇一扣">二選一群組</th><th style="width:66px">用量</th><th style="width:56px" title="勾了：尺寸變小，用量跟著變少">隨尺寸</th><th style="width:60px">單位成本</th><th style="width:60px">小計</th><th style="width:40px"></th></tr></thead><tbody>';
+  h += '<div style="overflow-x:auto"><table style="min-width:520px"><thead><tr><th style="min-width:130px">材料</th><th style="width:84px" title="同名＝核銷時擇一扣">二選一群組</th><th style="width:66px">用量</th><th style="width:56px" title="勾了：尺寸變小，用量跟著變少">耗材（隨尺寸）</th><th style="width:60px">單位成本</th><th style="width:60px">小計</th><th style="width:40px"></th></tr></thead><tbody>';
   (r.items || []).forEach(function(x, i){
     var m = rcMat(x.id);
     var sub = m ? (+m.cost || 0) * (+x.qty || 0) : 0;
@@ -231,7 +231,7 @@ function rcDrawModal(c, r){
   });
   h += '</tbody></table></div>';
   h += '<div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.7">'
-    + '<b>隨尺寸</b>：勾了代表尺寸變小時這項用量跟著變少（膠、水晶、金箔、顏料）；基底材（畫布、厚畫布、鏡子）、托盤不勾。<br>'
+    + '<b>耗材（隨尺寸）</b>：勾了代表尺寸變小時這項用量跟著變少（膠、水晶、金箔、顏料）；基底材（畫布、厚畫布、鏡子）、托盤不勾。<br>'
     + '同一個群組名稱的材料，核銷時只會扣其中一個，由老師當場選。'
     + '尺寸有大有小的基底材（畫布、厚畫布、鏡子），群組欄請統一填「基底材」，20cm方和4F各一列，核銷時二選一、報價頁也靠它換尺寸。其他材料不要填群組。留空的照舊每次都扣。</div>';
   if (!(r.items || []).length) h += '<div class="empty" style="padding:14px">還沒有材料，從下方加入</div>';
@@ -261,8 +261,8 @@ function rcDrawModal(c, r){
   };
   h += '<div class="card" style="margin-top:16px">';
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">';
-  h += stat('固定材料', '$' + Math.round(pp.fixedW).toLocaleString());
-  h += stat('隨尺寸材料', '$' + Math.round(pp.scalW).toLocaleString());
+  h += stat('基底材與包裝', '$' + Math.round(pp.fixedW).toLocaleString());
+  h += stat('耗材（隨尺寸變）', '$' + Math.round(pp.scalW).toLocaleString());
   h += stat('材料成本', '$' + Math.round(cost).toLocaleString(), '', true);
   h += stat('毛利', '$' + Math.round(gross).toLocaleString(), 'var(--gold2)');
   h += stat('毛利率', (c.price ? rate + '%' : '—'), c.price && rate < 50 ? 'var(--red)' : 'var(--gold2)');
