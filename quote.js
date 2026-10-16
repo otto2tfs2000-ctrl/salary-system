@@ -1238,7 +1238,7 @@ function qgApplyCourse(setHrs){
   }
   qgRenderPicks();
   qSetText('qg-courseHint', (a.v ? '帶入的是「' + a.src + '」' + qFmt(a.v) + ' 元' : '這門課在課程管理沒有價格，請自己填體驗價') +
-    (base ? '　｜材料從課程用料「' + base.key + '」帶入：固定 ' + qFmt(base.fixed) + '、隨尺寸 ' + qFmt(base.scal) + (base.scal ? '' : '（這份配方還沒有膠、水晶、金箔、顏料，請到課程用料補，或直接填下面「隨尺寸材料」）') : (setHrs ? '　｜這門課在「課程用料」還沒有配方，固定材料請自己填' : '')));
+    (base ? '　｜材料從課程用料「' + base.key + '」帶入：基底材與包裝 ' + qFmt(base.fixed) + '、耗材 ' + qFmt(base.scal) + (base.scal ? '' : '（這份配方還沒有膠、水晶、金箔、顏料，請到課程用料補，或直接填下面「耗材」）') : (setHrs ? '　｜這門課在「課程用料」還沒有配方，基底材與包裝請自己填' : '')));
   if (setHrs) qgRecalc();
 }
 async function qgFillCourses(){
@@ -1405,7 +1405,7 @@ function qgRecalc(){
     bd.innerHTML = matMissing ? '<p class="muted">填了材料成本才會出現拆解。</p>' :
       qRow('開給客人的發票金額（含稅）', r.revTax) +
       qRow('扣營業稅 ' + qN(p.gTax) + '%（代收，不是你的錢）', -(r.revTax - r.rev)) +
-      qRow('材料　' + r.n + ' 人 × ' + qFmt(r.matPer) + '（固定 ' + qFmt(r.matFixed) + '＋隨尺寸 ' + qFmt(r.matVar) + '×' + Math.round(r.sizePct) + '%）', r.mat) +
+      qRow('材料　' + r.n + ' 人 × ' + qFmt(r.matPer) + '（基底材與包裝 ' + qFmt(r.matFixed) + '＋耗材 ' + qFmt(r.matVar) + '×' + Math.round(r.sizePct) + '%）', r.mat) +
       qRow('人次獎金（老師、行政每教一位 ' + qN(p.gHead) + '）', r.headFees) +
       qRow('講師費' + (r.lecFees ? (r.lecRev ? '（另收，代收代付）' : '（沒另外收）') : '（這場沒有）'), r.lecFees) +
       (r.isOut ? qRow('交通＋搬運', r.trans + r.haul) : '') +
