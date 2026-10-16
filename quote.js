@@ -735,7 +735,7 @@ function qgSkeleton(){
   h += '</div>';
 
   h += '<div class="card">';
-  h +=   '<div class="card-title">價格落差：最低可接價 → 建議價 → 開價（客人要按小時報，看「每小時」那欄）</div>';
+  h +=   '<div class="card-title">價格落差：最低可接價（現金底線）→ 回收教室成本價 → 建議價 → 開價（客人要按小時報，看「每小時」那欄）</div>';
   h +=   '<div style="overflow-x:auto"><table><thead><tr><th></th><th>課程費（含稅）</th><th>每人（含稅）</th><th>每小時（含稅）</th><th>利潤率</th><th>實際賺到（已扣教室成本）</th><th>還沒扣教室成本前</th></tr></thead><tbody id="qg-tiers"></tbody></table></div>';
   h +=   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">';
   h +=     '<button class="btn btn-gold" id="qg-copy">複製報價文字</button>';
@@ -745,8 +745,8 @@ function qgSkeleton(){
 
   h += '<div class="card">';
   h +=   '<div class="card-title">人數對照：同一門課、同樣條件，人數不同價格差多少（每人含稅）</div>';
-  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>比體驗價</th><th>照建議價的利潤率</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
-  h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。建議價、開價最高封頂在體驗價（團班不會比一個人自己來貴）；人數少時教室成本分不掉，利潤率會很低，看「照建議價的利潤率」那欄。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
+  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>整場建議價</th><th>比體驗價</th><th>這場現金多賺</th><th>扣教室成本後利潤率</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
+  h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價取整到 50）。最低可接價只算這場多花的現金（材料、獎金、總部、交通…），房租和固定薪水不管有沒有這團都要付，所以不算進去；若這個時段原本會有現金客人，請填上面「當天被擠掉的四樓營收」。建議價最高封頂在體驗價（團班不會比一個人自己來貴）。人數少時教室成本分不掉，所以看「這場現金多賺」。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
   h += '</div>';
 
   h += '<div class="card">';
@@ -999,7 +999,7 @@ function qgRenderBudget(r, matMissing){
   var grid = rows.map(function(row){
     return ns.map(function(nn){
       var x = qgCompute(Object.assign({}, c, row.over, { n:nn, auto:true }), p);
-      var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = (x.anchor > 0 && x.recPerTax > x.anchor) ? x.anchor : x.recPerTax, cap = qgCapFor(name, nn);
+      var lo = up(x.cash.perTax, 10), mid = (x.anchor > 0 && x.recPerTax > x.anchor) ? x.anchor : x.recPerTax, cap = qgCapFor(name, nn);
       return { lo:lo, mid:mid, over:!!(cap && row.area && row.area > cap.area * 1.02), st: !B ? '' : (mid <= B ? 'ok' : (lo <= B ? 'low' : 'no')) };
     });
   });
@@ -1023,13 +1023,13 @@ function qgRenderBudget(r, matMissing){
       rows.forEach(function(row, i){ var g = grid[i][j]; if (g.over) return; if (!best && g.st === 'ok') best = { row:row, g:g }; if (!low && g.st === 'low') low = { row:row, g:g }; });
       var t;
       if (best) t = '基底材最大可以做「' + qgEsc(best.row.label) + '」，建議價 ' + qFmt(best.g.mid) + '，在預算內';
-      else if (low) t = '「' + qgEsc(low.row.label) + '」要壓到最低可接價 ' + qFmt(low.g.lo) + ' 才接得到（只給重要客戶）';
+      else if (low) t = '預算比建議價低，但高於現金底線 ' + qFmt(low.g.lo) + '，「' + qgEsc(low.row.label) + '」可以接，只是利潤比較薄';
       else { var lastG = grid[rows.length - 1][j]; t = '預算不夠，連最小的「' + qgEsc(rows[rows.length - 1].label) + '」最低也要 ' + qFmt(lastG.lo); }
       h += '<div><b>' + nn + ' 人</b>：' + t + '</div>';
     });
     h += '</div>';
   }
-  h += '<div class="qg-hint" style="margin-top:8px">✓ 建議價在預算內　△ 要壓到最低可接價才做得到　✕ 連最低可接價都超過預算。每一格都用這門課的配方重新算材料，不看你上面手改的材料數字；價格往上取整。' +
+  h += '<div class="qg-hint" style="margin-top:8px">✓ 建議價在預算內　△ 預算比建議價低，但高於現金底線，可以接、利潤較薄　✕ 連現金底線都不夠。每一格都用這門課的配方重新算材料，不看你上面手改的材料數字；價格往上取整。' +
     (rows[0] && rows[0].area ? '' : '這門課沒有基底材尺寸下拉，這裡只能列耗材用量；要換小一號的基底材，請改選小尺寸那門課。') + '</div>';
   out.innerHTML = h;
 }
@@ -1311,7 +1311,7 @@ function qgRecalc(){
         (r.lecFees ? '｜講師費 ' + qFmt(r.lecFees) + '（按堂，每多一位老師就多一份）' : '') + '。');
       if (!r.isOut) L.push('教室占用成本：占用教室 <b>' + r.occHrs + '</b> 小時（上課 ' + r.hrs + '＋準備收拾 ' + r.buffer + '）× 每小時 ' + qFmt(qN(p.gHourCost)) + ' ＝ <b>' + qFmt(r.occ) + '</b>，平均每人 ' + qFmt(r.occ / r.n) + '（人越少每人分攤越多）。');
       var T = function(x){ return qFmt(x.perTax); };
-      L.push('每人（含稅）：絕對不能低於 ' + T(r.cash) + '｜最低可接價 <b>' + T(r.be) + '</b>｜建議價（淨利 ' + Math.round(r.gm * 100) + '%） <b>' + T(r.tgt) + '</b>' +
+      L.push('每人（含稅）：最低可接價（現金底線） <b>' + T(r.cash) + '</b>｜回收教室成本價 ' + T(r.be) + '｜建議價（淨利 ' + Math.round(r.gm * 100) + '%） <b>' + T(r.tgt) + '</b>' +
         (r.anchor > 0 ? '｜體驗價 ' + qFmt(r.anchorRaw) + (r.matDiffPer ? '（材料換成這場的 ' + qFmt(r.matPer) + ' 後，同等級約 <b>' + qFmt(r.anchor) + '</b>）' : '') + '，團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%' : ''));
       if (r.matDiffPer) L.push('這次耗材用量 ' + Math.round(r.sizePct) + '%：每人材料 ' + qFmt(r.matPer) + '（基準尺寸 ' + qFmt(r.stdMat) + '，' + (r.matDiffPer >= 0 ? '多' : '少') + ' ' + qFmt(Math.abs(r.matDiffPer)) + '），這一段照成本轉嫁、不乘利潤率。');
       if (!c.auto) L.push('你自己訂的是每人 <b>' + qFmt(r.perTax) + '</b>，系統建議 ' + qFmt(r.recPerTax) + '。');
@@ -1369,8 +1369,8 @@ function qgRecalc(){
   }
   var tiers = document.getElementById('qg-tiers');
   if (tiers) tiers.innerHTML =
-    tierRow(r.isOut ? '最低可接價　再低就倒貼現金' : '絕對不能低於　再低就倒貼現金', r.cash) +
-    (r.isOut ? '' : tierRow('最低可接價　剛好不虧本（只給重要客戶）', r.be)) +
+    tierRow('最低可接價　現金底線，再低就倒貼現金', r.cash) +
+    (r.isOut ? '' : tierRow('回收教室成本價　連教室占用成本也賺回來', r.be)) +
     tierRow('建議價　淨利 ' + Math.round(r.gm * 100) + '%（一般客戶）', r.tgt) +
     tierRow('開價　淨利 ' + Math.round(r.gmHi * 100) + '%（留讓價空間）', r.hi) +
     (anchorX ? tierRow('體驗價（一個人來要付，對照用）', anchorX) : '') +
@@ -1379,7 +1379,7 @@ function qgRecalc(){
   // 人數對照表：同樣條件換人數重算。內場 8／12（小教室滿）／15／20／25（大教室滿）；外派從最低計費人數起每 5 人一檔
   var byN = document.getElementById('qg-byN');
   if (byN) {
-    var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = r.isOut ? '最低可接價（再低倒貼）' : '最低可接價（再低虧本）';
+    var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = '最低可接價（現金底線，再低倒貼）';
     if (matMissing) byN.innerHTML = '<tr><td colspan="8" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
     else {
       var ns = qgNs(r.isOut, p);
@@ -1387,20 +1387,21 @@ function qgRecalc(){
       var capName = qgCourseName(), curSz2 = qgCurSize();
       var rowsN = ns.map(function(nn){
         var x = qgCompute(Object.assign({}, c, { n:nn, auto:true }), p);
-        var lo = up((r.isOut ? x.cash : x.be).perTax, 10), formula = x.recPerTax, hi = up(x.hi.perTax, 50);
-        /* 體驗價是天花板：團班不會比一個人自己來還貴。公式算出來超過就封頂在體驗價；連最低可接價都超過就是不接團班 */
+        var lo = up(x.cash.perTax, 10), be = up(x.be.perTax, 10), formula = x.recPerTax;
+        /* 最低可接價＝現金底線（房租和固定薪水不管有沒有這團都要付，不算）。體驗價是天花板：團班不會比一個人自己來還貴 */
         var ceil = x.anchor > 0 ? x.anchor : 0, noGo = ceil > 0 && lo > ceil, capped = ceil > 0 && formula > ceil && !noGo;
-        var mid = capped ? ceil : formula; if (ceil > 0 && hi > ceil) hi = ceil;
+        var mid = capped ? ceil : formula;
         var y = qgCompute(Object.assign({}, c, { n:nn, auto:false, price: mid / (1 + x.tax) }), p);
         var room = r.isOut ? '' : (nn <= 12 ? '（小教室）' : '（大教室）');
         var cur = Math.round(nn) === Math.round(r.n), capRow = qgCapFor(capName, nn);
-        var note = noGo ? '<div style="font-size:12px;color:var(--red)">不接團班：連最低可接價都比一個人自己來還貴，請各自用體驗價預約或併班</div>'
-          : (capped ? '<div class="muted" style="font-size:12px">公式算 ' + qFmt(formula) + '，團班不會比體驗價貴，所以封頂' + (!r.isOut && nn < 15 ? '；人數少，建議併班或按 15 人計費' : '') + '</div>' : '');
+        var loNote = r.isOut ? '' : '<div class="muted" style="font-size:12px">連教室成本也回收：' + qFmt(be) + '</div>';
+        var note = noGo ? '<div style="font-size:12px;color:var(--red)">連最低可接價都比一個人自己來還貴，不適合團班</div>'
+          : (capped ? '<div class="muted" style="font-size:12px">公式算 ' + qFmt(formula) + '，團班不會比體驗價貴，先封頂。想給優惠，請在最低可接價和體驗價之間自己訂</div>' : '');
         return '<tr' + (cur ? ' style="font-weight:600"' : '') + '><td>' + nn + ' 人' + room + (cur ? '　← 現在填的' : '') + '</td>' +
-          '<td>' + qFmt(lo) + '</td>' +
+          '<td>' + qFmt(lo) + loNote + '</td>' +
           (noGo ? '<td>—' + note + '</td><td>—</td><td>—</td><td>—</td><td>—</td>'
-                : '<td>' + qFmt(mid) + note + '</td><td>' + qFmt(hi) + '</td><td>' + qFmt(mid * nn) + '</td>' +
-                  '<td>' + (ceil > 0 ? Math.round(mid / ceil * 100) + '%' : '—') + '</td><td>' + pct(y.margin) + '</td>') +
+                : '<td>' + qFmt(mid) + note + '</td><td>' + qFmt(mid * nn) + '</td>' +
+                  '<td>' + (ceil > 0 ? Math.round(mid / ceil * 100) + '%' : '—') + '</td><td>' + qFmt(y.profit) + '</td><td>' + pct(y.margin) + '</td>') +
           '<td>' + (capRow ? qgEsc(capRow.size) + (curSz2.area > capRow.area * 1.02 ? '　<span style="color:var(--gold2)">現在選的超過</span>' : '') : '—') + '</td></tr>';
       });
       byN.innerHTML = rowsN.join('');
@@ -1430,8 +1431,8 @@ function qgRecalc(){
   if (matMissing) warns.push(['var(--gold2)', '材料成本還沒填，每門課不一樣，填了才算得出底線和利潤率。']);
   else {
     if (r.profit < -1) warns.push(['var(--red)', '這個價格連這場多花的現金都收不回來，倒貼 ' + qFmt(-r.profit) + ' 元（至少要報每人 ' + qFmt(r.cash.perTax) + '，含稅）。']);
-    else if (r.net < -1) warns.push(['var(--gold2)', '現金上不會虧，但這場占用教室的成本（' + qFmt(r.occ) + '）沒賺回來，扣掉後虧 ' + qFmt(-r.net) + '。這團要報到每人 ' + qFmt(r.be.perTax) + '（含稅）才不虧本。']);
-    else warns.push(['var(--green)', '可以接，扣掉教室占用成本後利潤率 ' + pct(r.margin) + '、實際賺 ' + qFmt(r.net) + '。真的要讓價，最低守在每人 ' + qFmt(r.be.perTax) + '（含稅）。']);
+    else if (r.net < -1) warns.push(['var(--gold2)', '現金有進帳 ' + qFmt(r.profit) + '（扣完材料、獎金、總部）。教室成本（' + qFmt(r.occ) + '）不管有沒有這團都會花，這團只是少分攤了 ' + qFmt(-r.net) + '；要連教室成本也回收，要報到每人 ' + qFmt(r.be.perTax) + '（含稅）。']);
+    else warns.push(['var(--green)', '可以接，扣掉教室占用成本後利潤率 ' + pct(r.margin) + '、實際賺 ' + qFmt(r.net) + '。真的要讓價，最低可守到每人 ' + qFmt(r.cash.perTax) + '（含稅，現金底線，再低就倒貼）。']);
     if (r.lecFees > 0 && !r.lecRev) warns.push(['var(--gold2)', '講師費 ' + qFmt(r.lecFees) + ' 沒另外跟客人收：已經算進每人價。報得比建議低，這筆就是你自己扛。']);
     if (r.anchor > 0 && r.perTax > r.anchor + 1) warns.push(['var(--gold2)', '比同等材料的體驗價（' + qFmt(r.anchor) + '）還貴，家長一比會覺得團班沒優惠。' + (r.n < 15 && !r.isOut ? '這團人數少，場次成本分攤不掉，建議設最低人數，或跟客人收低消、併到別的班。' : '')]);
   }
