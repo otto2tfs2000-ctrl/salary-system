@@ -100,6 +100,7 @@ function renderQuote(){
   qNewRecalc();
   qgBindEvents();
   qgRenderStaff();
+  qgRenderCaps();
   qgRecalc();
   qcBindEvents();
   qcRecalc();
@@ -744,9 +745,11 @@ function qgSkeleton(){
 
   h += '<div class="card">';
   h +=   '<div class="card-title">人數對照：同一門課、同樣條件，人數不同價格差多少（每人含稅）</div>';
-  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>建議價 ÷ 體驗價</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
+  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>建議價 ÷ 體驗價</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
   h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
   h += '</div>';
+
+  h += '<div class="card" id="qg-caps"></div>';
 
   h += '<div class="card">';
   h +=   '<div class="card-title">成本拆解（錢花去哪裡）</div>';
@@ -824,11 +827,35 @@ function qgBindEvents(){
   document.getElementById('qg-anchor').addEventListener('input', function(){
     qgCase.anchor = this.value === '' ? '' : qN(this.value);
     if (qgCase.course) { qgCase.course = ''; var sel = document.getElementById('qg-course'); if (sel) sel.value = ''; }  // 手改就不算那門課了
+    qgRenderCaps();
     qgRecalc();
   });
   document.getElementById('qg-picks').addEventListener('change', function(e){
     var t = e.target; if (!t || t.tagName !== 'SELECT') return;
     qgPickChange(parseInt(t.dataset.gi, 10), t.value);
+  });
+  var capBox = document.getElementById('qg-caps');
+  capBox.addEventListener('input', function(e){
+    var t = e.target, row = t.closest('[data-id]'); if (!row || !t.dataset.k) return;
+    var rule = qgCapsAll()[row.dataset.id]; if (!rule) return;
+    rule[t.dataset.k] = t.dataset.k === 'minN' ? qN(t.value) : t.value.trim();
+    var hint = row.querySelector('[data-hint]'); if (hint) hint.textContent = qgCapHint(rule.size);
+    save();
+    qgRecalc();
+  });
+  capBox.addEventListener('click', function(e){
+    var add = e.target.closest('[data-capadd]'), del = e.target.closest('[data-capdel]');
+    if (add) {
+      var name = qgCourseName(); if (!name) return;
+      var rules = qgCapRules(name), last = rules.length ? rules[rules.length - 1].minN : 0;
+      qgCapsAll()['k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)] = { course:name, minN:last ? last + 5 : 13, size:'' };
+      save(); qgRenderCaps(); qgRecalc();
+    } else if (del) {
+      var id = del.dataset.capdel;
+      if (typeof tombstonePath === 'function') tombstonePath('quoteSizeCaps.' + id);   // 物件裡刪一條：不記墓碑的話，下次存檔會從雲端補回來
+      delete qgCapsAll()[id];
+      save(); qgRenderCaps(); qgRecalc();
+    }
   });
   document.getElementById('qg-course').addEventListener('change', function(){
     qgCase.course = this.value;
@@ -940,6 +967,57 @@ function qgBindEvents(){
     qgCase = qgNewCase(qgCase.venue);
     renderQuote();
   });
+}
+
+/* ── 尺寸上限（依現場空間，大熊自己訂）──────────────────────────
+   S.quoteSizeCaps = { 流水號: { course:課程名, minN:人數門檻, size:'8號' } }：這門課「幾個人以上，基底材最大做到多大」。
+   用物件不用陣列：陣列存檔時會跟雲端取聯集，刪掉的又會跑回來。尺寸寫法跟配方一樣（8號、6F、20*20），用 qgSizeArea 換成面積比大小。
+   只提醒、不改價格 */
+function qgCapsAll(){ if (!S.quoteSizeCaps || typeof S.quoteSizeCaps !== 'object') S.quoteSizeCaps = {}; return S.quoteSizeCaps; }
+function qgCourseName(){ var r = qgCourseById(qgCase.course); return r ? String(r.name || '').trim() : ''; }
+function qgCapRules(name){
+  var all = qgCapsAll();
+  return Object.keys(all).filter(function(k){ return all[k] && all[k].course === name; }).map(function(k){
+    return { id:k, minN:qN(all[k].minN), size:String(all[k].size || ''), area:qgSizeArea(all[k].size) };
+  }).sort(function(a, b){ return a.minN - b.minN; });
+}
+/* 這個人數適用哪一條：人數門檻 ≤ 人數 裡最大的那條；尺寸看不懂的不算 */
+function qgCapFor(name, n){
+  var best = null;
+  if (name) qgCapRules(name).forEach(function(x){ if (x.area > 0 && n >= x.minN) best = x; });
+  return best;
+}
+function qgCapHint(size){
+  if (!String(size || '').trim()) return '';
+  var a = qgSizeArea(size);
+  return a ? '看得懂（約 ' + qFmt(a) + ' 平方公分）' : '看不懂這個尺寸，請寫「8號」「6F」「20*20」這類';
+}
+/* 現在選的基底材尺寸：有尺寸下拉就用選的那款，否則用課程規格的尺寸；都抓不到面積就是 0 */
+function qgCurSize(){
+  var gs = qgCase.recipeKey ? qgRecipeGroups(qgCase.recipeKey) : [], sg = qgSizeGroup(gs);
+  if (sg) { var o = qgPickOpt(sg, qgCase.pick[sg.grp]); if (o && o.area) return { area:o.area, name:o.name }; }
+  var r = qgCourseById(qgCase.course), a = r ? qgSizeArea(r.spec) : 0;
+  return a ? { area:a, name:String(r.spec) } : { area:0, name:'' };
+}
+function qgRenderCaps(){
+  var box = document.getElementById('qg-caps'); if (!box) return;
+  var name = qgCourseName();
+  var h = '<div class="card-title">尺寸上限：幾個人以上，基底材最大做到多大（依現場空間，自己訂）</div>';
+  if (!name) { box.innerHTML = h + '<p class="muted">先在上面「上什麼課」選一門課，再幫這門課設定。</p>'; return; }
+  var gs = qgCase.recipeKey ? qgRecipeGroups(qgCase.recipeKey) : [], sg = qgSizeGroup(gs);
+  if (sg) h += '<datalist id="qg-capOpts">' + sg.opts.map(function(o){ return '<option value="' + qgEsc(o.name) + '">'; }).join('') + '</datalist>';
+  h += '<div class="muted" style="margin-bottom:10px">設定的課程：<b>' + qgEsc(name) + '</b>（這門課所有規格共用）。超過上限只會在上面跳提醒，不會改價格。</div>';
+  var rules = qgCapRules(name);
+  rules.forEach(function(x){
+    h += '<div data-id="' + x.id + '" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">人數 ≥ ' +
+      '<input type="number" data-k="minN" min="1" step="1" value="' + x.minN + '" style="width:72px" onwheel="this.blur()"> 人時，基底材最大 ' +
+      '<input type="text" data-k="size" list="qg-capOpts" value="' + qgEsc(x.size) + '" placeholder="例：8號、6F、20*20" style="width:170px"> ' +
+      '<span class="muted" data-hint style="font-size:12.5px">' + qgCapHint(x.size) + '</span>' +
+      '<button type="button" class="btn-del btn-sm" data-capdel="' + x.id + '">✕</button></div>';
+  });
+  if (!rules.length) h += '<p class="muted">這門課還沒設定，沒有上限。</p>';
+  h += '<button type="button" class="btn btn-outline" data-capadd="1">新增一條</button>';
+  box.innerHTML = h;
 }
 
 /* ── 畫布／框尺寸連動 ─────────────────────────────────────────
@@ -1072,6 +1150,7 @@ function qgRecipeBase(r){
 
 /* 帶入課程：新客價寫進欄位；setHrs＝第一次選這門課時，順便把時長帶成課程時長 */
 function qgApplyCourse(setHrs){
+  qgRenderCaps();
   var r = qgCourseById(qgCase.course), ai = document.getElementById('qg-anchor');
   if (!r) { qSetText('qg-courseHint', ''); return; }
   if (setHrs) {
@@ -1236,18 +1315,20 @@ function qgRecalc(){
   var byN = document.getElementById('qg-byN');
   if (byN) {
     var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = r.isOut ? '最低可接價（再低倒貼）' : '最低可接價（再低虧本）';
-    if (matMissing) byN.innerHTML = '<tr><td colspan="6" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
+    if (matMissing) byN.innerHTML = '<tr><td colspan="7" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
     else {
       var ns = r.isOut ? [qN(p.gOutMin), qN(p.gOutMin) + 5, qN(p.gOutMin) + 10] : [8, 12, 15, 20, 25];
       var up = function(v, step){ return Math.ceil(v / step - 1e-9) * step; };
+      var capName = qgCourseName(), curSz2 = qgCurSize();
       var rowsN = ns.map(function(nn){
         var x = qgCompute(Object.assign({}, c, { n:nn, auto:true }), p);
         var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = x.recPerTax, hi = up(x.hi.perTax, 50);
         var room = r.isOut ? '' : (nn <= 12 ? '（小教室）' : '（大教室）');
-        var cur = Math.round(nn) === Math.round(r.n);
+        var cur = Math.round(nn) === Math.round(r.n), capRow = qgCapFor(capName, nn);
         return '<tr' + (cur ? ' style="font-weight:600"' : '') + '><td>' + nn + ' 人' + room + (cur ? '　← 現在填的' : '') + '</td>' +
           '<td>' + qFmt(lo) + '</td><td>' + qFmt(mid) + '</td><td>' + qFmt(hi) + '</td>' +
-          '<td>' + qFmt(mid * nn) + '</td><td>' + (x.anchor > 0 ? Math.round(mid / x.anchor * 100) + '%' : '—') + '</td></tr>';
+          '<td>' + qFmt(mid * nn) + '</td><td>' + (x.anchor > 0 ? Math.round(mid / x.anchor * 100) + '%' : '—') + '</td>' +
+          '<td>' + (capRow ? qgEsc(capRow.size) + (curSz2.area > capRow.area * 1.02 ? '　<span style="color:var(--gold2)">現在選的超過</span>' : '') : '—') + '</td></tr>';
       });
       byN.innerHTML = rowsN.join('');
     }
@@ -1286,6 +1367,11 @@ function qgRecalc(){
   if (!teachers.length) warns.push(['var(--red)', '還沒有帶課老師。「帶課老師」填幾位，講師費／人次獎金才算得準。']);
   else if (r.lecFees > 0 && teachers.some(function(x){ return !String(x.name || '').trim(); })) warns.push(['var(--gold2)', '有老師還沒填姓名：講師費先按標準費率算。老師有個人倍率的，填了姓名才會套用，價格會有些差。']);
   if (r.isOut && r.n < qN(p.gOutMin)) warns.push(['var(--gold2)', '外派未滿 ' + qN(p.gOutMin) + ' 人，將按 ' + r.guarantee + ' 人收費。']);
+  var capN = qgCapFor(qgCourseName(), r.n), curSz = qgCurSize();
+  if (capN && curSz.area) {
+    if (curSz.area > capN.area * 1.02) warns.push(['var(--gold2)', r.n + ' 人時你設定基底材最大「' + capN.size + '」，現在選的是「' + curSz.name + '」，場地會擠。建議改小一號（上面「基底材」下拉，或改選小尺寸那門課）。']);
+    else warns.push(['var(--text3)', r.n + ' 人時基底材上限「' + capN.size + '」，現在選的尺寸沒超過。']);
+  }
   if (c.staff.length) warns.push(['var(--text3)', '帶課配比：每位帶課者平均帶 ' + r.perStaff.toFixed(1) + ' 人。']);
 
   var w = document.getElementById('qg-warn');
