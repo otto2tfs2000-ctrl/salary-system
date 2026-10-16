@@ -62,12 +62,14 @@ function rcMat(id){
 var RC_SCALE_CATS = ['顏料','膠體','水晶','金箔','熱熔膠','樹脂','溶劑'];
 
 /* 一份配方拆成：固定材料（不隨尺寸）、隨尺寸材料，再各自加損耗。成本不含損耗的小計也一併回傳 */
-function rcParts(key){
+function rcParts(key, pick){
   var r = rcData()[key], out = { fixed:0, scal:0, waste:0, raw:0 };
   if (!r || !r.items) return out;
   out.waste = Math.max(0, +r.waste || 0);
   r.items.forEach(function(x){
     var m = rcMat(x.id); if (!m) return;
+    var g = String(x.grp || '').trim();   // pick＝{群組名:材料id}：報價頁選了畫布／框的尺寸，同群組其他款不計入；不傳就全部加（成本表的舊算法）
+    if (pick && g && pick[g] !== undefined && String(pick[g]) !== String(x.id)) return;
     var sub = (+m.cost || 0) * (+x.qty || 0);
     out.raw += sub;
     if (x.scale) out.scal += sub; else out.fixed += sub;
@@ -229,9 +231,9 @@ function rcDrawModal(c, r){
   });
   h += '</tbody></table></div>';
   h += '<div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.7">'
-    + '<b>隨尺寸</b>：勾了代表尺寸變小時這項用量跟著變少（膠、水晶、金箔、顏料）；畫布、框、托盤不勾。<br>'
+    + '<b>隨尺寸</b>：勾了代表尺寸變小時這項用量跟著變少（膠、水晶、金箔、顏料）；基底材（畫布、厚畫布、鏡子）、托盤不勾。<br>'
     + '同一個群組名稱的材料，核銷時只會扣其中一個，由老師當場選。'
-    + '例如畫布填「畫布」，20cm方和4F各一列，核銷時二選一。留空的照舊每次都扣。</div>';
+    + '尺寸有大有小的基底材（畫布、厚畫布、鏡子），群組欄請統一填「基底材」，20cm方和4F各一列，核銷時二選一、報價頁也靠它換尺寸。其他材料不要填群組。留空的照舊每次都扣。</div>';
   if (!(r.items || []).length) h += '<div class="empty" style="padding:14px">還沒有材料，從下方加入</div>';
 
   h += '<div style="margin-top:12px">';
