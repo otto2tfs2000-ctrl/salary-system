@@ -745,8 +745,8 @@ function qgSkeleton(){
 
   h += '<div class="card">';
   h +=   '<div class="card-title">人數對照：同一門課、同樣條件，人數不同價格差多少（每人含稅）</div>';
-  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>建議價 ÷ 體驗價</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
-  h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
+  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>比體驗價</th><th>照建議價的利潤率</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
+  h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。建議價、開價最高封頂在體驗價（團班不會比一個人自己來貴）；人數少時教室成本分不掉，利潤率會很低，看「照建議價的利潤率」那欄。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
   h += '</div>';
 
   h += '<div class="card">';
@@ -999,7 +999,7 @@ function qgRenderBudget(r, matMissing){
   var grid = rows.map(function(row){
     return ns.map(function(nn){
       var x = qgCompute(Object.assign({}, c, row.over, { n:nn, auto:true }), p);
-      var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = x.recPerTax, cap = qgCapFor(name, nn);
+      var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = (x.anchor > 0 && x.recPerTax > x.anchor) ? x.anchor : x.recPerTax, cap = qgCapFor(name, nn);
       return { lo:lo, mid:mid, over:!!(cap && row.area && row.area > cap.area * 1.02), st: !B ? '' : (mid <= B ? 'ok' : (lo <= B ? 'low' : 'no')) };
     });
   });
@@ -1380,19 +1380,27 @@ function qgRecalc(){
   var byN = document.getElementById('qg-byN');
   if (byN) {
     var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = r.isOut ? '最低可接價（再低倒貼）' : '最低可接價（再低虧本）';
-    if (matMissing) byN.innerHTML = '<tr><td colspan="7" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
+    if (matMissing) byN.innerHTML = '<tr><td colspan="8" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
     else {
       var ns = qgNs(r.isOut, p);
       var up = function(v, step){ return Math.ceil(v / step - 1e-9) * step; };
       var capName = qgCourseName(), curSz2 = qgCurSize();
       var rowsN = ns.map(function(nn){
         var x = qgCompute(Object.assign({}, c, { n:nn, auto:true }), p);
-        var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = x.recPerTax, hi = up(x.hi.perTax, 50);
+        var lo = up((r.isOut ? x.cash : x.be).perTax, 10), formula = x.recPerTax, hi = up(x.hi.perTax, 50);
+        /* 體驗價是天花板：團班不會比一個人自己來還貴。公式算出來超過就封頂在體驗價；連最低可接價都超過就是不接團班 */
+        var ceil = x.anchor > 0 ? x.anchor : 0, noGo = ceil > 0 && lo > ceil, capped = ceil > 0 && formula > ceil && !noGo;
+        var mid = capped ? ceil : formula; if (ceil > 0 && hi > ceil) hi = ceil;
+        var y = qgCompute(Object.assign({}, c, { n:nn, auto:false, price: mid / (1 + x.tax) }), p);
         var room = r.isOut ? '' : (nn <= 12 ? '（小教室）' : '（大教室）');
         var cur = Math.round(nn) === Math.round(r.n), capRow = qgCapFor(capName, nn);
+        var note = noGo ? '<div style="font-size:12px;color:var(--red)">不接團班：連最低可接價都比一個人自己來還貴，請各自用體驗價預約或併班</div>'
+          : (capped ? '<div class="muted" style="font-size:12px">公式算 ' + qFmt(formula) + '，團班不會比體驗價貴，所以封頂' + (!r.isOut && nn < 15 ? '；人數少，建議併班或按 15 人計費' : '') + '</div>' : '');
         return '<tr' + (cur ? ' style="font-weight:600"' : '') + '><td>' + nn + ' 人' + room + (cur ? '　← 現在填的' : '') + '</td>' +
-          '<td>' + qFmt(lo) + '</td><td>' + qFmt(mid) + '</td><td>' + qFmt(hi) + '</td>' +
-          '<td>' + qFmt(mid * nn) + '</td><td>' + (x.anchor > 0 ? Math.round(mid / x.anchor * 100) + '%' : '—') + '</td>' +
+          '<td>' + qFmt(lo) + '</td>' +
+          (noGo ? '<td>—' + note + '</td><td>—</td><td>—</td><td>—</td><td>—</td>'
+                : '<td>' + qFmt(mid) + note + '</td><td>' + qFmt(hi) + '</td><td>' + qFmt(mid * nn) + '</td>' +
+                  '<td>' + (ceil > 0 ? Math.round(mid / ceil * 100) + '%' : '—') + '</td><td>' + pct(y.margin) + '</td>') +
           '<td>' + (capRow ? qgEsc(capRow.size) + (curSz2.area > capRow.area * 1.02 ? '　<span style="color:var(--gold2)">現在選的超過</span>' : '') : '—') + '</td></tr>';
       });
       byN.innerHTML = rowsN.join('');
