@@ -101,6 +101,7 @@ function renderQuote(){
   qgBindEvents();
   qgRenderStaff();
   qgRenderCaps();
+  qgRenderDisc();
   qgRecalc();
   qcBindEvents();
   qcRecalc();
@@ -628,7 +629,13 @@ function qgCompute(c, p){
   var anchorRaw = qN(c.anchor);
   var anchorNet = anchorRaw > 0 ? anchorRaw / (1 + tax) + matDiffPer / (1 - hq) : 0;
   var anchor = anchorRaw > 0 ? anchorNet * (1 + tax) : 0;
-  var recPerTax = Math.ceil(Rtgt * (1 + tax) / n / 50 - 1e-9) * 50;   // 報給家長好聽：含稅往上取整到 50
+  var recFormula = Math.ceil(Rtgt * (1 + tax) / n / 50 - 1e-9) * 50;   // 公式價（利潤目標）：報給家長好聽，含稅往上取整到 50
+  /* 建議價：有填「人數折數表」就照表（體驗價 × 折數，取整到 50），但不能低於最低可接價（現金底線，取整到 10）；沒填就用公式價 */
+  var disc = anchor > 0 ? qgDiscFor(c.venue, n) : null;
+  var floorTax = Math.ceil(at(Rcash).perTax / 10 - 1e-9) * 10;
+  var tblTax = disc ? Math.round(anchor * disc.pct / 100 / 50) * 50 : 0;
+  var recPerTax = disc ? Math.max(tblTax, floorTax) : recFormula;
+  var tblPct = disc ? disc.pct : 0, tblFloor = !!disc && floorTax > tblTax;
   var price = c.auto ? recPerTax / (1 + tax) : qN(c.price);
   var R = price * n, rev = R + lecRev, hqFee = rev * hq, profit = rev - hqFee - cost, net = profit - occ;
   var guarantee = isOut ? Math.max(n, qN(p.gOutMin)) : Math.max(1, n - qN(p.gInTol));
@@ -636,7 +643,7 @@ function qgCompute(c, p){
                        .reduce(function(s, r){ return s + qN(r.heads); }, 0);
   return {
     n:n, hrs:hrs, tax:tax, hq:hq, gm:gm, gmHi:gmHi, isOut:isOut, auto:!!c.auto, anchor:anchor, anchorRaw:anchorRaw, anchorNet:anchorNet, matDiffPer:matDiffPer, stdMat:stdMat, matPer:matPer, matFixed:matFixed, matVar:matVar, sizePct:sizePct,
-    price:price, perTax:price*(1+tax), recPerTax:recPerTax,
+    price:price, perTax:price*(1+tax), recPerTax:recPerTax, recFormula:recFormula, tblPct:tblPct, tblFloor:tblFloor,
     mat:mat, fees:fees, lecFees:lecFees, headFees:headFees, trans:trans, haul:haul, misc:misc, lost:lost, cost:cost,
     lecRev:lecRev, lecRevTax:lecRev*(1+tax), R:R, rev:rev, revTax:rev*(1+tax), hqFee:hqFee, profit:profit, net:net, margin: rev > 0 ? net/rev : 0,
     buffer:buffer, occHrs:occHrs, occ:occ, costFull:costFull,
@@ -735,7 +742,7 @@ function qgSkeleton(){
   h += '</div>';
 
   h += '<div class="card">';
-  h +=   '<div class="card-title">價格落差：最低可接價（現金底線）→ 回收教室成本價 → 建議價 → 開價（客人要按小時報，看「每小時」那欄）</div>';
+  h +=   '<div class="card-title">價格落差：最低可接價（現金底線）→ 回收教室成本價 → 利潤目標價（客人要按小時報，看「每小時」那欄）</div>';
   h +=   '<div style="overflow-x:auto"><table><thead><tr><th></th><th>課程費（含稅）</th><th>每人（含稅）</th><th>每小時（含稅）</th><th>利潤率</th><th>實際賺到（已扣教室成本）</th><th>還沒扣教室成本前</th></tr></thead><tbody id="qg-tiers"></tbody></table></div>';
   h +=   '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">';
   h +=     '<button class="btn btn-gold" id="qg-copy">複製報價文字</button>';
@@ -748,6 +755,8 @@ function qgSkeleton(){
   h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>整場建議價</th><th>比體驗價</th><th>這場現金多賺</th><th>扣教室成本後利潤率</th><th>基底材尺寸上限</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
   h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價取整到 50）。最低可接價只算這場多花的現金（材料、獎金、總部、交通…），房租和固定薪水不管有沒有這團都要付，所以不算進去；若這個時段原本會有現金客人，請填上面「當天被擠掉的四樓營收」。建議價最高封頂在體驗價（團班不會比一個人自己來貴）。人數少時教室成本分不掉，所以看「這場現金多賺」。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
   h += '</div>';
+
+  h += '<div class="card" id="qg-disc"></div>';
 
   h += '<div class="card">';
   h +=   '<div class="card-title">預算入口：對方說預算，哪些「尺寸 × 人數」做得到</div>';
@@ -840,6 +849,28 @@ function qgBindEvents(){
     var t = e.target; if (!t || t.tagName !== 'SELECT') return;
     qgPickChange(parseInt(t.dataset.gi, 10), t.value);
   });
+  var discBox = document.getElementById('qg-disc');
+  discBox.addEventListener('input', function(e){
+    var t = e.target, row = t.closest('[data-id]'); if (!row || !t.dataset.k) return;
+    var rule = qgDiscAll()[row.dataset.id]; if (!rule) return;
+    rule[t.dataset.k] = qN(t.value);
+    var hint = row.querySelector('[data-hint]'); if (hint) hint.textContent = rule.pct > 0 ? '＝ ' + qgZhe(rule.pct) + ' 折' : '';
+    save();
+    qgRecalc();
+  });
+  discBox.addEventListener('click', function(e){
+    var add = e.target.closest('[data-discadd]'), del = e.target.closest('[data-discdel]');
+    if (add) {
+      var rules = qgDiscRules(qgCase.venue), last = rules.length ? rules[rules.length - 1] : null;
+      qgDiscAll()['k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)] = { venue:qgCase.venue, minN:last ? last.minN + 4 : 8, pct:last ? Math.max(1, last.pct - 5) : 95 };
+      save(); qgRenderDisc(); qgRecalc();
+    } else if (del) {
+      var id = del.dataset.discdel;
+      if (typeof tombstonePath === 'function') tombstonePath('quoteDisc.' + id);   // 物件裡刪一條：不記墓碑的話，下次存檔會從雲端補回來
+      delete qgDiscAll()[id];
+      save(); qgRenderDisc(); qgRecalc();
+    }
+  });
   var capBox = document.getElementById('qg-caps');
   capBox.addEventListener('input', function(e){
     var t = e.target, row = t.closest('[data-id]'); if (!row || !t.dataset.k) return;
@@ -904,6 +935,7 @@ function qgBindEvents(){
     qgCase.staff.forEach(function(r){ r.mode = qgDefaultMode(r.role, qgCase.lecOn); });
     qgSpreadHeads(qgCase);
     qgRenderStaff();
+    qgRenderDisc();
     qgRecalc();
   });
 
@@ -1032,6 +1064,40 @@ function qgRenderBudget(r, matMissing){
   h += '<div class="qg-hint" style="margin-top:8px">✓ 建議價在預算內　△ 預算比建議價低，但高於現金底線，可以接、利潤較薄　✕ 連現金底線都不夠。每一格都用這門課的配方重新算材料，不看你上面手改的材料數字；價格往上取整。' +
     (rows[0] && rows[0].area ? '' : '這門課沒有基底材尺寸下拉，這裡只能列耗材用量；要換小一號的基底材，請改選小尺寸那門課。') + '</div>';
   out.innerHTML = h;
+}
+
+/* ── 人數折數表（大熊自己填）──────────────────────────────
+   S.quoteDisc = { 流水號: { venue:'in'|'out', minN:人數門檻, pct:體驗價的幾 % } }：建議價＝體驗價 × 折數，但不低於最低可接價。
+   內場、外派各一組；人數取「門檻 ≤ 人數」裡最大的那條，比最小門檻還少就沿用最小那條。用物件不用陣列（陣列存檔會跟雲端取聯集，刪掉的會跑回來） */
+function qgDiscAll(){ if (!S.quoteDisc || typeof S.quoteDisc !== 'object') S.quoteDisc = {}; return S.quoteDisc; }
+function qgDiscRules(venue){
+  var all = qgDiscAll();
+  return Object.keys(all).filter(function(k){ return all[k] && all[k].venue === venue; }).map(function(k){
+    return { id:k, minN:qN(all[k].minN), pct:qN(all[k].pct) };
+  }).sort(function(a, b){ return a.minN - b.minN; });
+}
+function qgDiscFor(venue, n){
+  var best = null;
+  var rules = qgDiscRules(venue).filter(function(x){ return x.pct > 0; });
+  rules.forEach(function(x){ if (n >= x.minN) best = x; });
+  return best || rules[0] || null;   // 人數比最小那條還少：沿用最小那條，免得跳回公式價比體驗價還貴
+}
+function qgZhe(pct){ return (Math.round(pct) / 10).toFixed(1).replace(/\.0$/, ''); }   // 85 → 8.5、90 → 9
+function qgRenderDisc(){
+  var box = document.getElementById('qg-disc'); if (!box) return;
+  var venue = qgCase.venue, rules = qgDiscRules(venue);
+  var h = '<div class="card-title">人數折數表（自己填）：' + (venue === 'out' ? '外派' : '內場') + '</div>';
+  h += '<div class="muted" style="margin-bottom:10px">幾個人以上，收體驗價的幾 %。建議價就照這張表算，但不會低於「最低可接價」。人數比最小那條還少，就沿用最小那條。內場、外派各填各的，換上課地點會換一張表。</div>';
+  rules.forEach(function(x){
+    h += '<div data-id="' + x.id + '" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">人數 ≥ ' +
+      '<input type="number" data-k="minN" min="1" step="1" value="' + x.minN + '" style="width:72px" onwheel="this.blur()"> 人，收體驗價的 ' +
+      '<input type="number" data-k="pct" min="1" step="1" value="' + x.pct + '" style="width:80px" onwheel="this.blur()"> % ' +
+      '<span class="muted" data-hint style="font-size:12.5px">' + (x.pct > 0 ? '＝ ' + qgZhe(x.pct) + ' 折' : '') + '</span>' +
+      '<button type="button" class="btn-del btn-sm" data-discdel="' + x.id + '">✕</button></div>';
+  });
+  if (!rules.length) h += '<p class="muted">還沒填，建議價目前是用公式算的。</p>';
+  h += '<button type="button" class="btn btn-outline" data-discadd="1">新增一條</button>';
+  box.innerHTML = h;
 }
 
 /* ── 尺寸上限（依現場空間，大熊自己訂）──────────────────────────
@@ -1311,8 +1377,11 @@ function qgRecalc(){
         (r.lecFees ? '｜講師費 ' + qFmt(r.lecFees) + '（按堂，每多一位老師就多一份）' : '') + '。');
       if (!r.isOut) L.push('教室占用成本：占用教室 <b>' + r.occHrs + '</b> 小時（上課 ' + r.hrs + '＋準備收拾 ' + r.buffer + '）× 每小時 ' + qFmt(qN(p.gHourCost)) + ' ＝ <b>' + qFmt(r.occ) + '</b>，平均每人 ' + qFmt(r.occ / r.n) + '（人越少每人分攤越多）。');
       var T = function(x){ return qFmt(x.perTax); };
-      L.push('每人（含稅）：最低可接價（現金底線） <b>' + T(r.cash) + '</b>｜回收教室成本價 ' + T(r.be) + '｜建議價（淨利 ' + Math.round(r.gm * 100) + '%） <b>' + T(r.tgt) + '</b>' +
+      L.push('每人（含稅）：最低可接價（現金底線） <b>' + T(r.cash) + '</b>｜回收教室成本價 ' + T(r.be) + '｜利潤目標價（淨利 ' + Math.round(r.gm * 100) + '%） ' + T(r.tgt) +
         (r.anchor > 0 ? '｜體驗價 ' + qFmt(r.anchorRaw) + (r.matDiffPer ? '（材料換成這場的 ' + qFmt(r.matPer) + ' 後，同等級約 <b>' + qFmt(r.anchor) + '</b>）' : '') + '，團班建議價是它的 ' + Math.round(r.recPerTax / r.anchor * 100) + '%' : ''));
+      if (r.anchor > 0) L.push(r.tblPct
+        ? '建議價照你的「人數折數表」：' + r.n + ' 人 → 體驗價 × ' + r.tblPct + '%（' + qgZhe(r.tblPct) + ' 折）' + (r.tblFloor ? '，已被最低可接價頂住，不能再低' : '') + '。'
+        : '你還沒填這個地點的「人數折數表」，建議價目前是公式價（利潤目標，封頂不超過體驗價）。');
       if (r.matDiffPer) L.push('這次耗材用量 ' + Math.round(r.sizePct) + '%：每人材料 ' + qFmt(r.matPer) + '（基準尺寸 ' + qFmt(r.stdMat) + '，' + (r.matDiffPer >= 0 ? '多' : '少') + ' ' + qFmt(Math.abs(r.matDiffPer)) + '），這一段照成本轉嫁、不乘利潤率。');
       if (!c.auto) L.push('你自己訂的是每人 <b>' + qFmt(r.perTax) + '</b>，系統建議 ' + qFmt(r.recPerTax) + '。');
     }
@@ -1371,8 +1440,8 @@ function qgRecalc(){
   if (tiers) tiers.innerHTML =
     tierRow('最低可接價　現金底線，再低就倒貼現金', r.cash) +
     (r.isOut ? '' : tierRow('回收教室成本價　連教室占用成本也賺回來', r.be)) +
-    tierRow('建議價　淨利 ' + Math.round(r.gm * 100) + '%（一般客戶）', r.tgt) +
-    tierRow('開價　淨利 ' + Math.round(r.gmHi * 100) + '%（留讓價空間）', r.hi) +
+    tierRow('利潤目標價　淨利 ' + Math.round(r.gm * 100) + '%（參考）', r.tgt) +
+    tierRow('高利潤價　淨利 ' + Math.round(r.gmHi * 100) + '%（參考）', r.hi) +
     (anchorX ? tierRow('體驗價（一個人來要付，對照用）', anchorX) : '') +
     tierRow(c.auto ? '系統建議（取整）' : '目前報價', r.cur, true);
 
@@ -1396,7 +1465,8 @@ function qgRecalc(){
         var cur = Math.round(nn) === Math.round(r.n), capRow = qgCapFor(capName, nn);
         var loNote = r.isOut ? '' : '<div class="muted" style="font-size:12px">連教室成本也回收：' + qFmt(be) + '</div>';
         var note = noGo ? '<div style="font-size:12px;color:var(--red)">連最低可接價都比一個人自己來還貴，不適合團班</div>'
-          : (capped ? '<div class="muted" style="font-size:12px">公式算 ' + qFmt(formula) + '，團班不會比體驗價貴，先封頂。想給優惠，請在最低可接價和體驗價之間自己訂</div>' : '');
+          : (x.tblPct ? '<div class="muted" style="font-size:12px">照折數表：體驗價 × ' + x.tblPct + '%（' + qgZhe(x.tblPct) + ' 折）' + (x.tblFloor ? '，已被最低可接價頂住' : '') + '</div>'
+          : capped ? '<div class="muted" style="font-size:12px">公式算 ' + qFmt(formula) + '，團班不會比體驗價貴，先封頂。到下面「人數折數表」填你要的折數</div>' : '');
         return '<tr' + (cur ? ' style="font-weight:600"' : '') + '><td>' + nn + ' 人' + room + (cur ? '　← 現在填的' : '') + '</td>' +
           '<td>' + qFmt(lo) + loNote + '</td>' +
           (noGo ? '<td>—' + note + '</td><td>—</td><td>—</td><td>—</td><td>—</td>'
