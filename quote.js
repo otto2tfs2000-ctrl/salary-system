@@ -743,6 +743,12 @@ function qgSkeleton(){
   h += '</div>';
 
   h += '<div class="card">';
+  h +=   '<div class="card-title">人數對照：同一門課、同樣條件，人數不同價格差多少（每人含稅）</div>';
+  h +=   '<div style="overflow-x:auto"><table><thead><tr><th>人數</th><th id="qg-byN-h1">最低可接價</th><th>建議價</th><th>開價</th><th>整場建議價</th><th>建議價 ÷ 體驗價</th></tr></thead><tbody id="qg-byN"></tbody></table></div>';
+  h +=   '<div class="qg-hint" style="margin-top:8px">每一格都是用上面填的課程、材料、時長、老師人數重新算的；價格往上取整（最低可接價取整到 10、建議價與開價取整到 50）。老師人數是照上面設定，人數多到要加老師，請自己先把「帶課老師」改好。外派如果講師費另外跟客人收，這裡是課程費，講師費另計。</div>';
+  h += '</div>';
+
+  h += '<div class="card">';
   h +=   '<div class="card-title">成本拆解（錢花去哪裡）</div>';
   h +=   '<div id="qg-breakdown"></div>';
   h += '</div>';
@@ -1225,6 +1231,27 @@ function qgRecalc(){
     tierRow('開價　淨利 ' + Math.round(r.gmHi * 100) + '%（留讓價空間）', r.hi) +
     (anchorX ? tierRow('體驗價（一個人來要付，對照用）', anchorX) : '') +
     tierRow(c.auto ? '系統建議（取整）' : '目前報價', r.cur, true);
+
+  // 人數對照表：同樣條件換人數重算。內場 8／12（小教室滿）／15／20／25（大教室滿）；外派從最低計費人數起每 5 人一檔
+  var byN = document.getElementById('qg-byN');
+  if (byN) {
+    var h1 = document.getElementById('qg-byN-h1'); if (h1) h1.textContent = r.isOut ? '最低可接價（再低倒貼）' : '最低可接價（再低虧本）';
+    if (matMissing) byN.innerHTML = '<tr><td colspan="6" class="muted">先填材料成本，才算得出各人數的價格。</td></tr>';
+    else {
+      var ns = r.isOut ? [qN(p.gOutMin), qN(p.gOutMin) + 5, qN(p.gOutMin) + 10] : [8, 12, 15, 20, 25];
+      var up = function(v, step){ return Math.ceil(v / step - 1e-9) * step; };
+      var rowsN = ns.map(function(nn){
+        var x = qgCompute(Object.assign({}, c, { n:nn, auto:true }), p);
+        var lo = up((r.isOut ? x.cash : x.be).perTax, 10), mid = x.recPerTax, hi = up(x.hi.perTax, 50);
+        var room = r.isOut ? '' : (nn <= 12 ? '（小教室）' : '（大教室）');
+        var cur = Math.round(nn) === Math.round(r.n);
+        return '<tr' + (cur ? ' style="font-weight:600"' : '') + '><td>' + nn + ' 人' + room + (cur ? '　← 現在填的' : '') + '</td>' +
+          '<td>' + qFmt(lo) + '</td><td>' + qFmt(mid) + '</td><td>' + qFmt(hi) + '</td>' +
+          '<td>' + qFmt(mid * nn) + '</td><td>' + (x.anchor > 0 ? Math.round(mid / x.anchor * 100) + '%' : '—') + '</td></tr>';
+      });
+      byN.innerHTML = rowsN.join('');
+    }
+  }
 
   var bd = document.getElementById('qg-breakdown');
   if (bd) {
