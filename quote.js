@@ -1401,9 +1401,26 @@ function qgRecalc(){
     var varZero = blank(c.matVar) || qN(c.matVar) === 0;
     sn.style.background = varZero && r.sizePct !== 100 ? 'rgba(201,168,76,.18)' : '';
     if (varZero) tx = '<b>耗材用量現在動不了價格：</b>「耗材」是空的（或 0）。用量 % 只會縮那一格——膠、水晶、金箔、顏料這類會隨尺寸變多變少的材料，請把基準尺寸那一款的合計填進去。基底材、包裝選哪個尺寸就是哪個價，不受這個 % 影響；要換小一號的基底材，請用上面的「基底材（選尺寸）」下拉，或改選小尺寸的那門課。';
-    else if (r.sizePct === 100) tx = '目前是基準尺寸。要做小一點：按 90／80／70，或直接填 %（只會縮「耗材」這 ' + qFmt(r.matVar) + '）。' + (qgCase.recipeKey && qgRecipeGroups(qgCase.recipeKey).length ? '基底材換尺寸，請用上面課程下方的尺寸下拉。' : '基底材換小一號，請到上面「上什麼課」改選小尺寸那門課。');
-    else tx = '<b>尺寸 ' + Math.round(r.sizePct) + '%</b>：每人材料 ' + qFmt(b100.matPer) + ' → <b>' + qFmt(r.matPer) + '</b>（' + sg(dMat) + '）｜建議每人報價 ' + qFmt(b100.recPerTax) + ' → <b>' + qFmt(r.recPerTax) + '</b>（' + sg(dPrice) + '，精算差 ' + sg(Math.round(dExact)) + '，報價取整到 50）。' +
-      (c.auto ? '' : '<span style="color:var(--gold2)">　你現在是「自己訂價」，不會跟著變；切回「自動」才會連動。</span>');
+    else {
+      var noPicks = !(qgCase.recipeKey && qgRecipeGroups(qgCase.recipeKey).length);
+      /* 報價是一格 50 元：往下掃用量 %，找第一個讓建議價掉一格的位置，跟「這格離邊界多遠」一起講清楚 */
+      var stepTx = '';
+      if (c.auto) {
+        var hit = null;
+        for (var pc = Math.round(r.sizePct) - 1; pc >= 0; pc--) {
+          var t = qgCompute(Object.assign({}, c, { sizePct:pc }), p);
+          if (t.recPerTax < r.recPerTax - 0.5) { hit = { pc:pc, mat:t.matPer, rec:t.recPerTax }; break; }
+        }
+        stepTx = hit
+          ? '　<b>報價是 50 元一格，</b>耗材要再降到 <b>' + hit.pc + '%</b>（每人材料 ' + qFmt(hit.mat) + '）才會掉到 <b>' + qFmt(hit.rec) + '</b>；在那之前按哪個 % 報價都是 ' + qFmt(r.recPerTax) + '。'
+          : '　<b>報價是 50 元一格，</b>耗材縮到 0% 也不會再掉一格，所以這門課光調用量 % 動不了報價。';
+      }
+      tx = (r.sizePct === 100 ? '目前是基準尺寸。要做小一點：按 90／80／70，或直接填 %（只會縮「耗材」這 ' + qFmt(r.matVar) + '）。'
+        : '<b>尺寸 ' + Math.round(r.sizePct) + '%</b>：每人材料 ' + qFmt(b100.matPer) + ' → <b>' + qFmt(r.matPer) + '</b>（' + sg(dMat) + '）｜建議每人報價 ' + qFmt(b100.recPerTax) + ' → <b>' + qFmt(r.recPerTax) + '</b>（' + sg(dPrice) + '，精算差 ' + sg(Math.round(dExact)) + '，報價取整到 50）。') + stepTx +
+        (noPicks ? '<br><b>這門課沒有「基底材（選尺寸）」下拉，</b>基底材與包裝 ' + qFmt(r.matFixed) + ' 是固定的，用量 % 改不到它。要用小一號的畫布，請到最上面「上什麼課」改選小尺寸的那門課。'
+                 : '<br>基底材換尺寸，請用上面課程下方的尺寸下拉。') +
+        (c.auto ? '' : '<span style="color:var(--gold2)">　你現在是「自己訂價」，不會跟著變；切回「自動」才會連動。</span>');
+    }
     sn.innerHTML = tx;
   }
 
