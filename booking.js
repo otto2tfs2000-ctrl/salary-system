@@ -785,6 +785,7 @@ async function bkLoad(){
   bkList=arr.filter(function(b){ return b.date===d })
     .sort(function(a,b){ return String(a.slot).localeCompare(String(b.slot)) });
   bkAllWeb=arr.filter(function(b){ return b.source==="web" });
+  bkAllActive=arr;
   bkBuildHist(arr);
   bkUpdateNewBadge();
   bkStartLiveWatch();
@@ -847,6 +848,53 @@ function bkVisitItems(v){
    不用額外存 id 對照表。 */
 var bkAllWeb=[];
 var bkCustCancels=[];
+
+/* ══ 每週結算（2026-10-20 大熊要求）══════════════════════
+   以前紅點是「這台瀏覽器上次按已讀之後，家長自己約的有幾筆」，
+   沒按過就從系統開始用到現在一路累加，開後台看到 79、80 根本不知道這週多了幾筆。
+   改成每週一 00:00 歸零：只算這週（週一～週日）新建立的預約，
+   家長自己用 LINE 約的跟我們手動登記的都算，取消／過期的不算。
+   固定時段一次會建好幾週的預約，那是同一位客人報名一次，只算第 1 筆。
+   資料只讀 otto2-booking 的 bookings，跟二樓會館系統、發票、匯款都沒有關係。 */
+var bkAllActive=[];
+function bkWeekStart(base){
+  var d=new Date(base||new Date()); d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-((d.getDay()+6)%7));
+  return d;
+}
+function bkAddDays(d,n){ var x=new Date(d); x.setDate(x.getDate()+n); return x }
+function bkIsNewSignup(b){
+  return !!(b&&b.ts&&b.status!=="cancelled"&&b.status!=="expired"&&!(b.fixed&&(+b.fixed.i||1)>1));
+}
+function bkWeekStats(){
+  var ws=bkWeekStart(), we=bkAddDays(ws,7), lws=bkAddDays(ws,-7), nwe=bkAddDays(ws,14);
+  var st={ws:ws, newWeb:0, newManual:0, newLast:0, visitG:0, visitP:0, nextG:0, nextP:0};
+  var wsK=ds(ws), weK=ds(we), nweK=ds(nwe);
+  bkAllActive.forEach(function(b){
+    if(!b||b.status==="cancelled"||b.status==="expired")return;
+    if(bkIsNewSignup(b)){
+      var t=new Date(b.ts).getTime();
+      if(t>=ws.getTime()&&t<we.getTime()){
+        if(b.source==="web"||b.source==="ai-chat")st.newWeb++; else st.newManual++;
+      }else if(t>=lws.getTime()&&t<ws.getTime())st.newLast++;
+    }
+    var dk=String(b.date||"");
+    if(dk>=wsK&&dk<weK){ st.visitG++; st.visitP+=(+b.people||0) }
+    else if(dk>=weK&&dk<nweK){ st.nextG++; st.nextP+=(+b.people||0) }
+  });
+  st.newTotal=st.newWeb+st.newManual;
+  return st;
+}
+function bkWeekBannerHtml(){
+  var st=bkWeekStats(), md=function(d){ return (d.getMonth()+1)+"/"+d.getDate() };
+  return '<div class="bk-weekbar">'+
+    '<div class="bk-wk"><small>本週新增預約（'+md(st.ws)+'–'+md(bkAddDays(st.ws,6))+'）</small>'+
+      '<b>'+st.newTotal+' 筆</b><small>家長自己約 '+st.newWeb+'・手動登記 '+st.newManual+'</small></div>'+
+    '<div class="bk-wk"><small>上週結算</small><b>'+st.newLast+' 筆</b><small>上週一～週日新增</small></div>'+
+    '<div class="bk-wk"><small>本週要來上課</small><b>'+st.visitG+' 組</b><small>'+st.visitP+' 位</small></div>'+
+    '<div class="bk-wk"><small>下週已排</small><b>'+st.nextG+' 組</b><small>'+st.nextP+' 位</small></div>'+
+  '</div>';
+}
 function bkCancelBannerHtml(){
   if(!bkCustCancels.length)return "";
   return '<div class="bk-cxbar"><div class="bk-cxh">⚠️ 客人自己取消了 '+bkCustCancels.length+
@@ -1513,8 +1561,9 @@ function bkIsNewWeb(b){
 }
 function bkUpdateNewBadge(){
   var badge=document.getElementById("bk-new-badge"); if(!badge)return;
-  var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
-  var n=bkAllWeb.filter(function(b){ return String(b.ts||"")>lastSeen }).length;
+  /* 紅點＝本週新增預約，每週一歸零（見 bkWeekStats） */
+  var n=bkWeekStats().newTotal;
+  badge.title="本週（週一起）新增 "+n+" 筆預約";
   if(n>0){ badge.textContent=n>99?"99+":n; badge.style.display="inline-block" }
   else badge.style.display="none";
 }
@@ -1547,6 +1596,17 @@ function bkHandleSSE(e){
   var msg; try{ msg=JSON.parse(e.data); }catch(err){ return }
   var path=msg.path, data=msg.data;
   var fresh=[];
+  /* 剛連線（或斷線重連）時 Firebase 會先送整包，那是既有資料不是新預約，
+     不能拿來跳通知——以前就是這樣，沒按過已讀的電腦一打開後台就跳「有 80 筆新預約」。 */
+  var isSnapshot=(path==="/");
+  /* 預約被取消／過期：從本週統計拿掉 */
+  var chgParts=String(path||"").replace(/^\//,"").split("/");
+  if(chgParts[0]&&(
+      (chgParts.length===1&&data&&typeof data==="object"&&(data.status==="cancelled"||data.status==="expired"))||
+      (chgParts.length===2&&chgParts[1]==="status"&&(data==="cancelled"||data==="expired")))){
+    bkAllActive=bkAllActive.filter(function(x){ return x.id!==chgParts[0] });
+    bkUpdateNewBadge();
+  }
   if(path==="/"){
     /* 剛連上線，Firebase 會先送整包現有資料當基準 */
     Object.keys(data||{}).forEach(function(k){ var b=data[k]; if(b){ b=Object.assign({},b,{id:k}); fresh.push(b) } });
@@ -1576,10 +1636,18 @@ function bkHandleSSE(e){
     var todayTab2=document.querySelector('.tab[data-tab="today"]');
     if(todayTab2&&todayTab2.classList.contains("active")&&!bkBusy)bkRender();
   }
+  /* 新出現的預約（不管家長約的還是手動登記）併進本週統計 */
+  var freshAll=fresh.filter(function(b){
+    return b&&b.status!=="cancelled"&&b.status!=="expired"&&!bkAllActive.some(function(x){ return x.id===b.id }); });
+  if(freshAll.length){ bkAllActive=bkAllActive.concat(freshAll); bkUpdateNewBadge(); }
   var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
-  var freshWeb=fresh.filter(function(b){
-    return b&&b.source==="web"&&b.status!=="cancelled"&&b.status!=="expired"&&String(b.ts||"")>lastSeen; });
-  if(!freshWeb.length)return;
+  var freshWeb=freshAll.filter(function(b){
+    return b.source==="web"&&String(b.ts||"")>lastSeen; });
+  if(!freshWeb.length){
+    var tt=document.querySelector('.tab[data-tab="today"]');
+    if(freshAll.length&&!isSnapshot&&tt&&tt.classList.contains("active")&&!bkBusy)bkRender();
+    return;
+  }
   var today=ds(bkDate);
   freshWeb.forEach(function(b){
     if(!bkAllWeb.some(function(x){ return x.id===b.id }))bkAllWeb.push(b);
@@ -1598,7 +1666,7 @@ function bkHandleSSE(e){
     }
   });
   bkUpdateNewBadge();
-  bkNotifyDesktop(freshWeb);
+  if(!isSnapshot)bkNotifyDesktop(freshWeb);
   /* 如果現在正好停在「今日排課」，直接重畫一次，新卡片跟 NEW 標籤馬上跳出來，
      不用手動按重新讀取；已經有其他 bkRender() 在跑的話就不用重複觸發，
      等那次跑完自然就會用上面剛併好的資料畫出來。 */
@@ -2126,6 +2194,7 @@ async function bkRender(noReload){
   }).map(function(s){ return s+"（上限"+bkCapOfSlot(dsNow,s)+"）" });
 
   root.innerHTML=
+   bkWeekBannerHtml()+
    bkNotifBannerHtml()+
    bkCancelBannerHtml()+
    bkHoldBannerHtml()+
@@ -4739,6 +4808,13 @@ css.textContent=
 ".bk-notifbtn{background:var(--bkNavy);color:#fff;border:0;border-radius:8px;"+
   "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
 ".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
+/* 每週結算 */
+".bk-weekbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px}"+
+".bk-wk{background:#fff;border:1px solid #E4E1D8;border-radius:12px;padding:10px 13px;line-height:1.35}"+
+".bk-wk small{display:block;font-size:11.5px;color:#8A8578}"+
+".bk-wk b{display:block;font-size:20px;color:var(--bkNavy);margin:2px 0}"+
+".bk-wk:first-child{border-color:#D9453D;background:#FFF7F6}"+
+".bk-wk:first-child b{color:#D9453D}"+
 ".bk-cxbar{background:#FDECEA;border:1.5px solid #E7A39C;border-radius:12px;padding:12px 15px;"+
   "margin-bottom:16px;color:#8E2A22;font-size:13.5px;line-height:1.5}"+
 ".bk-cxh{font-weight:700;margin-bottom:6px}"+
