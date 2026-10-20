@@ -164,17 +164,78 @@ function mbSellTiming(){
 }
 /* 共用方案：只拆「點數」（基本點數＋創作回饋＋新客/續約回饋的加總），
    堂數／表框折價金／效期一律留在這位買家身上，不分給對方。
+   最多 5 人共用（買家＋4 位共用對象，2026-10-20 從 1 位改成多位）。
+   每位共用對象自己填佔比，買家拿剩下的 %。
    對方輸入的手機如果剛好是現有會員就直接用那個名字，不然存的時候現場新建。 */
+var MB_SPLIT_MAX = 4;
 function mbSellSplitInfo(){
   var chk = document.getElementById('mb-s-split');
   var on = !!(chk && chk.checked);
-  var phone = mbNorm((document.getElementById('mb-s-split-phone') || {}).value || '');
-  var nameInput = ((document.getElementById('mb-s-split-name') || {}).value || '').trim();
-  var pct = +((document.getElementById('mb-s-split-pct') || {}).value);
-  if (isNaN(pct)) pct = 50;
-  pct = Math.max(0, Math.min(100, pct));
-  var existing = phone ? mbList.find(function(x){ return x.phone === phone }) : null;
-  return { on: on, phone: phone, name: existing ? (existing.name || phone) : nameInput, pct: pct, existing: existing };
+  var peers = [];
+  document.querySelectorAll('#mb-s-split-rows .mb-sp-row').forEach(function(row){
+    var phone = mbNorm((row.querySelector('.mb-sp-phone') || {}).value || '');
+    var nameInput = ((row.querySelector('.mb-sp-name') || {}).value || '').trim();
+    var pct = +((row.querySelector('.mb-sp-pct') || {}).value);
+    if (isNaN(pct)) pct = 0;
+    pct = Math.max(0, Math.min(100, pct));
+    var existing = phone ? mbList.find(function(x){ return x.phone === phone }) : null;
+    peers.push({ row: row, phone: phone, name: existing ? (existing.name || phone) : nameInput, pct: pct, existing: existing });
+  });
+  var peerPct = peers.reduce(function(a, x){ return a + x.pct }, 0);
+  return { on: on, peers: peers, buyerPct: 100 - peerPct };
+}
+/* 依佔比分點數：每位共用對象四捨五入，買家拿剩下的，合計一定等於 total */
+function mbSplitPts(total, split){
+  var peerPts = split.peers.map(function(x){ return Math.round(total * x.pct / 100) });
+  var used = peerPts.reduce(function(a, b){ return a + b }, 0);
+  return { buyer: total - used, peers: peerPts };
+}
+function mbSplitRowHtml(phone, pct){
+  return '<div class="mb-sp-row" style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px">' +
+    '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">' +
+    '<b class="mb-sp-no" style="font-size:13.5px"></b>' +
+    '<button type="button" class="btn mb-sp-del" style="padding:2px 10px;font-size:12.5px" ' +
+    'onclick="mbSplitDelRow(this,\'' + phone + '\')">移除</button></div>' +
+    '<div class="fg"><label>手機</label><input class="mb-sp-phone" inputmode="tel" placeholder="09xxxxxxxx" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+    '<div class="mb-sp-hit muted" style="font-size:12.5px;margin:-6px 0 10px"></div>' +
+    '<div class="fg"><label>姓名（系統裡沒有這支電話時，會用這個名字現場新建會員）</label>' +
+    '<input class="mb-sp-name" placeholder="對方的稱呼" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+    '<div class="fg" style="margin-bottom:0"><label>佔比 %</label>' +
+    '<input class="mb-sp-pct" type="number" min="0" max="100" value="' + pct + '" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+    '</div>';
+}
+/* 加人／減人時把佔比重新平均分（買家拿除不盡的零頭），已經填好的手機姓名保留 */
+function mbSplitEven(){
+  var rows = document.querySelectorAll('#mb-s-split-rows .mb-sp-row');
+  var each = Math.floor(100 / (rows.length + 1));
+  rows.forEach(function(row, i){
+    row.querySelector('.mb-sp-pct').value = each;
+    row.querySelector('.mb-sp-no').textContent = '共用對象 ' + (i + 1);
+    row.querySelector('.mb-sp-del').style.display = rows.length > 1 ? '' : 'none';
+  });
+  var add = document.getElementById('mb-s-split-add');
+  if (add) add.style.display = rows.length >= MB_SPLIT_MAX ? 'none' : '';
+}
+function mbSplitAddRow(phone){
+  var box = document.getElementById('mb-s-split-rows');
+  if (!box || box.querySelectorAll('.mb-sp-row').length >= MB_SPLIT_MAX) return;
+  box.insertAdjacentHTML('beforeend', mbSplitRowHtml(phone, 0));
+  mbSplitEven();
+  mbSellPreview(phone);
+}
+function mbSplitDelRow(btn, phone){
+  var row = btn.closest('.mb-sp-row');
+  if (row) row.remove();
+  mbSplitEven();
+  mbSellPreview(phone);
+}
+/* 共用明細上記的其他人：新資料是 splitPeers 陣列，舊資料只有一位 splitPeer */
+function mbSplitOthers(r){
+  if (Array.isArray(r.splitPeers) && r.splitPeers.length) return r.splitPeers;
+  return (r.splitPeer && r.splitPeer.phone) ? [r.splitPeer] : [];
+}
+function mbSplitNames(list){
+  return list.map(function(x){ return x.name || x.phone }).join('、');
 }
 
 /* 依方案效期算到期日 */
@@ -495,7 +556,7 @@ function mbDetail(phone){
       '<td style="font-size:13.5px">' +
         mbSrcChip(r) +
         (r.manual ? '<span style="font-size:11.5px;background:var(--gold);color:#000;padding:1px 6px;border-radius:99px;margin-right:6px">手動</span>' : '') +
-        (r.splitPeer && r.splitPeer.phone ? '<span style="font-size:11.5px;background:var(--bg3);color:var(--text2);padding:1px 6px;border-radius:99px;margin-right:6px" title="與 ' + mbEsc(r.splitPeer.name || r.splitPeer.phone) + ' 共用方案">🔗共用</span>' : '') +
+        (r.splitPeer && r.splitPeer.phone ? '<span style="font-size:11.5px;background:var(--bg3);color:var(--text2);padding:1px 6px;border-radius:99px;margin-right:6px" title="與 ' + mbEsc(mbSplitNames(mbSplitOthers(r))) + ' 共用方案">🔗共用</span>' : '') +
         mbEsc(r.reason || '') +
         (r.expiryNew
           ? '<br><span class="muted" style="font-size:12.5px">效期至 ' + r.expiryNew + '（原 ' + (r.expiry || '—') + '，已延 ' + ((r.extends || []).length) + ' 次）</span>'
@@ -753,14 +814,12 @@ function mbSell(phone){
   h += '<label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:14px;cursor:pointer">' +
        '<input type="checkbox" id="mb-s-split" style="width:16px;height:16px" ' +
        'onchange="document.getElementById(\'mb-s-split-wrap\').style.display=this.checked?\'\':\'none\';mbSellPreview(\'' + phone + '\')"> ' +
-       '與他人共用方案（點數對分，堂數／效期仍算這位買家）</label>';
+       '與他人共用方案（點數依佔比分，最多 5 人；堂數／效期仍算這位買家）</label>';
   h += '<div class="card" id="mb-s-split-wrap" style="display:none;margin-bottom:12px">' +
-       '<div class="fg"><label>共用對象手機</label><input id="mb-s-split-phone" inputmode="tel" placeholder="09xxxxxxxx" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
-       '<div id="mb-s-split-hit" class="muted" style="font-size:12.5px;margin:-6px 0 10px"></div>' +
-       '<div class="fg"><label>共用對象姓名（系統裡沒有這支電話時，會用這個名字現場新建會員）</label>' +
-       '<input id="mb-s-split-name" placeholder="對方的稱呼" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
-       '<div class="fg" style="margin-bottom:0"><label>這位買家（' + mbEsc(m.name || phone) + '）佔比 %</label>' +
-       '<input id="mb-s-split-pct" type="number" min="0" max="100" value="50" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
+       '<div id="mb-s-split-buyer" style="font-size:14px"></div>' +
+       '<div id="mb-s-split-rows">' + mbSplitRowHtml(phone, 50) + '</div>' +
+       '<button type="button" class="btn" id="mb-s-split-add" style="margin-top:12px;width:100%" ' +
+       'onclick="mbSplitAddRow(\'' + phone + '\')">＋ 再加一位共用對象</button>' +
        '</div>';
   h += '<div class="fg"><label>付款方式</label><select id="mb-s-pay">' +
        ['現金','LINE Pay','刷卡','匯款'].map(function(w){ return '<option>' + w + '</option>' }).join('') +
@@ -784,6 +843,8 @@ function mbSell(phone){
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
   mbModal(h);
+  mbSplitEven();
+  mbSellPreview(phone);
   /* 會員檔案沒寫 LINE，不代表客人沒用 LINE 開過預約頁——新客開頁時還沒建檔，
      LINE 只記在別處。問伺服器找回來，找到就換成可勾的通知（2026-10-04）。 */
   if (!m.lineUserId) staffMemberLine(phone).then(function(uid){
@@ -852,6 +913,13 @@ function mbSellPreview(phone){
      切身分當下選單不會跟著出現/消失，要選了方案才生效，會被誤以為沒做這個功能。 */
   var timingWrap = document.getElementById('mb-s-timing-wrap');
   if (timingWrap && m) timingWrap.style.display = mbSellRenew(m) ? 'none' : '';
+  var buyerLine = document.getElementById('mb-s-split-buyer');
+  if (buyerLine && m) {
+    var bp0 = mbSellSplitInfo().buyerPct;
+    buyerLine.innerHTML = '這位買家（' + mbEsc(m.name || phone) + '）佔比 <b style="color:' + (bp0 < 0 ? 'var(--red)' : 'var(--gold2)') + '">' +
+      bp0 + '%</b>' + (bp0 < 0 ? '　<span style="color:var(--red)">共用對象加起來超過 100% 了</span>' : '') +
+      '<span class="muted" style="font-size:12.5px">（100% 扣掉下面每位共用對象）</span>';
+  }
   var i = document.getElementById('mb-s-plan').value;
   var box = document.getElementById('mb-s-prev');
   if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:13.5px">選了方案會顯示明細</div>'; return; }
@@ -864,16 +932,16 @@ function mbSellPreview(phone){
   var exp = mbExpiry(p.months);
 
   var split = mbSellSplitInfo();
-  var splitHit = document.getElementById('mb-s-split-hit');
-  if (splitHit) {
-    splitHit.innerHTML = !split.phone ? '' :
-      (split.existing ? '找到會員：' + mbEsc(split.existing.name || split.phone)
-                       : '查無此人，存檔時會用「' + mbEsc(split.name || '（還沒填姓名）') + '」現場新建會員');
-  }
-  var primaryPts = addPts, peerPts = 0;
+  split.peers.forEach(function(x){
+    var hit = x.row.querySelector('.mb-sp-hit');
+    if (hit) hit.innerHTML = !x.phone ? '' :
+      (x.existing ? '找到會員：' + mbEsc(x.existing.name || x.phone)
+                  : '查無此人，存檔時會用「' + mbEsc(x.name || '（還沒填姓名）') + '」現場新建會員');
+  });
+  var primaryPts = addPts, alloc = null;
   if (split.on) {
-    primaryPts = Math.round(addPts * split.pct / 100);
-    peerPts = addPts - primaryPts;
+    alloc = mbSplitPts(addPts, split);
+    primaryPts = alloc.buyer;
   }
 
   var h = '<div style="font-size:14.5px;line-height:2">';
@@ -889,8 +957,12 @@ function mbSellPreview(phone){
   if (exp) h += '<br><span class="muted">會員效期至 ' + exp + '（' + p.months + ' 個月）</span>';
   h += '<hr style="border:0;border-top:1px solid var(--border);margin:8px 0">';
   if (split.on) {
-    h += '共用點數 ' + addPts.toLocaleString() + '　→　這位買家 <strong style="color:var(--gold2)">' + primaryPts.toLocaleString() +
-         '</strong>（' + split.pct + '%）・' + mbEsc(split.name || '對方') + ' <strong style="color:var(--gold2)">' + peerPts.toLocaleString() + '</strong>（' + (100 - split.pct) + '%）<br>';
+    h += '共用點數 ' + addPts.toLocaleString() + '（' + (split.peers.length + 1) + ' 人）<br>　這位買家 <strong style="color:var(--gold2)">' + primaryPts.toLocaleString() +
+         '</strong>（' + split.buyerPct + '%）';
+    split.peers.forEach(function(x, j){
+      h += '<br>　' + mbEsc(x.name || ('共用對象 ' + (j + 1))) + ' <strong style="color:var(--gold2)">' + alloc.peers[j].toLocaleString() + '</strong>（' + x.pct + '%）';
+    });
+    h += '<br>';
   }
   h += '售出後：<strong style="color:var(--gold2)">' + (m.points + primaryPts).toLocaleString() + '</strong> 點';
   if (addSes || m.sessions) h += '　<strong>' + (m.sessions + addSes) + '</strong> 堂';
@@ -916,23 +988,32 @@ async function mbSellSave(phone){
 
   var split = mbSellSplitInfo();
   if (split.on) {
-    if (!split.phone || split.phone.length < 8) { alert('請填共用對象正確的手機號碼'); return; }
-    if (split.phone === phone) { alert('共用對象不能是同一個人'); return; }
-    if (!split.existing && !split.name) { alert('系統裡沒有這支電話，請填共用對象的姓名，存檔時會現場新建會員'); return; }
+    if (!split.peers.length) { alert('請至少填一位共用對象'); return; }
+    var seen = {};
+    for (var q = 0; q < split.peers.length; q++) {
+      var sp = split.peers[q], tag = '共用對象 ' + (q + 1);
+      if (!sp.phone || sp.phone.length < 8) { alert('請填' + tag + '正確的手機號碼'); return; }
+      if (sp.phone === phone) { alert(tag + '跟買家是同一個人'); return; }
+      if (seen[sp.phone]) { alert(tag + '的手機跟前面重複了'); return; }
+      seen[sp.phone] = 1;
+      if (!sp.existing && !sp.name) { alert(tag + '的電話系統裡沒有，請填姓名，存檔時會現場新建會員'); return; }
+    }
+    if (split.buyerPct < 0) { alert('共用對象的佔比加起來超過 100%，請調整'); return; }
     if (!pointsTotal) { alert('這個方案沒有點數可以共用，請取消勾選「與他人共用方案」或改選別的方案'); return; }
   }
-  var primaryPts = pointsTotal, peerPts = 0;
+  var primaryPts = pointsTotal, alloc = null;
   if (split.on) {
-    primaryPts = Math.round(pointsTotal * split.pct / 100);
-    peerPts = pointsTotal - primaryPts;
+    alloc = mbSplitPts(pointsTotal, split);
+    primaryPts = alloc.buyer;
   }
 
   if (!confirm('確認售出？\n\n' + p.name + '　$' + (+p.price || 0).toLocaleString() + '（' + pay + '）\n' +
       (renew ? '身分：續約會員' : '身分：新客首購（' + (timing === 'today' ? '體驗當天' : '本月內') + '）') +
       (renew !== rnAuto ? '（人工改的，系統原本判斷是' + (rnAuto ? '續約' : '新客') + '）' : '') + '\n' +
       (split.on
-        ? '共用點數 ' + pointsTotal.toLocaleString() + '　這位買家 +' + primaryPts.toLocaleString() +
-          '（' + split.pct + '%）・' + split.name + ' +' + peerPts.toLocaleString() + '（' + (100 - split.pct) + '%）\n'
+        ? '共用點數 ' + pointsTotal.toLocaleString() + '（' + (split.peers.length + 1) + ' 人）\n　這位買家 +' + primaryPts.toLocaleString() +
+          '（' + split.buyerPct + '%）\n' +
+          split.peers.map(function(x, j){ return '　' + x.name + ' +' + alloc.peers[j].toLocaleString() + '（' + x.pct + '%）\n' }).join('')
         : ((+p.points ? '基本點數 +' + (+p.points).toLocaleString() + '\n' : '') +
            (+p.bonusPoints ? '創作回饋 +' + (+p.bonusPoints).toLocaleString() + '\n' : '') +
            (giftPts ? (renew ? '續約回饋 +' : '首次入會回饋 +') + giftPts.toLocaleString() + '\n' : ''))) +
@@ -963,20 +1044,31 @@ async function mbSellSave(phone){
      金額本來就是這三塊加總後再對分，拆開來看單筆反而看不出實際比例。
      splitTotal／splitPeer 記下來，之後改其中一邊，mbSaveLedger 才知道
      要去哪裡找另一半、要補回多少。 */
-  var splitKey = null, peerBody = null;
+  /* 多人共用：每個人身上這一筆都用同一個 key，splitPeers 記「其他所有人」，
+     splitPeer 留第一位，讓舊的兩人邏輯與舊資料照樣看得懂。 */
+  var splitKey = null, peerBodies = [];
   if (split.on && pointsTotal) {
     splitKey = 'sell_' + stamp + '_split';
+    var everyone = [{ phone: phone, name: m.name || phone }].concat(
+      split.peers.map(function(x){ return { phone: x.phone, name: x.name } }));
+    var others = function(ph){ return everyone.filter(function(x){ return x.phone !== ph }) };
+    var nPeople = everyone.length;
+    var tail = function(ph){
+      return ' 共用方案點數（' + (nPeople > 2 ? nPeople + ' 人共用，' : '') + '共用總額 ' + pointsTotal.toLocaleString() + '）';
+    };
     writes.push({ key: splitKey, body: Object.assign({}, base, {
       delta: primaryPts, type: 'points',
-      reason: reason + '・與' + split.name + ' 共用方案點數（共用總額 ' + pointsTotal.toLocaleString() + '）',
+      reason: reason + '・與' + mbSplitNames(others(phone)) + tail(phone),
       price: +p.price || 0, splitTotal: pointsTotal,
-      splitPeer: { phone: split.phone, name: split.name }
+      splitPeer: others(phone)[0], splitPeers: others(phone)
     }) });
-    peerBody = Object.assign({}, base, {
-      delta: peerPts, type: 'points',
-      reason: p.name + '・與' + (m.name || phone) + ' 共用方案點數（共用總額 ' + pointsTotal.toLocaleString() + '）',
-      splitTotal: pointsTotal,
-      splitPeer: { phone: phone, name: m.name || phone }
+    split.peers.forEach(function(x, j){
+      peerBodies.push(Object.assign({}, base, {
+        delta: alloc.peers[j], type: 'points',
+        reason: p.name + '・與' + mbSplitNames(others(x.phone)) + tail(x.phone),
+        splitTotal: pointsTotal,
+        splitPeer: { phone: phone, name: m.name || phone }, splitPeers: others(x.phone)
+      }));
     });
   } else {
     if (+p.points)      mk('p',  +p.points,      'points',   reason, { price: +p.price || 0 });
@@ -1007,29 +1099,36 @@ async function mbSellSave(phone){
   /* 共用對象那一半：跟主買家是分開的兩次寫入，這裡失敗不會回滾主買家已經
      入好的帳（沒辦法回滾，錢已經收了），所以失敗訊息要講清楚差多少點、
      叫行政去對方帳上手動用「調整餘額」補上，不是叫他重賣一次。 */
-  if (split.on && peerBody) {
-    try {
-      var peerMember = split.existing;
-      if (!peerMember) {
-        var newRec = { phone: split.phone, name: split.name, note: '', createdAt: now,
-                        cache: { points: 0, sessions: 0, bonus: 0 } };
-        await fetch(mbf('/members/' + split.phone + '.json'), { method:'PUT',
-          headers:{'Content-Type':'application/json'}, body: JSON.stringify(newRec) });
-        peerMember = { phone: split.phone, name: split.name, points: 0, sessions: 0, bonus: 0,
-                       ledger: {}, createdAt: now };
-        mbList.push(peerMember);
+  if (split.on && peerBodies.length) {
+    var peerFail = [];
+    for (var pj = 0; pj < split.peers.length; pj++) {
+      var sp2 = split.peers[pj], peerBody = peerBodies[pj];
+      try {
+        var peerMember = sp2.existing;
+        if (!peerMember) {
+          var newRec = { phone: sp2.phone, name: sp2.name, note: '', createdAt: now,
+                          cache: { points: 0, sessions: 0, bonus: 0 } };
+          await fetch(mbf('/members/' + sp2.phone + '.json'), { method:'PUT',
+            headers:{'Content-Type':'application/json'}, body: JSON.stringify(newRec) });
+          peerMember = { phone: sp2.phone, name: sp2.name, points: 0, sessions: 0, bonus: 0,
+                         ledger: {}, createdAt: now };
+          mbList.push(peerMember);
+        }
+        await fetch(mbf('/members/' + sp2.phone + '/ledger/' + splitKey + '.json'), { method:'PUT',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify(peerBody) });
+        peerMember.ledger = peerMember.ledger || {};
+        peerMember.ledger[splitKey] = peerBody;
+        var peerSum = mbSum(peerMember.ledger);
+        await fetch(mbf('/members/' + sp2.phone + '/cache.json'), { method:'PUT',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify(peerSum) });
+        peerMember.points = peerSum.points; peerMember.sessions = peerSum.sessions; peerMember.bonus = peerSum.bonus;
+      } catch(e) {
+        peerFail.push('「' + sp2.name + '」+' + alloc.peers[pj].toLocaleString() + ' 點（' + e.message + '）');
       }
-      await fetch(mbf('/members/' + split.phone + '/ledger/' + splitKey + '.json'), { method:'PUT',
-        headers:{'Content-Type':'application/json'}, body: JSON.stringify(peerBody) });
-      peerMember.ledger = peerMember.ledger || {};
-      peerMember.ledger[splitKey] = peerBody;
-      var peerSum = mbSum(peerMember.ledger);
-      await fetch(mbf('/members/' + split.phone + '/cache.json'), { method:'PUT',
-        headers:{'Content-Type':'application/json'}, body: JSON.stringify(peerSum) });
-      peerMember.points = peerSum.points; peerMember.sessions = peerSum.sessions; peerMember.bonus = peerSum.bonus;
-    } catch(e) {
-      alert('這位買家的點數已經入好了，但共用對象「' + split.name + '」那一半寫入失敗：' + e.message +
-            '\n請到對方的會員頁用「調整餘額」手動補上 +' + peerPts.toLocaleString() + ' 點。');
+    }
+    if (peerFail.length) {
+      alert('這位買家的點數已經入好了，但下面共用對象寫入失敗：\n' + peerFail.join('\n') +
+            '\n請到對方的會員頁用「調整餘額」手動補上。');
     }
   }
 
@@ -1074,7 +1173,7 @@ async function mbSellSave(phone){
   mbClose();
   renderMember();
   alert('已售出：' + p.name + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
-        (split.on && peerBody ? '\n' + split.name + '（' + split.phone + '）另外分到 ' + peerPts.toLocaleString() + ' 點' : '') +
+        (split.on && peerBodies.length ? split.peers.map(function(x, j){ return '\n' + x.name + '（' + x.phone + '）另外分到 ' + alloc.peers[j].toLocaleString() + ' 點' }).join('') : '') +
         (goldN ? '\n\n🪙 已送黃金扭蛋金幣 ' + goldN + ' 枚（' + goldTier + '）' + (goldOpen ? '' : '\n（黃金扭蛋還沒「開放」，客人暫時看不到金幣，LINE 卡片也沒寫金幣）') : '') +
         (goldErr ? '\n\n⚠ 黃金扭蛋金幣沒發成功（' + goldErr + '）。方案已經入好了，請到「扭蛋活動→黃金扭蛋→手動補發金幣」補發。' : '') +
         (notified === true  ? '\n\nLINE 通知已送出。' : '') +
@@ -2088,8 +2187,8 @@ async function mbDelLedger(phone, key){
   if (!confirm('要刪掉這一筆嗎？\n\n' + (TYPE[r.type] || r.type) + ' ' + (d > 0 ? '+' : '') + d.toLocaleString() +
                '\n' + (r.reason || '') + '\n' + String(r.at || '').slice(0,16).replace('T',' ') +
                (r.splitPeer && r.splitPeer.phone
-                 ? '\n\n⚠ 這筆是「共用方案」的一半，刪掉不會自動處理對方（' + (r.splitPeer.name || r.splitPeer.phone) +
-                   '）那一半，要記得自己去對方帳上手動調整。'
+                 ? '\n\n⚠ 這筆是「共用方案」的其中一份，刪掉不會自動處理其他人（' + mbSplitNames(mbSplitOthers(r)) +
+                   '）的部分，要記得自己去對方帳上手動調整。'
                  : '') +
                '\n\n刪掉後餘額會跟著變，這個動作不能復原。')) return;
   try {
@@ -2200,7 +2299,12 @@ function mbEditLedger(phone, key){
        (r.batch ? '<br><span class="muted" style="font-size:12.5px">匯入批次：' + mbEsc(r.batch) + '</span>' : '') +
        '</div>';
 
-  if (r.splitPeer && r.splitPeer.phone) {
+  if (mbSplitOthers(r).length > 1) {
+    h += '<div class="info-box" style="margin-bottom:14px;line-height:1.7">' +
+      '🔗 這筆是 ' + (mbSplitOthers(r).length + 1) + ' 人「共用方案」的其中一份，其他人：<b>' + mbEsc(mbSplitNames(mbSplitOthers(r))) + '</b>，' +
+      '全部合計是 <b>' + (+r.splitTotal || 0).toLocaleString() + '</b> 點。' +
+      '多人共用時改這一筆<b>不會</b>自動改其他人，要重新分配請到各人的會員頁分別調整。</div>';
+  } else if (r.splitPeer && r.splitPeer.phone) {
     h += '<div class="info-box" style="margin-bottom:14px;line-height:1.7">' +
       '🔗 這筆是「共用方案」的一半，跟 <b>' + mbEsc(r.splitPeer.name || r.splitPeer.phone) + '</b>（' + mbEsc(r.splitPeer.phone) + '）綁在一起，' +
       '兩邊合計固定是 <b>' + (+r.splitTotal || 0).toLocaleString() + '</b> 點。' +
@@ -2315,7 +2419,10 @@ async function mbSaveLedger(phone, key){
   /* 共用方案：這一筆改了，對方那一半要自動補成剩下的數字，兩邊合計
      維持 splitTotal 不變。跟上面主筆的寫入是分開的一次請求，失敗了
      不會擋住這一筆已經存好的改動，只提醒行政去對方帳上手動處理。 */
-  if (body.splitPeer && body.splitPeer.phone && (type === 'points')) {
+  if (body.splitPeer && body.splitPeer.phone && (type === 'points') && mbSplitOthers(body).length > 1 && delta !== before.delta) {
+    alert('這一筆已經改好了。這是 ' + (mbSplitOthers(body).length + 1) + ' 人共用的方案，其他人（' + mbSplitNames(mbSplitOthers(body)) +
+          '）的點數不會自動跟著改，合計已經不是原本的 ' + (+body.splitTotal || 0).toLocaleString() + ' 點，需要的話請到各人的會員頁調整。');
+  } else if (body.splitPeer && body.splitPeer.phone && (type === 'points') && mbSplitOthers(body).length <= 1) {
     var peerPhone = body.splitPeer.phone;
     var peerM = mbList.find(function(x){ return x.phone === peerPhone });
     var peerEntry = peerM && peerM.ledger && peerM.ledger[key];
