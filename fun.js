@@ -21,12 +21,12 @@ function funCan(t){
 function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;
-  el.innerHTML = '<div class="muted" style="font-size:13px;margin:-6px 0 14px">客人在遊樂島玩的東西都在這裡。點一個進去設定。</div>' +
+  el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm);margin:-6px 0 14px">客人在遊樂島玩的東西都在這裡。點一個進去設定。</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">' + funItems().map(function(x){
       return '<div class="card" style="margin:0;cursor:pointer;padding:18px" onclick="switchTab(\'' + x.tab + '\')">' +
         '<div style="font-size:30px;line-height:1">' + x.ic + '</div>' +
         '<div style="font-size:17px;font-weight:600;margin:10px 0 4px">' + x.nm + '</div>' +
-        '<div class="muted" style="font-size:12.5px;line-height:1.6">' + x.d + '</div></div>' }).join('') + '</div>';
+        '<div class="muted" style="font-size:var(--fs-xs);line-height:1.6">' + x.d + '</div></div>' }).join('') + '</div>';
 }
 /* 每個小活動頁最上面：「← 藝術家小活動」＋切到其他小活動的按鈕 */
 function funNav(cur){
@@ -34,5 +34,5 @@ function funNav(cur){
   var box = document.querySelector('#tab-' + cur + ' .fun-nav'); if (!box) return;
   box.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-outline btn-sm" onclick="switchTab(\'fun\')">← 藝術家小活動</button>' +
-    funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:13px" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
+    funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:var(--fs-sm)" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
 }

@@ -25,21 +25,21 @@ function evHtml(){
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">活動公告' +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto;margin-right:8px" onclick="evData=null;renderEvents()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="evNew()">＋ 新增活動</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
+    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px">放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
     '「💐 我想去」花牆，活動前幾天島上開始開花，越接近開越多。活動當天過完就自動收掉。<br>報名一律在櫃檯，「我想去」只是讓大家看得到人氣，不是報名。</div>';
   if (!list.length) h += '<div class="empty">還沒有活動，按右上角「＋ 新增活動」。</div>';
   list.forEach(function(e){
     var w = (evData.want || {})[e.id] || {}, ws = Object.keys(w).map(function(k){ return w[k] }).sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
     var dt = evDaysTo(e.date), st = e.on === false ? '<span style="color:var(--text3)">已關閉</span>' : dt < 0 ? '<span style="color:var(--text3)">已結束</span>' :
-      (e.showFrom && evData.today < e.showFrom) ? '<span style="color:#b07a1f">' + evMd(e.showFrom) + ' 開始在島上露出</span>' : '<span style="color:#2e7d4f">島上露出中・倒數 ' + dt + ' 天</span>';
+      (e.showFrom && evData.today < e.showFrom) ? '<span style="color:var(--gold2)">' + evMd(e.showFrom) + ' 開始在島上露出</span>' : '<span style="color:var(--green2)">島上露出中・倒數 ' + dt + ' 天</span>';
     h += '<div style="display:flex;gap:14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap">' +
-      '<div style="width:96px;height:136px;border-radius:8px;background:#eee center/cover no-repeat;flex:none' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
+      '<div style="width:96px;height:136px;border-radius:8px;background:var(--bg3) center/cover no-repeat;flex:none' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
       '<div style="flex:1 1 220px;min-width:0">' +
       '<div style="font-size:16px;font-weight:600">' + gcEsc(e.title) + '</div>' +
-      '<div style="font-size:13.5px;margin:4px 0">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.sub ? '<br><span class="muted">' + gcEsc(e.sub) + '</span>' : '') + '</div>' +
-      '<div style="font-size:13px">' + st + '</div>' +
-      '<div style="font-size:13px;margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
-      (evShowWant[e.id] && ws.length ? '<div style="font-size:12.5px;margin-top:6px;line-height:1.9">' + ws.map(function(x){
+      '<div style="font-size:var(--fs-sm);margin:4px 0">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.sub ? '<br><span class="muted">' + gcEsc(e.sub) + '</span>' : '') + '</div>' +
+      '<div style="font-size:var(--fs-sm)">' + st + '</div>' +
+      '<div style="font-size:var(--fs-sm);margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
+      (evShowWant[e.id] && ws.length ? '<div style="font-size:var(--fs-xs);margin-top:6px;line-height:1.9">' + ws.map(function(x){
         return gcEsc(x.name || x.nm) + ' <span class="muted">' + gcEsc(x.phone || '（沒綁電話）') + '・' + String(x.at).slice(5, 10).replace('-', '/') + '</span>' }).join('<br>') + '</div>' : '') +
       '</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-outline btn-sm" onclick="evOpen(\'' + e.id + '\')">編輯</button></div></div>';
   });
@@ -48,37 +48,37 @@ function evHtml(){
 function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', poster2:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
 function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderEvents() }
 function evInp(id, v, type, w, ph){ return '<input id="' + id + '" type="' + (type || 'text') + '" value="' + gcEsc(v == null ? '' : v) + '"' + (ph ? ' placeholder="' + gcEsc(ph) + '"' : '') +
-  ' style="width:' + (w || 260) + 'px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px">' }
-function evRow(lb, inner, tip){ return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap"><label style="width:110px;color:var(--text2);font-size:13.5px;padding-top:7px">' + lb + '</label><div style="flex:1 1 240px">' + inner +
-  (tip ? '<div class="muted" style="font-size:12px;margin-top:3px">' + tip + '</div>' : '') + '</div></div>' }
+  ' style="width:' + (w || 260) + 'px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)">' }
+function evRow(lb, inner, tip){ return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap"><label style="width:110px;color:var(--text2);font-size:var(--fs-sm);padding-top:7px">' + lb + '</label><div style="flex:1 1 240px">' + inner +
+  (tip ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:3px">' + tip + '</div>' : '') + '</div></div>' }
 function evFormHtml(){
   var e = evEdit;
   return '<div class="card"><div class="card-title">' + (e._new ? '新增活動' : '編輯活動') + '</div>' +
-    (evData.cloudinary ? '' : '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px">伺服器還沒設定 Cloudinary，海報暫時不能上傳。</div>') +
+    (evData.cloudinary ? '' : '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm)">伺服器還沒設定 Cloudinary，海報暫時不能上傳。</div>') +
     '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
     '<div><div style="display:flex;gap:10px">' +
-    '<div><div class="muted" style="font-size:12px;margin-bottom:4px">第 1 張（先看到）</div><div id="ev-pv" style="width:150px;height:212px;border-radius:10px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
+    '<div><div class="muted" style="font-size:var(--fs-xs);margin-bottom:4px">第 1 張（先看到）</div><div id="ev-pv" style="width:150px;height:212px;border-radius:10px;background:var(--bg3) center/cover no-repeat;border:1px solid var(--border)' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
     '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳海報<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this,1)"></label></div>' +
-    '<div><div class="muted" style="font-size:12px;margin-bottom:4px">第 2 張（選填，左右滑）</div><div id="ev-pv2" style="width:150px;height:212px;border-radius:10px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (e.poster2 ? ";background-image:url('" + gcEsc(e.poster2) + "')" : '') + '"></div>' +
+    '<div><div class="muted" style="font-size:var(--fs-xs);margin-bottom:4px">第 2 張（選填，左右滑）</div><div id="ev-pv2" style="width:150px;height:212px;border-radius:10px;background:var(--bg3) center/cover no-repeat;border:1px solid var(--border)' + (e.poster2 ? ";background-image:url('" + gcEsc(e.poster2) + "')" : '') + '"></div>' +
     '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳第二張<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this,2)"></label> ' +
     '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="evClearPoster2()">移除</button></div></div>' +
-    '<div id="ev-st" class="muted" style="font-size:12px;margin-top:4px;max-width:320px"></div></div>' +
+    '<div id="ev-st" class="muted" style="font-size:var(--fs-xs);margin-top:4px;max-width:320px"></div></div>' +
     '<div style="flex:1 1 320px">' +
     evRow('活動名稱', evInp('ev-title', e.title, 'text', 300, '例：坐下，聊花'), '島上通知和布條會用到，短一點比較好') +
     evRow('一句話說明', evInp('ev-sub', e.sub, 'text', 300, '例：五週年藝術交流餐敘')) +
     evRow('費用', evInp('ev-fee', e.fee || '', 'text', 300, '例：每人 800 元（含餐點）；免費就寫「免費」'), '會用醒目的方式放在「詳細資訊」最上面') +
     evRow('地點', evInp('ev-place', e.place || '', 'text', 300, '例：Otto2 工作室')) +
-    evRow('詳細說明', '<textarea id="ev-detail" rows="6" placeholder="例：流程、要帶什麼、報名截止日、退費方式…（最多 1200 字）" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;line-height:1.6;font-family:inherit">' + gcEsc(e.detail || '') + '</textarea>', '家長在海報上按「詳細資訊」才看得到；有填任何一項，「＋1 我想去」就會放在詳細資訊裡面，讓家長先看完再按') +
+    evRow('詳細說明', '<textarea id="ev-detail" rows="6" placeholder="例：流程、要帶什麼、報名截止日、退費方式…（最多 1200 字）" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm);line-height:1.6;font-family:inherit">' + gcEsc(e.detail || '') + '</textarea>', '家長在海報上按「詳細資訊」才看得到；有填任何一項，「＋1 我想去」就會放在詳細資訊裡面，讓家長先看完再按') +
     evRow('活動日期', evInp('ev-date', e.date, 'date', 170), '改日期就改這裡，島上的倒數和開花會跟著新日期走（海報上的日期要記得換新海報）') +
     evRow('時間', evInp('ev-time', e.time, 'text', 170, '例：晚間 18:30')) +
     evRow('島上開始露出', evInp('ev-from', e.showFrom, 'date', 170), '從這天起倒數看板、進島通知才出現') +
     evRow('開花開始日', evInp('ev-bloomfrom', e.bloomFrom || '', 'date', 170), '從這天起花苞開始慢慢打開，活動當天全開。填了這個就以日期為準；不填就用下面的「開花天數」') +
     evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '沒填開花開始日時才用：活動前幾天開始開花（最多 60）；0＝不開花') +
-    evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
+    evRow('開關', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
     '<input type="hidden" id="ev-poster" value="' + gcEsc(e.poster) + '">' +
     '<input type="hidden" id="ev-poster2" value="' + gcEsc(e.poster2 || '') + '">' +
     '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderEvents()">取消</button>' +
-    (e._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="evDel()">刪除活動</button>') + '</div>' +
+    (e._new ? '' : '<button class="btn btn-del" style="margin-left:auto" onclick="evDel()">刪除活動</button>') + '</div>' +
     '</div></div></div>';
 }
 /* 海報：縮到最長邊 1400px（島上點開要看得清楚字）、轉 JPEG 再傳 Cloudinary */
@@ -150,10 +150,10 @@ function balStatus(b){
   var t = evData.today, live = evData.live || [];
   if (b.on === false) return '<span style="color:var(--text3)">已關閉</span>';
   if (b.to && t > b.to) return '<span style="color:var(--text3)">已結束</span>';
-  if (b.from && t < b.from) return '<span style="color:#b07a1f">' + evMd(b.from) + ' 開始出現</span>';
-  if (live.indexOf(b.id) >= 0) return '<span style="color:#2e7d4f">島上出現中</span>';
+  if (b.from && t < b.from) return '<span style="color:var(--gold2)">' + evMd(b.from) + ' 開始出現</span>';
+  if (live.indexOf(b.id) >= 0) return '<span style="color:var(--green2)">島上出現中</span>';
   if (b.eventId) return '<span style="color:var(--text3)">綁定的活動已結束或關閉</span>';
-  return '<span style="color:#b07a1f">已經有 3 顆在島上，排隊中</span>';
+  return '<span style="color:var(--gold2)">已經有 3 顆在島上，排隊中</span>';
 }
 function evTitleOf(b){ return b.eventId && evData && evData.list && evData.list[b.eventId] ? (evData.list[b.eventId].title || '') : '' }
 function balUrl(u){ return "url('" + String(u).replace(/'/g, '%27') + "')" }
@@ -181,17 +181,17 @@ function balListHtml(){
   var list = Object.values(evData.bal || {}).sort(function(a, b){ return String(b.from || '').localeCompare(String(a.from || '')) });
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">🎈 熱氣球' +
     '<button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="balNew()">＋ 新增熱氣球</button></div>' +
-    '<div class="muted" style="font-size:12.5px;line-height:1.8;margin-bottom:10px">做法：先填內容（綁活動、自己寫字，或放圖），再挑 A／B／C 款式，最後可以指定它在天空的哪個位置。' +
+    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px">做法：先填內容（綁活動、自己寫字，或放圖），再挑 A／B／C 款式，最後可以指定它在天空的哪個位置。' +
     '填好存檔，遊樂島、吉祥物島、作品小屋就會出現；過了「結束日」自動收掉。<b>同時最多 3 顆</b>（開始日早的先上）。沒指定位置的會自動挑不會被標題蓋住的位置。</div>';
   if (!list.length) h += '<div class="empty">還沒有熱氣球，按右上角「＋ 新增熱氣球」。</div>';
   list.forEach(function(b){
     h += '<div style="display:flex;gap:14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">' +
       '<div style="flex:none;width:76px;display:flex;justify-content:center">' + balPreview(b) + '</div>' +
-      '<div style="flex:1 1 200px;min-width:0"><div style="font-size:15px;font-weight:600">' + gcEsc(BAL_ST[b.style] || b.style) + '</div>' +
-      '<div style="font-size:13.5px;margin:3px 0">' + gcEsc(b.title || (b.eventId && evData.list && evData.list[b.eventId] ? '（跟著活動：' + evData.list[b.eventId].title + '）' : '')) + (b.sub ? '<span class="muted">　' + gcEsc(b.sub) + '</span>' : '') + '</div>' +
-      '<div style="font-size:12.5px" class="muted">' + (b.from ? evMd(b.from) : '馬上') + ' ～ ' + (b.to ? evMd(b.to) : '不設結束日') +
+      '<div style="flex:1 1 200px;min-width:0"><div style="font-size:var(--fs-md);font-weight:600">' + gcEsc(BAL_ST[b.style] || b.style) + '</div>' +
+      '<div style="font-size:var(--fs-sm);margin:3px 0">' + gcEsc(b.title || (b.eventId && evData.list && evData.list[b.eventId] ? '（跟著活動：' + evData.list[b.eventId].title + '）' : '')) + (b.sub ? '<span class="muted">　' + gcEsc(b.sub) + '</span>' : '') + '</div>' +
+      '<div style="font-size:var(--fs-xs)" class="muted">' + (b.from ? evMd(b.from) : '馬上') + ' ～ ' + (b.to ? evMd(b.to) : '不設結束日') +
       '　位置：' + (BAL_POS_NM[b.pos] || '自動') + (balImgOf(b) ? '　🖼 有圖' : '') + '</div>' +
-      '<div style="font-size:13px;margin-top:3px">' + balStatus(b) + '</div></div>' +
+      '<div style="font-size:var(--fs-sm);margin-top:3px">' + balStatus(b) + '</div></div>' +
       '<button class="btn btn-outline btn-sm" onclick="balOpen(\'' + b.id + '\')">編輯</button></div>';
   });
   return h + '</div>';
@@ -240,23 +240,23 @@ function balPosPicker(b){
   Object.values(evData.bal || {}).forEach(function(o){ if (o.id !== b.id && o.pos && o.on !== false) used[o.pos] = o.style });
   var cell = function(k){
     var on = b.pos === k, u = used[k], warn = k === 'TL' || k === 'TM';
-    return '<div onclick="balSet(\'pos\',\'' + k + '\')" style="cursor:pointer;flex:1 1 0;min-width:70px;text-align:center;padding:10px 4px;border-radius:10px;border:2px solid ' + (on ? '#c9a24a' : 'var(--border)') + ';background:' + (on ? '#fff8e6' : '#fff') + '">' +
-      '<div style="font-weight:600;font-size:14px">' + BAL_POS_NM[k] + '</div>' +
-      (u ? '<div style="font-size:11px;color:#b07a1f">已有 ' + u + ' 款</div>' : warn ? '<div style="font-size:11px" class="muted">手機會被標題蓋</div>' : '<div style="font-size:11px" class="muted">&nbsp;</div>') + '</div>';
+    return '<div onclick="balSet(\'pos\',\'' + k + '\')" style="cursor:pointer;flex:1 1 0;min-width:70px;text-align:center;padding:10px 4px;border-radius:10px;border:2px solid ' + (on ? 'var(--gold)' : 'var(--border)') + ';background:' + (on ? '#fbf6e8' : '#fff') + '">' +
+      '<div style="font-weight:600;font-size:var(--fs-sm)">' + BAL_POS_NM[k] + '</div>' +
+      (u ? '<div style="font-size:var(--fs-xs);color:var(--gold2)">已有 ' + u + ' 款</div>' : warn ? '<div style="font-size:var(--fs-xs)" class="muted">手機會被標題蓋</div>' : '<div style="font-size:var(--fs-xs)" class="muted">&nbsp;</div>') + '</div>';
   };
-  var auto = '<div onclick="balSet(\'pos\',\'\')" style="cursor:pointer;padding:8px 12px;border-radius:10px;border:2px solid ' + (!b.pos ? '#c9a24a' : 'var(--border)') + ';background:' + (!b.pos ? '#fff8e6' : '#fff') + ';display:inline-block;margin-bottom:8px;font-size:14px;font-weight:600">自動（系統挑不會被蓋住的位置）</div>';
+  var auto = '<div onclick="balSet(\'pos\',\'\')" style="cursor:pointer;padding:8px 12px;border-radius:10px;border:2px solid ' + (!b.pos ? 'var(--gold)' : 'var(--border)') + ';background:' + (!b.pos ? '#fbf6e8' : '#fff') + ';display:inline-block;margin-bottom:8px;font-size:var(--fs-sm);font-weight:600">自動（系統挑不會被蓋住的位置）</div>';
   return auto + '<div style="max-width:420px;background:#dff0fb;border-radius:12px;padding:8px">' +
     '<div style="display:flex;gap:6px;margin-bottom:6px">' + ['TL', 'TM', 'TR'].map(cell).join('') + '</div>' +
     '<div style="display:flex;gap:6px">' + ['ML', 'MM', 'MR'].map(cell).join('') + '</div>' +
-    '<div class="muted" style="font-size:11.5px;text-align:center;margin-top:6px">↑ 遊樂島畫面上方的天空（上排最靠近標題，中排在雲上面）</div></div>';
+    '<div class="muted" style="font-size:var(--fs-xs);text-align:center;margin-top:6px">↑ 遊樂島畫面上方的天空（上排最靠近標題，中排在雲上面）</div></div>';
 }
 function balFormHtml(){
   var b = balEdit, st = b.style, mode = balMode(b), evPost = evPosterOf(b), curImg = balImgOf(b);
   var styleBtns = ['A', 'B', 'C'].map(function(k){
     var on = st === k;
-    return '<div onclick="balSet(\'style\',\'' + k + '\')" style="cursor:pointer;flex:1 1 150px;border:2px solid ' + (on ? '#c9a24a' : 'var(--border)') + ';background:' + (on ? '#fff8e6' : '#fff') + ';border-radius:12px;padding:10px;text-align:center">' +
+    return '<div onclick="balSet(\'style\',\'' + k + '\')" style="cursor:pointer;flex:1 1 150px;border:2px solid ' + (on ? 'var(--gold)' : 'var(--border)') + ';background:' + (on ? '#fbf6e8' : '#fff') + ';border-radius:12px;padding:10px;text-align:center">' +
       '<div style="display:flex;justify-content:center;margin-bottom:6px">' + balPreview({ style:k, color:b.color, title:b.title, sub:b.sub, eventId:b.eventId, evTitle:evTitleOf(b), _img:curImg }) + '</div>' +
-      '<div style="font-weight:600;font-size:14px">' + BAL_ST[k] + '</div><div class="muted" style="font-size:12px;line-height:1.5;margin-top:3px">' + BAL_ST_TIP[k] + '</div></div>';
+      '<div style="font-weight:600;font-size:var(--fs-sm)">' + BAL_ST[k] + '</div><div class="muted" style="font-size:var(--fs-xs);line-height:1.5;margin-top:3px">' + BAL_ST_TIP[k] + '</div></div>';
   }).join('');
   var cols = Object.keys(BAL_COL).map(function(k){
     var on = b.color === k;
@@ -271,14 +271,14 @@ function balFormHtml(){
   };
   var imgRow = mBtn('none', '不放圖') + mBtn('ev', '用活動海報', !(b.eventId && evPost)) + mBtn('own', '自己上傳') +
     (mode === 'own' ? '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-      '<div style="width:54px;height:72px;border-radius:8px;background:#eee center/cover no-repeat;border:1px solid var(--border)' + (b.img ? ';background-image:' + balUrl(b.img) : '') + '"></div>' +
+      '<div style="width:54px;height:72px;border-radius:8px;background:var(--bg3) center/cover no-repeat;border:1px solid var(--border)' + (b.img ? ';background-image:' + balUrl(b.img) : '') + '"></div>' +
       '<label class="btn btn-outline btn-sm" style="cursor:pointer">' + (b.img ? '換一張' : '選擇圖片') + '<input type="file" accept="image/*" style="display:none" onchange="balPickImg(this)"></label>' +
-      '<span id="bl-st" class="muted" style="font-size:12.5px">' + (b.img ? '' : '還沒有圖片') + '</span></div>' : '') +
-    (mode === 'ev' ? '<div class="muted" style="font-size:12px;margin-top:6px">會直接用這個活動第一張海報，活動公告改海報，氣球跟著換。</div>' : '');
-  var sec = function(n, t){ return '<div style="font-weight:600;font-size:14.5px;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--border)">' + n + ' ' + t + '</div>' };
+      '<span id="bl-st" class="muted" style="font-size:var(--fs-xs)">' + (b.img ? '' : '還沒有圖片') + '</span></div>' : '') +
+    (mode === 'ev' ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">會直接用這個活動第一張海報，活動公告改海報，氣球跟著換。</div>' : '');
+  var sec = function(n, t){ return '<div style="font-weight:600;font-size:var(--fs-md);margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--border)">' + n + ' ' + t + '</div>' };
   return '<div class="card"><div class="card-title">' + (b._new ? '新增熱氣球' : '編輯熱氣球') + '</div>' +
-    '<div style="font-weight:600;font-size:14.5px;margin-bottom:8px">① 氣球上要放什麼內容</div>' +
-    evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px;max-width:100%">' + evOpts + '</select>', '綁了之後氣球自動寫「活動名＋日期＋倒數」，活動結束氣球跟著收') +
+    '<div style="font-weight:600;font-size:var(--fs-md);margin-bottom:8px">① 氣球上要放什麼內容</div>' +
+    evRow('綁定活動', '<select id="bl-ev" onchange="balSync();renderEvents()" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm);max-width:100%">' + evOpts + '</select>', '綁了之後氣球自動寫「活動名＋日期＋倒數」，活動結束氣球跟著收') +
     (b.eventId ? '' : evRow(titleLb, evInp('bl-title', b.title, 'text', 300, '例：歡迎新同學'), '用圖片的話可以不填')) +
     (b.eventId ? '' : evRow(st === 'A' ? '副標（最多 16 字）' : '小字（最多 16 字，可不填）', evInp('bl-sub', b.sub, 'text', 300, st === 'A' ? '例：12/20 18:30' : ''))) +
     evRow('氣球上的圖', imgRow, '選填。放圖的話，氣球上會貼一張圖（A／C 款貼在字牌位置，B 款貼在飄帶上）') +
@@ -289,9 +289,9 @@ function balFormHtml(){
     sec('④', '什麼時候出現') +
     evRow('開始出現', evInp('bl-from', b.from, 'date', 170), '這天起島上才出現') +
     evRow('結束日', evInp('bl-to', b.to, 'date', 170), '過了這天自動收掉；不填＝一直掛著，要自己關') +
-    evRow('開關', '<label style="font-size:14px"><input type="checkbox" id="bl-on" ' + (b.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
+    evRow('開關', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="bl-on" ' + (b.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
     '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="balSave()">儲存</button><button class="btn btn-outline" onclick="balEdit=null;renderEvents()">取消</button>' +
-    (b._new ? '' : '<button class="btn btn-outline" style="margin-left:auto;color:#b5482b" onclick="balDel()">刪除</button>') + '</div></div>';
+    (b._new ? '' : '<button class="btn btn-del" style="margin-left:auto" onclick="balDel()">刪除</button>') + '</div></div>';
 }
 async function balSave(){
   balSync();

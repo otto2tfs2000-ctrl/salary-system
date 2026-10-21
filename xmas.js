@@ -32,7 +32,7 @@ async function renderXmas(){
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (xmTab === t[0] ? ' active' : '') + '" onclick="xmSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="xmReload()">↻ 重新讀取</button></div>';
-  if (xmData.isDefault) h += '<div class="card" style="background:#fff8e6;border-color:#e8d49a;font-size:13px;margin-bottom:14px">' +
+  if (xmData.isDefault) h += '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm);margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完按「儲存」之後，就會以這裡的為準。</div>';
   h += xmTab === 'rewards' ? xmRewardsHtml() : xmTab === 'pool' ? xmPoolHtml() : xmTab === 'settings' ? xmSettingsHtml() : xmOverviewHtml();
   el.innerHTML = h;
@@ -42,7 +42,7 @@ async function xmReload(){ xmData = null; await renderXmas() }
 
 function xmStat(n, label, sub){
   return '<div class="card" style="flex:1;min-width:130px;text-align:center"><div style="font-size:26px;font-weight:700;color:var(--gold,#b8860b)">' + n +
-    '</div><div style="font-size:13px">' + label + '</div>' + (sub ? '<div class="muted" style="font-size:12px">' + sub + '</div>' : '') + '</div>';
+    '</div><div style="font-size:var(--fs-sm)">' + label + '</div>' + (sub ? '<div class="muted" style="font-size:var(--fs-xs)">' + sub + '</div>' : '') + '</div>';
 }
 function xmOverviewHtml(){
   var d = xmData, c = d.cfg, lights = (d.tree && d.tree.lights) || 0, L = c.layers || [], done = L.filter(function(t){ return lights >= t }).length;
@@ -59,19 +59,19 @@ function xmOverviewHtml(){
       '<td style="text-align:center">' + p.layers + '</td><td style="text-align:center">' + p.pts + '</td><td style="text-align:center">' + p.tickets + '</td></tr>';
   }).join('');
   h += '<div class="card"><div class="card-title">玩家（依領到的紅利排序，最多 300 位）</div>' +
-    (rows ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:center;color:var(--text2)"><th style="text-align:left">姓名</th><th style="text-align:left">電話</th><th>點燈</th><th>禮物</th><th>樹</th><th>小屋</th><th>領樹層</th><th>紅利</th><th>票券</th></tr>' + rows + '</table></div>' : '<div class="empty">還沒有人玩</div>') + '</div>';
+    (rows ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:var(--fs-sm)"><tr style="text-align:center;color:var(--text2)"><th style="text-align:left">姓名</th><th style="text-align:left">電話</th><th>點燈</th><th>禮物</th><th>樹</th><th>小屋</th><th>領樹層</th><th>紅利</th><th>票券</th></tr>' + rows + '</table></div>' : '<div class="empty">還沒有人玩</div>') + '</div>';
   var st = d.stock || {};
   if (Object.keys(st).length) h += '<div class="card"><div class="card-title">限量票券已送出</div>' + Object.keys(st).map(function(k){ return xmEsc(k) + '：' + st[k] + ' 張' }).join('　') + '</div>';
   return h;
 }
 
 function xmInp(path, v, type, w){
-  return '<input ' + (type ? 'type="' + type + '" ' : '') + 'value="' + xmEsc(v == null ? '' : v) + '" style="width:' + (w || 90) + 'px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="xmSet(\'' + path + '\',this.value)">';
+  return '<input ' + (type ? 'type="' + type + '" ' : '') + 'value="' + xmEsc(v == null ? '' : v) + '" style="width:' + (w || 90) + 'px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="xmSet(\'' + path + '\',this.value)">';
 }
 function xmRow(label, html, note){
-  return '<div style="display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:start;margin:10px 0;font-size:13.5px">' +
+  return '<div class="lbl-grid" style="gap:10px;align-items:start;margin:10px 0;font-size:var(--fs-sm)">' +
     '<label style="color:var(--text2);padding-top:6px">' + label + '</label><div>' + html +
-    (note ? '<div class="muted" style="font-size:12px;margin-top:4px;line-height:1.6">' + note + '</div>' : '') + '</div></div>';
+    (note ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:4px;line-height:1.6">' + note + '</div>' : '') + '</div></div>';
 }
 function xmSet(path, v){
   var p = path.split('.'), o = xmDraft;
@@ -88,13 +88,13 @@ function xmSaveBar(){
 
 function xmRewardsHtml(){
   var c = xmDraft, h = '<div class="card"><div class="card-title">聖誕樹每一層亮起</div>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:8px">全體點燈累積到門檻，參與過（至少點過一盞燈）的會員各領紅利。一層只能領一次。</div>';
+    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:8px">全體點燈累積到門檻，參與過（至少點過一盞燈）的會員各領紅利。一層只能領一次。</div>';
   (c.layers || []).forEach(function(t, i){
-    h += '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:13.5px">第 ' + (i + 1) + ' 層　累積 ' +
+    h += '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:var(--fs-sm)">第 ' + (i + 1) + ' 層　累積 ' +
       xmInp('layers.' + i, t, 'number', 90) + ' 盞　每人領 ' + xmInp('treePts.' + i, c.treePts[i], 'number', 60) + ' 點紅利</div>';
   });
   var tot = (c.treePts || []).reduce(function(a, b){ return a + (+b || 0) }, 0);
-  h += '<div class="muted" style="font-size:12.5px;margin-top:8px">五層全部領滿，每人共 <b>' + tot + '</b> 點。</div></div>';
+  h += '<div class="muted" style="font-size:var(--fs-xs);margin-top:8px">五層全部領滿，每人共 <b>' + tot + '</b> 點。</div></div>';
   h += '<div class="card"><div class="card-title">集滿 4 個吊飾（三選一）</div>' +
     xmRow('選禮物', xmInp('ornGift', c.ornGift, 'number', 70) + ' 個禮物', '遊戲裡的禮物，不是真實獎勵，可以一直領') +
     xmRow('選紅利', xmInp('ornPoint', c.ornPoint, 'number', 70) + ' 點', '每人整個活動只能領一次真獎勵（紅利或票券擇一）；之後再集滿只能換禮物') +
@@ -108,10 +108,10 @@ function xmRewardsHtml(){
 function xmPoolHtml(){
   var c = xmDraft, tot = (c.gachaPool || []).reduce(function(a, p){ return a + (+p.w || 0) }, 0);
   var h = '<div class="card"><div class="card-title">扭蛋機格獎池</div>' +
-    '<div class="muted" style="font-size:12.5px;margin-bottom:10px">玩家踩到 3 個扭蛋機格時抽一次。紅利和票券是真獎勵，受上面的每人上限、每天次數限制；不符合條件時改抽禮物。「機率」填權重，下面會顯示百分比。</div>';
+    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:10px">玩家踩到 3 個扭蛋機格時抽一次。紅利和票券是真獎勵，受上面的每人上限、每天次數限制；不符合條件時改抽禮物。「機率」填權重，下面會顯示百分比。</div>';
   (c.gachaPool || []).forEach(function(p, i){
     var pct = tot ? Math.round((+p.w || 0) / tot * 1000) / 10 : 0;
-    h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:13.5px">' +
+    h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-sm)">' +
       '<select style="padding:5px;border:1px solid var(--border);border-radius:6px" onchange="xmPoolType(' + i + ',this.value)">' +
       ['gift','bonus','ticket'].map(function(t){ return '<option value="' + t + '"' + (p.type === t ? ' selected' : '') + '>' + XM_TYPE[t] + '</option>' }).join('') + '</select>' +
       '名稱 ' + xmInp('gachaPool.' + i + '.nm', p.nm, '', 150) +
@@ -140,12 +140,12 @@ function xmSettingsHtml(){
     xmRow('每天禮物上限', xmInp('giftGainDay', c.giftGainDay, 'number', 70) + ' 個', '每人每天最多靠遊戲增加幾個禮物（防止亂改）') +
     xmRow('每天點燈上限', xmInp('lightsDay', c.lightsDay, 'number', 70) + ' 盞', '每人每天最多幫聖誕樹點幾盞') +
     xmRow('種樹／拜訪', '每天種樹 ' + xmInp('plantDayMax', c.plantDayMax, 'number', 60) + ' 次　拜訪每天最多拿 ' + xmInp('visitDayMax', c.visitDayMax, 'number', 60) + ' 個禮物') +
-    xmRow('測試電話', '<textarea rows="3" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="xmSet(\'testPhones\',this.value)">' + xmEsc((c.testPhones || []).join('\n')) + '</textarea>',
+    xmRow('測試電話', '<textarea rows="3" style="width:260px;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="xmSet(\'testPhones\',this.value)">' + xmEsc((c.testPhones || []).join('\n')) + '</textarea>',
       '一行一支。這些電話綁定的 LINE 會進示範模式：次數不限、獎勵不入帳。<b>員工名單裡的人不用加</b>。') +
     xmRow('員工示範', '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox"' + (c.demoStaff !== false ? ' checked' : '') + ' onchange="xmSet(\'demoStaff\',this.checked)"> 員工名單裡的人自動是示範模式</label>') +
     '</div>';
   h += '<div class="card"><div class="card-title">示範資料</div>' +
-    '<div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:12px">員工示範玩的進度、森林、小屋都放在另一個資料夾，跟正式會員完全分開。按下面這顆清空示範資料，<b>正式玩家、正式的樹／森林／小屋、已發出的紅利都不會動</b>。</div>' +
+    '<div style="font-size:var(--fs-sm);color:var(--text2);line-height:1.8;margin-bottom:12px">員工示範玩的進度、森林、小屋都放在另一個資料夾，跟正式會員完全分開。按下面這顆清空示範資料，<b>正式玩家、正式的樹／森林／小屋、已發出的紅利都不會動</b>。</div>' +
     '<button class="btn btn-del" onclick="xmResetTest()">🧹 清空示範資料</button></div>';
   return h + xmSaveBar();
 }

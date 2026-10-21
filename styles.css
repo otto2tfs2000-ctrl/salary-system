@@ -148,6 +148,9 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 .grp-head .name{font-size:var(--fs-md);font-weight:600;color:var(--gold3)}
 .grp-head .count{font-size:var(--fs-xs);color:var(--text3)}
 .hint{font-size:var(--fs-sm);color:var(--text3);line-height:1.6}
+/* 左邊標籤、右邊內容的設定列（扭蛋、走格子…）。手機上改成上下排，不然右欄只剩一點點寬 */
+.lbl-grid{display:grid;grid-template-columns:140px minmax(0,1fr)}
+@media (max-width:560px){.lbl-grid{grid-template-columns:minmax(0,1fr);gap:4px!important}}
 /* 固定五欄的表單（欄位剛好五個時用，不會在寬螢幕右邊空一大塊） */
 .form-grid.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:900px){.form-grid.cols-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
