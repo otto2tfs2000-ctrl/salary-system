@@ -3746,7 +3746,7 @@ async function bkManual(editId,repeatId,holdId){
    (eb||hd?'':'<div class="bk-f" id="mPhotoBox">'+
      '<label>📷 有客人的對話截圖嗎？上傳試著自動抓姓名/電話/時段，上課內容會放進下面備註（選填，AI 抓完一定要再檢查一次）</label>'+
      '<input type="file" id="mPhotoInput" accept="image/*" style="font-size:13px">'+
-     '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#8A90A0)"></div></div>')+
+     '<div id="mPhotoStatus" style="font-size:12.5px;margin-top:6px;color:var(--bkMute,#948e83)"></div></div>')+
    '<div class="bk-f2"><div class="bk-f"><label>姓名 *</label><input id="mName" value="'+
        esc(tmpl&&tmpl.customer&&tmpl.customer.name||"")+'" autocomplete="off"></div>'+
      '<div class="bk-f"><label>電話</label><input id="mPhone" inputmode="tel" value="'+
@@ -3931,7 +3931,7 @@ async function bkManual(editId,repeatId,holdId){
   if(photoInput)photoInput.onchange=async function(){
     var file=this.files&&this.files[0]; if(!file)return;
     var statusEl=document.getElementById("mPhotoStatus");
-    statusEl.style.color="var(--bkGold,#C99A3B)"; statusEl.textContent="⏳ 辨識中…";
+    statusEl.style.color="var(--bkGold,#c9a84c)"; statusEl.textContent="⏳ 辨識中…";
     try{
       var b64=await fileToOCRBase64(file);
       var j=await claudeOCR([b64],"booking");
@@ -4697,29 +4697,29 @@ async function bkManual(editId,repeatId,holdId){
 /* ── 樣式 ── */
 var css=document.createElement("style");
 css.textContent=
-"#bkRoot{--bkNavy:#1E2B4F;--bkGold:#C99A3B;--bkInk:#232936;--bkMute:#8A90A0;"+
-  "--bkLine:#ECEEF2;--bkSoft:#F6F7F9;--bkOk:#12805C;--bkOkBg:#EAF6F1;--bkRed:#C9453B}"+
+":root,#bkRoot{--bkNavy:#2b2926;--bkGold:#c9a84c;--bkInk:#2b2926;--bkMute:#948e83;"+
+  "--bkLine:#ece7dc;--bkSoft:#f7f5f0;--bkOk:#12805C;--bkOkBg:#EAF6F1;--bkRed:#C9453B}"+
 ".bk-bar{display:flex;align-items:center;gap:8px;margin-bottom:18px}"+
-".bk-nav{background:#fff;border:0;box-shadow:0 1px 2px rgba(16,24,40,.07);border-radius:10px;"+
-  "width:38px;height:38px;font-size:18px;color:#5B6272;cursor:pointer;transition:.15s}"+
-".bk-nav:hover{background:#F0F2F6}"+
-".bk-tdy{font-size:14.5px;width:auto;padding:0 15px;color:var(--bkNavy);font-weight:600}"+
+".bk-nav{background:#fff;border:1px solid #e2ddd2;box-shadow:none;border-radius:8px;"+
+  "width:38px;height:38px;font-size:18px;color:#6b665e;cursor:pointer;transition:.15s}"+
+".bk-nav:hover{background:#f0ece2}"+
+".bk-tdy{font-size:14.5px;width:auto;padding:0 15px;color:#a67c28;font-weight:600}"+
 ".bk-date{flex:1;text-align:center}"+
 ".bk-date b{font-size:19px;color:var(--bkInk);letter-spacing:.3px}"+
 ".bk-date span{font-size:13.5px;color:var(--bkMute);margin-left:6px}"+
 ".bk-stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}"+
 ".bk-stat div{flex:1;min-width:84px;background:#fff;border:0;border-radius:14px;"+
-  "padding:15px 10px;text-align:center;box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
+  "padding:15px 10px;text-align:center;box-shadow:0 1px 3px rgba(43,41,38,.06)}"+
 ".bk-stat b{display:block;font-size:25px;font-weight:700;color:var(--bkNavy);line-height:1.15}"+
 ".bk-stat span{font-size:12.5px;color:var(--bkMute);margin-top:3px;display:block}"+
 ".bk-slot{margin-bottom:22px;border-radius:16px;padding:12px 12px 14px;"+
   "border-left:6px solid transparent}"+
 /* 可開課老師計數卡 */
 ".bk-tcard>b{display:flex;align-items:center;justify-content:center;gap:9px}"+
-".bk-tbtn{width:32px;height:32px;border-radius:8px;border:1px solid #D6DCE8;"+
-  "background:#fff;color:#5B6272;font-size:16px;line-height:1;cursor:pointer;"+
+".bk-tbtn{width:32px;height:32px;border-radius:8px;border:1px solid #e2ddd2;"+
+  "background:#fff;color:#6b665e;font-size:16px;line-height:1;cursor:pointer;"+
   "font-family:inherit;transition:.15s;flex:0 0 auto;padding:0}"+
-".bk-tbtn:hover{background:#EDF1FA;border-color:#9FB0CE}"+
+".bk-tbtn:hover{background:#fbf6e8;border-color:#c9a84c}"+
 ".bk-tbtn:active{transform:scale(.94)}"+
 "#bkRoot .bk-stat .bk-tcard .bk-tnum{display:block!important;min-width:50px;"+
   "text-align:center;margin-top:0!important;font-size:26px!important;"+
@@ -4733,12 +4733,12 @@ css.textContent=
 ".bk-tag.new{background:#C9453B;color:#fff;font-weight:700}"+
 ".bk-tag.ai{background:#F1EBFB;color:#6B4EA6;font-weight:700}"+
 ".bk-notifbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;"+
-  "background:#EEF3FB;color:#3A5A96;border-radius:12px;padding:11px 15px;"+
+  "background:#f3efe6;color:#6b665e;border-radius:12px;padding:11px 15px;"+
   "font-size:13.5px;line-height:1.5;margin-bottom:16px}"+
 ".bk-notifbar span{flex:1;min-width:180px}"+
-".bk-notifbtn{background:var(--bkNavy);color:#fff;border:0;border-radius:8px;"+
-  "padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}"+
-".bk-notifx{background:none;border:0;color:#8A90A0;font-size:15px;cursor:pointer;padding:0 4px}"+
+".bk-notifbtn{background:#c9a84c;color:#2b2410;border:0;border-radius:6px;"+
+  "padding:6px 14px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}"+
+".bk-notifx{background:none;border:0;color:#948e83;font-size:15px;cursor:pointer;padding:0 4px}"+
 ".bk-cxbar{background:#FDECEA;border:1.5px solid #E7A39C;border-radius:12px;padding:12px 15px;"+
   "margin-bottom:16px;color:#8E2A22;font-size:13.5px;line-height:1.5}"+
 ".bk-cxh{font-weight:700;margin-bottom:6px}"+
@@ -4755,12 +4755,15 @@ css.textContent=
 ".bk-hdrow small{display:block;color:#9A7433;font-size:12px}"+
 ".bk-hdgo,.bk-hdedit{flex:0 0 auto;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;"+
   "cursor:pointer;font-family:inherit}"+
-".bk-hdgo{background:#C99A3B;color:#fff;border:0}"+
+".bk-hdgo{background:#c9a84c;color:#fff;border:0}"+
 ".bk-hdedit{background:#fff;color:#9A7433;border:1px solid #E8C77A}"+
 ".bk-addrow{display:flex;gap:8px;flex-wrap:wrap}"+
 ".bk-addrow .bk-add{flex:1 1 200px}"+
-".bk-add.bk-add-hold{background:#C99A3B}"+
-".bk-add.bk-add-ship{background:#3E7C74}"+
+/* 一排只留一顆金色主按鈕，其他兩顆用白底框線 */
+".bk-add.bk-add-hold{background:#fff;border-color:rgba(201,168,76,.6);color:#8a6a1f}"+
+".bk-add.bk-add-hold:hover{background:#fbf6e8;border-color:#c9a84c;color:#8a6a1f}"+
+".bk-add.bk-add-ship{background:#fff;border-color:#9CC9C1;color:#2F6B63}"+
+".bk-add.bk-add-ship:hover{background:#F4FAF9;border-color:#3E7C74;color:#2F6B63}"+
 /* 寄送清單＋寄送彈窗。彈窗不在 #bkRoot 底下，顏色一律寫死，不用 var(--bk…) */
 ".bk-shbar{position:relative;background:#EAF4F2;border:1.5px solid #9CC9C1;border-radius:12px;padding:12px 15px;"+
   "margin-bottom:16px;color:#1F5A52;font-size:13.5px;line-height:1.5}"+
@@ -4777,39 +4780,39 @@ css.textContent=
 ".bk-shgo{background:#3E7C74;color:#fff;border:0}"+
 ".bk-shgo.bk-shok{background:#12805C}"+
 ".bk-shedit{background:#fff;color:#3E7C74;border:1px solid #9CC9C1}"+
-".bk-b.shp{background:#EAF4F2;color:#2F6B63;font-weight:600}"+
-".bk-b.shp.on{background:#3E7C74;color:#fff}"+
+".bk-b.shp{background:#fff;border-color:#9CC9C1;color:#2F6B63;font-weight:600}"+
+".bk-b.shp.on{background:#EAF4F2;border-color:#3E7C74;color:#1F5A52}"+
 ".bk-shocr{display:block;text-align:center;padding:11px;border:1.5px dashed #9CC9C1;border-radius:10px;"+
   "color:#2F6B63;background:#F4FAF9;cursor:pointer;font-size:14.5px;margin-bottom:6px}"+
-".bk-shmsg{font-size:12.5px;color:#8A90A0;min-height:4px;margin-bottom:10px}"+
+".bk-shmsg{font-size:12.5px;color:#948e83;min-height:4px;margin-bottom:10px}"+
 ".bk-shdate{display:flex;gap:6px;align-items:center;flex-wrap:wrap}"+
 ".bk-shdate input{flex:1 1 150px}"+
-".bk-shdate span,.bk-shpadd{padding:8px 11px;border:1px solid #E3E6EC;border-radius:8px;font-size:13.5px;"+
-  "cursor:pointer;color:#5B6272;background:#FBFCFD}"+
+".bk-shdate span,.bk-shpadd{padding:8px 11px;border:1px solid #e2ddd2;border-radius:8px;font-size:13.5px;"+
+  "cursor:pointer;color:#6b665e;background:#fbfaf6}"+
 ".bk-shfee input{margin-bottom:8px}"+
 ".bk-shpbtns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}"+
 ".bk-shpadd{color:#2F6B63;border-color:#9CC9C1;background:#F4FAF9;font-weight:600}"+
 ".bk-shphotos{display:flex;gap:8px;flex-wrap:wrap}"+
 ".bk-shph{position:relative;width:96px}"+
-".bk-shph img{width:96px;height:96px;object-fit:cover;border-radius:8px;display:block;cursor:zoom-in;border:1px solid #E3E6EC}"+
-".bk-shph span{display:block;font-size:11.5px;color:#5B6272;text-align:center;margin-top:2px}"+
+".bk-shph img{width:96px;height:96px;object-fit:cover;border-radius:8px;display:block;cursor:zoom-in;border:1px solid #e2ddd2}"+
+".bk-shph span{display:block;font-size:11.5px;color:#6b665e;text-align:center;margin-top:2px}"+
 ".bk-shph b{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:#C9453B;"+
   "color:#fff;font-size:14px;line-height:22px;text-align:center;cursor:pointer}"+
 ".bk-shbig{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.85);flex-direction:column;"+
   "align-items:center;justify-content:center;gap:10px;color:#fff;font-size:13px;cursor:zoom-out}"+
 ".bk-shbig img{max-width:94vw;max-height:84vh;border-radius:6px}"+
 ".bk-shsendbtn{background:#3E7C74 !important}"+
-".bk-shhrow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-top:1px solid #EEF0F3;cursor:pointer}"+
-".bk-shhrow:hover{background:#F7F9FA}"+
-".bk-shhrow div{flex:1;min-width:0;font-size:14px;color:#232936}"+
-".bk-shhrow small{display:block;color:#8A90A0;font-size:12px}"+
-".bk-shst{flex:0 0 auto;font-size:12px;font-weight:600;border-radius:99px;padding:2px 9px;background:#F2F3F6;color:#5F6577}"+
+".bk-shhrow{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-top:1px solid #ece7dc;cursor:pointer}"+
+".bk-shhrow:hover{background:#faf7ef}"+
+".bk-shhrow div{flex:1;min-width:0;font-size:14px;color:#2b2926}"+
+".bk-shhrow small{display:block;color:#948e83;font-size:12px}"+
+".bk-shst{flex:0 0 auto;font-size:12px;font-weight:600;border-radius:99px;padding:2px 9px;background:#f0ece2;color:#6b665e}"+
 ".bk-shst.pending{background:#FFF1D6;color:#8A6400}.bk-shst.shipped{background:#EAF4F2;color:#2F6B63}"+
 ".bk-shst.done{background:#E6F4EC;color:#12805C}"+
 ".bk-shfull{color:#C9453B;font-weight:600}"+
-".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#8A90A0;"+
-  "border:1px solid #E3E6EC;border-radius:99px;padding:2px 10px;cursor:pointer}"+
-".bk-capbtn:hover{color:#5F6577;border-color:#C7CEDB}"+
+".bk-capbtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:500;color:#948e83;"+
+  "border:1px solid #e2ddd2;border-radius:99px;padding:2px 10px;cursor:pointer}"+
+".bk-capbtn:hover{color:#6b665e;border-color:#d0c9ba}"+
 ".bk-closebtn{margin-left:auto;flex:0 0 auto;font-size:12.5px;font-weight:600;color:#B23A30;"+
   "border:1px solid #F0C9C4;background:#fff;border-radius:99px;padding:2px 10px;cursor:pointer}"+
 ".bk-closebtn.on{color:#1F7A4D;border-color:#BFE0CC}"+
@@ -4817,36 +4820,36 @@ css.textContent=
 ".bk-tag.bk-closedtag{background:#C9453B;color:#fff;font-weight:700}"+
 /* 班表設定月曆 */
 ".bk-cbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}"+
-".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#1E2B4F}"+
+".bk-ctitle{flex:1;text-align:center;font-size:19px;font-weight:700;color:#2b2926}"+
 /* minmax(0,1fr) 不是 1fr：格子裡「20 位」這種文字有自己的最小寬度，
    單純 1fr 遇到 7 欄塞不下時，欄位會被撐大到超出整個格線的容器，
    多出來的欄位會直接溢到容器外面（在小尺寸的 bk-daypop 上很明顯，
    後面三欄整個跑出白色卡片，蓋到頁面其他地方去）。加 minmax(0,..)
    讓瀏覽器可以把欄位縮到比文字本身還窄，情願裁切或換行，也不會撐爆版面。 */
 ".bk-cgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}"+
-".bk-cwd{text-align:center;font-size:15px;color:#8A90A0;padding-bottom:4px}"+
+".bk-cwd{text-align:center;font-size:15px;color:#948e83;padding-bottom:4px}"+
 ".bk-mday{display:flex;flex-direction:column;align-items:center;justify-content:center;"+
-  "gap:1px;aspect-ratio:1/1.12;border:1px solid #E3E6EC;border-radius:12px;"+
+  "gap:1px;aspect-ratio:1/1.12;border:1px solid #e2ddd2;border-radius:12px;"+
   "background:#fff;cursor:pointer;font-family:inherit;transition:.15s;padding:4px}"+
-".bk-mday:hover{border-color:#9FB0CE;background:#F6F8FC}"+
-".bk-mday .d{font-size:15px;color:#8A90A0}"+
-".bk-mday .n{font-size:24px;font-weight:700;color:#1E2B4F;line-height:1.15}"+
-".bk-mday .c{font-size:13.5px;color:#A8AEBC}"+
-".bk-mday.set{border-color:#1E2B4F;border-width:2px;background:#EDF1FA}"+
-".bk-mday.off{background:#F4F4F6;opacity:.6}"+
-".bk-mday.off .n{color:#8A90A0;font-size:20px}"+
-".bk-mday.now .d{color:#C99A3B;font-weight:700}"+
-".bk-mday.void{border:1px dashed #EAECF0;background:transparent;cursor:default}"+
-".bk-mday.void:hover{border-color:#EAECF0;background:transparent}"+
-".bk-cfoot{margin-top:18px;font-size:13.5px;color:#8A90A0;line-height:1.8}"+
+".bk-mday:hover{border-color:#c9a84c;background:#faf7ef}"+
+".bk-mday .d{font-size:15px;color:#948e83}"+
+".bk-mday .n{font-size:24px;font-weight:700;color:#2b2926;line-height:1.15}"+
+".bk-mday .c{font-size:13.5px;color:#b3ada3}"+
+".bk-mday.set{border-color:#c9a84c;border-width:2px;background:#f7f0de}"+
+".bk-mday.off{background:#f3f0ea;opacity:.6}"+
+".bk-mday.off .n{color:#948e83;font-size:20px}"+
+".bk-mday.now .d{color:#a67c28;font-weight:700}"+
+".bk-mday.void{border:1px dashed #ece7dc;background:transparent;cursor:default}"+
+".bk-mday.void:hover{border-color:#ece7dc;background:transparent}"+
+".bk-cfoot{margin-top:18px;font-size:13.5px;color:#948e83;line-height:1.8}"+
 ".bk-nopts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}"+
 ".bk-nopt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:13px 4px;"+
-  "border:1px solid #E3E6EC;border-radius:11px;background:#fff;cursor:pointer;"+
-  "font-size:18px;font-weight:600;color:#1E2B4F;font-family:inherit;transition:.15s}"+
-".bk-nopt:hover{border-color:#9FB0CE;background:#F6F8FC}"+
-".bk-nopt small{font-size:12px;font-weight:400;color:#8A90A0}"+
-".bk-nopt.on{background:#1E2B4F;color:#fff;border-color:#1E2B4F}"+
-".bk-nopt.on small{color:#C3CCDF}"+
+  "border:1px solid #e2ddd2;border-radius:11px;background:#fff;cursor:pointer;"+
+  "font-size:18px;font-weight:600;color:#2b2926;font-family:inherit;transition:.15s}"+
+".bk-nopt:hover{border-color:#c9a84c;background:#faf7ef}"+
+".bk-nopt small{font-size:12px;font-weight:400;color:#948e83}"+
+".bk-nopt.on{background:#c9a84c;color:#2b2410;border-color:#c9a84c}"+
+".bk-nopt.on small{color:#5a4a1c}"+
 "@media(max-width:560px){.bk-cgrid{gap:4px}.bk-mday .n{font-size:21px}"+
   ".bk-mday .c{font-size:13px}.bk-nopts{grid-template-columns:repeat(3,1fr)}"+
   /* 2026-08-27：手機版座位表跟按鈕列以前用 flex-wrap 硬擠，
@@ -4858,77 +4861,73 @@ css.textContent=
   ".bk-b{min-width:0;padding:11px 4px;font-size:14px}"+
   ".bk-card{padding:14px}"+
   "}"+
-".bk-slot.c0{background:#EDF1F8;border-left-color:#B4C4DC}"+
+".bk-slot.c0{background:#f1eee7;border-left-color:#d0c9ba}"+
 ".bk-slot.c1{background:#FAF1E4;border-left-color:#E2C293}"+
-".bk-sh{position:sticky;top:0;z-index:5;font-size:26px;font-weight:800;color:#1F2A44;"+
+".bk-sh{position:sticky;top:0;z-index:5;font-size:26px;font-weight:800;color:#2b2926;"+
   "letter-spacing:.4px;margin:-12px -12px 6px;padding:12px 12px 12px 16px;"+
   "border:0;border-radius:16px 16px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}"+
-".bk-slot.c0>.bk-sh{background:#EDF1F8}"+
+".bk-slot.c0>.bk-sh{background:#f1eee7}"+
 ".bk-slot.c1>.bk-sh{background:#FAF1E4}"+
-".bk-sh span{font-weight:500;letter-spacing:0;font-size:15.5px;color:#77809A}"+
+".bk-sh span{font-weight:500;letter-spacing:0;font-size:15.5px;color:#7a746a}"+
 ".bk-card{background:#fff;border:0;border-radius:14px;padding:16px 17px;margin-top:10px;"+
-  "box-shadow:0 1px 3px rgba(16,24,40,.06);transition:.15s}"+
-".bk-card:hover{box-shadow:0 3px 10px rgba(16,24,40,.09)}"+
-".bk-card.ok{background:#FBFDFC;box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkOk)}"+
-".bk-card.wait{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 var(--bkGold)}"+
+  "box-shadow:0 1px 3px rgba(43,41,38,.06);transition:.15s}"+
+".bk-card:hover{box-shadow:0 3px 10px rgba(43,41,38,.09)}"+
+".bk-card.ok{background:#FBFDFC;box-shadow:0 1px 3px rgba(43,41,38,.06),inset 3px 0 0 var(--bkOk)}"+
+".bk-card.wait{box-shadow:0 1px 3px rgba(43,41,38,.06),inset 3px 0 0 var(--bkGold)}"+
 /* 收了訂金但還沒核銷：藍色。掃一眼就分得出誰完全還沒收到錢 */
-".bk-card.dep{box-shadow:0 1px 3px rgba(16,24,40,.06),inset 3px 0 0 #4C6FB1}"+
+".bk-card.dep{box-shadow:0 1px 3px rgba(43,41,38,.06),inset 3px 0 0 #4C6FB1}"+
 ".bk-seat{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap;position:relative}"+
-".bk-seat-toggle{width:100%;font-size:12.5px;color:#8A90A0;cursor:pointer;user-select:none;"+
+".bk-seat-toggle{width:100%;font-size:12.5px;color:#948e83;cursor:pointer;user-select:none;"+
   "display:flex;align-items:center;gap:4px;padding:2px 0 4px}"+
-".bk-seat-toggle:hover{color:#5F6577}"+
+".bk-seat-toggle:hover{color:#6b665e}"+
 ".bk-seat-col{flex:1;min-width:110px;background:#fff;border-radius:12px;padding:9px;"+
-  "box-shadow:0 1px 3px rgba(16,24,40,.06)}"+
-".bk-seat-h{font-size:13.5px;font-weight:700;color:#1F2A44;display:flex;justify-content:space-between;"+
-  "margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #EEF0F4}"+
-".bk-seat-h span{font-weight:500;color:#8A90A0}"+
+  "box-shadow:0 1px 3px rgba(43,41,38,.06)}"+
+".bk-seat-h{font-size:13.5px;font-weight:700;color:#2b2926;display:flex;justify-content:space-between;"+
+  "margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #ece7dc}"+
+".bk-seat-h span{font-weight:500;color:#948e83}"+
 ".bk-seat-h.over span{color:#C9453B;font-weight:700}"+
 ".bk-seat-list{min-height:40px;display:flex;flex-direction:column;gap:6px}"+
-".bk-seat-chip{background:#F5F7FA;border:1.5px solid #E3E6EC;border-radius:9px;padding:6px 9px;"+
-  "font-size:13px;font-weight:600;color:#2A2E38;cursor:pointer;user-select:none;transition:.12s}"+
-".bk-seat-chip:hover{border-color:#C7CEDB}"+
-".bk-seat-chip small{display:block;font-weight:400;color:#8A90A0;font-size:11.5px;margin-top:1px}"+
+".bk-seat-chip{background:#f7f5f0;border:1.5px solid #e2ddd2;border-radius:9px;padding:6px 9px;"+
+  "font-size:13px;font-weight:600;color:#2b2926;cursor:pointer;user-select:none;transition:.12s}"+
+".bk-seat-chip:hover{border-color:#d0c9ba}"+
+".bk-seat-chip small{display:block;font-weight:400;color:#948e83;font-size:11.5px;margin-top:1px}"+
 ".bk-seat-ppl{color:#C9453B;font-size:12px}"+
-".bk-seat-chip.picked{border-color:var(--bkNavy,#1F2A44);background:#EDF1FA;"+
-  "box-shadow:0 0 0 2px rgba(31,42,68,.15)}"+
+".bk-seat-chip.picked{border-color:#c9a84c;background:#f7f0de;"+
+  "box-shadow:0 0 0 2px rgba(201,168,76,.22)}"+
 ".bk-seat-col{cursor:default}"+
-".bk-seat-note{width:100%;font-size:11.5px;color:#A8AEBC;margin-top:2px}"+
+".bk-seat-note{width:100%;font-size:11.5px;color:#b3ada3;margin-top:2px}"+
 ".bk-seat-chip.split{border-style:dashed}"+
 ".bk-seat-split{float:right;cursor:pointer;opacity:.55;font-size:12px}"+
 ".bk-seat-split:hover{opacity:1}"+
-".bk-split-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #EEF0F4}"+
-".bk-split-row span{font-size:14px;color:#2A2E38}"+
-".bk-split-n{width:70px;padding:7px;border:1px solid #E3E6EC;border-radius:8px;font-size:14px;text-align:center}"+
-".bk-b.ed{background:#F2F3F6;color:#5F6577}"+
-".bk-b.ed:hover{background:#E8EAEF}"+
-".bk-b.dp{background:#FDF4E3;color:#8A6400;font-weight:600}"+
-".bk-b.dp:hover{background:#F8EBD3}"+
-".bk-b.dp.done{background:var(--bkOkBg);color:var(--bkOk);font-weight:500}"+
-".bk-b.sp{background:#FBF3E3;color:var(--bkGold);font-weight:600}"+
-".bk-b.sp:hover{background:#F5E9CC}"+
+".bk-split-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #ece7dc}"+
+".bk-split-row span{font-size:14px;color:#2b2926}"+
+".bk-split-n{width:70px;padding:7px;border:1px solid #e2ddd2;border-radius:8px;font-size:14px;text-align:center}"+
+".bk-b.dp,.bk-b.sp{border-color:rgba(201,168,76,.55);color:#8a6a1f;font-weight:600}"+
+".bk-b.dp:hover,.bk-b.sp:hover{background:#fbf6e8;border-color:#c9a84c}"+
+".bk-b.dp.done{background:#fff;border-color:rgba(61,155,106,.45);color:#2f7a52;font-weight:500}"+
 ".bk-who b{font-size:17px;color:var(--bkInk);font-weight:600}"+
 ".bk-who b.bk-nm{cursor:pointer}"+
 ".bk-who b.bk-nm:hover{text-decoration:underline}"+
 ".bk-childname{font-size:13.5px;color:var(--bkMute);font-weight:500;margin-left:2px}"+
 ".bk-tag{display:inline-block;font-size:12.5px;padding:2.5px 9px;border-radius:99px;"+
   "margin-left:6px;vertical-align:1.5px;font-weight:500}"+
-".bk-tag.m{background:#EDF1FA;color:#3A4C7A}"+
+".bk-tag.m{background:#f7f0de;color:#8a6a1f}"+
 ".bk-tag.nc{background:#E8F5EC;color:#1F7A4D}"+
-".bk-tag.vp{background:#ECEEF2;color:#4A5568;font-weight:600}"+
+".bk-tag.vp{background:#ece7dc;color:#6b665e;font-weight:600}"+
 ".bk-tag.vm{background:#FCEFC7;color:#7A5A00;font-weight:600}"+
 ".bk-tag .bk-rt{margin-left:6px;padding:0 6px;border-radius:99px;background:#C9453B;color:#fff}"+
 ".bk-tag.w{background:#FDF4E3;color:#8A6400}"+
-".bk-tag.s{background:#F2F3F6;color:#767C8B}"+
+".bk-tag.s{background:#f0ece2;color:#6b665e}"+
 ".bk-tag.fx{background:#EEF0FB;color:#3B4A8C;font-weight:600}"+
 /* 固定時段區塊在彈窗裡，不在 #bkRoot 底下，顏色一律寫死 */
 ".bk-fxbtn{width:100%;padding:11px;border:1.5px dashed #6B7BC4;border-radius:10px;background:#F6F7FD;color:#3B4A8C;font-size:14.5px;font-weight:600;cursor:pointer}"+
 ".bk-fx{border:1.5px solid #C9CFEE;border-radius:12px;padding:12px 14px;background:#F8F9FE}"+
 ".bk-fxhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;color:#3B4A8C;font-size:15px}"+
-".bk-fxx{border:0;background:none;color:#8A90A0;font-size:13px;cursor:pointer;text-decoration:underline}"+
-".bk-fxmsg{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;background:#fff;border:1px solid #E3E6F0;border-radius:8px;padding:10px;margin:6px 0 8px;color:#333}"+
+".bk-fxx{border:0;background:none;color:#948e83;font-size:13px;cursor:pointer;text-decoration:underline}"+
+".bk-fxmsg{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;background:#fff;border:1px solid #e2ddd2;border-radius:8px;padding:10px;margin:6px 0 8px;color:#333}"+
 ".bk-fxinfo{font-size:13.5px;color:#3B4A8C;background:#F6F7FD;border-radius:10px;padding:10px 12px}"+
 /* 加開時段的實際時間。同一區裡混著 9:30 和 10:00 的人，要看得出來 */
-".bk-tag.t{background:#EEF3FB;color:#3A5A96;font-variant-numeric:tabular-nums}"+
+".bk-tag.t{background:#f3efe6;color:#6b665e;font-variant-numeric:tabular-nums}"+
 ".bk-mgrp{margin-bottom:11px}"+
 ".bk-mgh{font-size:13.5px;font-weight:600;color:var(--bkInk);margin-bottom:6px;"+
   "display:flex;align-items:baseline;gap:7px}"+
@@ -4946,40 +4945,42 @@ css.textContent=
 ".bk-dline.tot b{font-size:16px;color:var(--bkOk)}"+
 ".bk-dpay{font-size:12.5px;color:#6B8C7F;margin-top:7px}"+
 ".bk-btns{display:flex;gap:7px;margin-top:13px;flex-wrap:wrap}"+
-".bk-b{flex:1;min-width:70px;padding:9px 4px;font-size:14.5px;background:var(--bkSoft);"+
-  "border:0;border-radius:9px;color:#5B6272;cursor:pointer;transition:.15s;font-family:inherit}"+
-".bk-b:hover{background:#EBEDF2}"+
-".bk-b.on{background:var(--bkNavy);color:#fff;font-weight:600}"+
-".bk-b.no{background:#F2F3F6;color:#A8AEBC}"+
-".bk-b.ck{background:#EDF1FA;color:#3A4C7A;font-weight:600}"+
-".bk-b.ck:hover{background:#E1E8F6}"+
-".bk-b.cx{background:#FBF0EF;color:var(--bkRed)}"+
-".bk-b.cx:hover{background:#F7E4E2}"+
-".bk-add{width:100%;margin-top:18px;padding:14px;background:var(--bkNavy);color:#fff;"+
-  "border:0;border-radius:12px;font-size:15.5px;font-weight:600;cursor:pointer;"+
+/* 卡片按鈕照共用規則：白底灰框＝次要、金底＝主要（核銷）、紅框＝取消 */
+".bk-b{flex:1;min-width:70px;min-height:38px;padding:8px 6px;font-size:14.5px;font-weight:500;background:#fff;"+
+  "border:1px solid #d0c9ba;border-radius:8px;color:#6b665e;cursor:pointer;transition:.15s;font-family:inherit}"+
+".bk-b:hover{border-color:#c9a84c;color:#a67c28}"+
+/* 已報到＝狀態不是動作，用綠色；一排裡金底只留給「核銷」 */
+".bk-b.on{background:#EAF6F1;border-color:rgba(61,155,106,.45);color:#2f7a52;font-weight:600}"+
+".bk-b.no{background:#f7f5f0;border-color:#e2ddd2;color:#b3ada3}"+
+".bk-b.ck{background:#c9a84c;border-color:#c9a84c;color:#2b2410;font-weight:600}"+
+".bk-b.ck:hover{background:#a67c28;border-color:#a67c28;color:#fff}"+
+".bk-b.cx{background:#fff;border-color:#e8c9c5;color:#b5473a}"+
+".bk-b.cx:hover{background:#fdf1ef;border-color:#d64545;color:#d64545}"+
+".bk-add{width:100%;margin-top:18px;padding:13px;background:#c9a84c;color:#2b2410;"+
+  "border:1px solid #c9a84c;border-radius:8px;font-size:15.5px;font-weight:600;cursor:pointer;"+
   "font-family:inherit;transition:.15s}"+
-".bk-add:hover{background:#16223F}"+
-".bk-empty{text-align:center;color:#A8AEBC;padding:44px 20px;font-size:14.5px}"+
-".bk-mask{position:fixed;inset:0;background:rgba(24,30,45,.42);display:none;z-index:900;"+
+".bk-add:hover{background:#a67c28;border-color:#a67c28;color:#fff}"+
+".bk-empty{text-align:center;color:#b3ada3;padding:44px 20px;font-size:14.5px}"+
+".bk-mask{position:fixed;inset:0;background:rgba(28,26,22,.42);display:none;z-index:900;"+
   "align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)}"+
 ".bk-mask.on{display:flex}"+
 ".bk-sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;"+
-  "border-radius:20px 20px 0 0;padding:24px 20px 30px;box-shadow:0 -6px 28px rgba(16,24,40,.16)}"+
-".bk-sheet h3{font-size:19px;color:#232936;margin:0 0 4px;font-weight:600}"+
-".bk-sh2{font-size:14.5px;color:#8A90A0;margin-bottom:18px}"+
+  "border-radius:20px 20px 0 0;padding:24px 20px 30px;box-shadow:0 -6px 28px rgba(43,41,38,.16)}"+
+".bk-sheet h3{font-size:19px;color:#2b2926;margin:0 0 4px;font-weight:600}"+
+".bk-sh2{font-size:14.5px;color:#948e83;margin-bottom:18px}"+
 ".bk-f{margin-bottom:14px}.bk-f2{display:flex;gap:10px}.bk-f2 .bk-f{flex:1}"+
-".bk-f label{display:block;font-size:13.5px;color:#8A90A0;margin-bottom:6px;font-weight:500}"+
+".bk-f label{display:block;font-size:13.5px;color:#948e83;margin-bottom:6px;font-weight:500}"+
 ".bk-f input,.bk-f select,.bk-f textarea,#ckFind,#mFind{width:100%;padding:11px 13px;"+
-  "border:1px solid #E3E6EC;border-radius:10px;font-size:16px;font-family:inherit;"+
-  "box-sizing:border-box;background:#FBFCFD;transition:.15s;color:#232936}"+
+  "border:1px solid #e2ddd2;border-radius:10px;font-size:16px;font-family:inherit;"+
+  "box-sizing:border-box;background:#fbfaf6;transition:.15s;color:#2b2926}"+
 ".bk-f input:focus,.bk-f select:focus,.bk-f textarea:focus,#ckFind:focus,#mFind:focus{"+
-  "outline:0;border-color:#9FB0D6;background:#fff;box-shadow:0 0 0 3px rgba(62,86,145,.09)}"+
-".bk-datebtn{width:100%;padding:11px 13px;border:1px solid #E3E6EC;border-radius:10px;"+
-  "font-size:16px;font-family:inherit;box-sizing:border-box;background:#FBFCFD;color:#232936;"+
+  "outline:0;border-color:#c9a84c;background:#fff;box-shadow:0 0 0 3px rgba(201,168,76,.13)}"+
+".bk-datebtn{width:100%;padding:11px 13px;border:1px solid #e2ddd2;border-radius:10px;"+
+  "font-size:16px;font-family:inherit;box-sizing:border-box;background:#fbfaf6;color:#2b2926;"+
   "text-align:left;cursor:pointer;transition:.15s}"+
-".bk-datebtn:hover{border-color:#9FB0D6}"+
+".bk-datebtn:hover{border-color:#c9a84c}"+
 ".bk-daypop{position:fixed;z-index:950;width:320px;max-width:calc(100vw - 24px);background:#fff;"+
-  "border-radius:14px;box-shadow:0 10px 32px rgba(16,24,40,.24);border:1px solid #E3E6EC;"+
+  "border-radius:14px;box-shadow:0 10px 32px rgba(43,41,38,.24);border:1px solid #e2ddd2;"+
   "padding:14px;box-sizing:border-box;overflow:hidden}"+
 /* 這個小彈窗塞不下跟整頁月曆（班表設定用）一樣大的字，這裡另外縮小，
    用 .bk-daypop 前綴限定範圍，不會動到共用的 .bk-cgrid/.bk-mday 樣式。
@@ -4993,15 +4994,15 @@ css.textContent=
 ".bk-daypop .bk-cwd{font-size:12px;padding-bottom:2px}"+
 ".bk-daypop .bk-ctitle{font-size:16px}"+
 ".bk-ways{display:flex;gap:8px;flex-wrap:wrap}"+
-".bk-way{flex:1 1 30%;min-width:92px;text-align:center;padding:11px 5px;border:1px solid #E3E6EC;"+
-  "border-radius:10px;background:#FBFCFD;font-size:14.5px;cursor:pointer;color:#5B6272;transition:.15s}"+
-".bk-way:hover{border-color:#C3CCDF}"+
-".bk-way.on{border-color:#3A4C7A;background:#EDF1FA;color:#1E2B4F;font-weight:600;"+
-  "box-shadow:0 0 0 2px rgba(58,76,122,.1)}"+
+".bk-way{flex:1 1 30%;min-width:92px;text-align:center;padding:11px 5px;border:1px solid #e2ddd2;"+
+  "border-radius:10px;background:#fbfaf6;font-size:14.5px;cursor:pointer;color:#6b665e;transition:.15s}"+
+".bk-way:hover{border-color:#d0c9ba}"+
+".bk-way.on{border-color:#c9a84c;background:#f7f0de;color:#2b2926;font-weight:600;"+
+  "box-shadow:0 0 0 2px rgba(201,168,76,.18)}"+
 ".bk-way.dis{opacity:.3;pointer-events:none}"+
 ".bk-addon{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}"+
 ".bk-eve{position:absolute;right:5px;bottom:4px;font-size:10.5px;line-height:1;"+
-  "background:var(--bkNavy,#1E2B4F);color:#fff;padding:2px 5px;border-radius:5px}"+
+  "background:#8a6a1f;color:#fff;padding:2px 5px;border-radius:5px}"+
 ".bk-mday{position:relative}"+
 ".bk-irow{display:flex;gap:6px;align-items:center;margin-bottom:7px}"+
 ".bk-irow>select{flex:1;min-width:0}"+
@@ -5011,56 +5012,57 @@ css.textContent=
   "background:#fff;color:#C25E4A;cursor:pointer;font-size:14px;flex:none}"+
 ".bk-ipad{width:30px;flex:none}"+
 ".bk-iinfo{margin:-3px 0 9px}"+
-".bk-additem{border:1px dashed var(--bkGold,#C99A3B);background:transparent;"+
-  "color:var(--bkGold,#C99A3B);border-radius:8px;padding:7px 12px;font-size:13.5px;"+
+".bk-additem{border:1px dashed #c9a84c;background:transparent;"+
+  "color:#a67c28;border-radius:8px;padding:7px 12px;font-size:13.5px;"+
   "cursor:pointer;font-family:inherit;margin-bottom:6px}"+
 ".bk-addon .am{flex:2 1 132px}.bk-addon .an{flex:2 1 108px}.bk-addon .aq{flex:0 1 60px}"+
 ".bk-addon .av{flex:1 1 70px}.bk-addon .aw{flex:1 1 88px}"+
-".bk-addon input,.bk-addon select{padding:8px;border:1px solid #ddd;border-radius:7px;"+
+".bk-addon input,.bk-addon select{padding:8px;border:1px solid #e2ddd2;border-radius:7px;"+
   "font-size:14.5px;box-sizing:border-box;background:#fff;font-family:inherit}"+
-".bk-nodeduct{flex-basis:100%;font-size:12.5px;color:#A8AEBC;margin:-3px 0 0 2px}"+
-".bk-b.vd{background:#FDF4E3;color:#8A6400}"+
-".bk-b.vd:hover{background:#F8EBD3}"+
+".bk-nodeduct{flex-basis:100%;font-size:12.5px;color:#b3ada3;margin:-3px 0 0 2px}"+
+".bk-b.vd{border-color:rgba(201,168,76,.55);color:#8a6a1f}"+
+".bk-b.vd:hover{background:#fbf6e8;border-color:#c9a84c}"+
 ".ax{color:#C9453B;cursor:pointer;padding:0 4px;font-size:16px}"+
-".bk-mini{background:#fff;border:1px dashed #999;border-radius:7px;padding:7px 12px;font-size:13.5px;cursor:pointer;width:100%}"+
-".bk-info{background:#EDF1FA;border:0;border-radius:12px;padding:13px 15px;margin-bottom:14px;"+
-  "font-size:14.5px;color:#3A4C7A;line-height:1.7}"+
-".bk-info b{color:#1E2B4F;font-weight:600}"+
+".bk-mini{background:#fff;border:1px dashed #d0c9ba;border-radius:7px;padding:7px 12px;font-size:13.5px;cursor:pointer;width:100%}"+
+".bk-info{background:#f7f0de;border:0;border-radius:12px;padding:13px 15px;margin-bottom:14px;"+
+  "font-size:14.5px;color:#8a6a1f;line-height:1.7}"+
+".bk-info b{color:#2b2926;font-weight:600}"+
 ".bk-warn{background:#FDF4E3;color:#8A6400;font-size:14.5px;padding:11px 13px;"+
   "border-radius:10px;margin:9px 0;line-height:1.6}"+
 ".bk-err{background:#FBEAE8;color:#C9453B;font-size:14.5px;padding:10px 12px;"+
   "border-radius:10px;margin-top:8px}"+
-".bk-calc{font-size:14.5px;color:#6B7180;line-height:2;margin:14px 0;background:#F6F7F9;"+
+".bk-calc{font-size:14.5px;color:#6b665e;line-height:2;margin:14px 0;background:#f7f5f0;"+
   "padding:13px 15px;border-radius:12px}"+
-".bk-calc b{color:#1E2B4F;font-size:16px;font-weight:600}"+
-".bk-hit{padding:11px 13px;border:1px solid #E3E6EC;border-radius:10px;margin-top:7px;"+
+".bk-calc b{color:#2b2926;font-size:16px;font-weight:600}"+
+".bk-hit{padding:11px 13px;border:1px solid #e2ddd2;border-radius:10px;margin-top:7px;"+
   "background:#fff;cursor:pointer;transition:.15s}"+
-".bk-hit:hover{background:#F6F7F9;border-color:#C3CCDF}"+
-".bk-hit b{color:#232936}.bk-bal{font-size:13.5px;color:#8A90A0;margin-top:3px}"+
-".bk-hint{font-size:14.5px;color:#A8AEBC;padding:10px 2px}"+
-".bk-left{font-size:13.5px;color:#8A90A0;margin-top:5px;line-height:1.6}"+
-".bk-names{font-size:13.5px;color:#A8AEBC;margin-top:4px}"+
+".bk-hit:hover{background:#f7f5f0;border-color:#d0c9ba}"+
+".bk-hit b{color:#2b2926}.bk-bal{font-size:13.5px;color:#948e83;margin-top:3px}"+
+".bk-hint{font-size:14.5px;color:#b3ada3;padding:10px 2px}"+
+".bk-left{font-size:13.5px;color:#948e83;margin-top:5px;line-height:1.6}"+
+".bk-names{font-size:13.5px;color:#b3ada3;margin-top:4px}"+
 ".bk-ok{color:#12805C;font-weight:500}.bk-full{color:#C9453B;font-weight:600}"+
-".bk-cnt{display:inline-block;font-size:15.5px;color:#1E2B4F;font-weight:600;margin-right:9px}"+
-".bk-cnt b{font-size:19px;color:#1E2B4F;font-weight:700;vertical-align:-1px}"+
-".bk-cap{display:inline-block;font-size:13.5px;color:#8A90A0;margin-right:8px}"+
+".bk-cnt{display:inline-block;font-size:15.5px;color:#2b2926;font-weight:600;margin-right:9px}"+
+".bk-cnt b{font-size:19px;color:#2b2926;font-weight:700;vertical-align:-1px}"+
+".bk-cap{display:inline-block;font-size:13.5px;color:#948e83;margin-right:8px}"+
 ".bk-act{display:flex;gap:10px;margin-top:22px}"+
-".bk-cancel{flex:1;padding:14px;background:#F2F3F6;border:0;border-radius:12px;"+
-  "font-size:15.5px;cursor:pointer;color:#5B6272;font-family:inherit;transition:.15s}"+
-".bk-cancel:hover{background:#E7E9EE}"+
-".bk-save{flex:2;padding:14px;background:#1E2B4F;color:#fff;border:0;border-radius:12px;"+
+".bk-cancel{flex:1;padding:13px;background:#fff;border:1px solid #d0c9ba;border-radius:8px;"+
+  "font-size:15.5px;cursor:pointer;color:#6b665e;font-family:inherit;transition:.15s}"+
+".bk-cancel:hover{border-color:#c9a84c;color:#a67c28}"+
+".bk-save{flex:2;padding:13px;background:#c9a84c;color:#2b2410;border:1px solid #c9a84c;border-radius:8px;"+
   "font-size:15.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}"+
-".bk-save:hover{background:#16223F}"+
-".bk-save:disabled{background:#A8AEBC;cursor:default}"+
+".bk-save:hover{background:#a67c28;border-color:#a67c28;color:#fff}"+
+".bk-save:disabled{background:#d8d2c6;border-color:#d8d2c6;color:#fff;cursor:default}"+
 /* 這裡不能用 var(--bkGold)：那個變數是在 #bkRoot 上定義的，
    但彈窗（#bkMask/#bkSheet）是直接掛在 document.body 底下、不在
    #bkRoot 子樹裡，變數在這裡讀不到會直接失效（背景退回透明），
    結果字是白的（繼承 .bk-save 的 color:#fff）疊在透明底上，
    整顆按鈕看起來像消失了，其實還在、也點得到，只是看不見。
    跟 .bk-save 本身一樣，直接寫死色碼。 */
-".bk-save-gold{background:#C99A3B}"+
-".bk-save-gold:hover{background:#B3872F}"+
-".bk-save-gold:disabled{background:#A8AEBC;cursor:default}";
+/* 「登記＋收訂金」：跟主按鈕並排，改成金框白底，一排只留一顆金底 */
+".bk-save-gold{background:#fff;border-color:rgba(201,168,76,.6);color:#8a6a1f}"+
+".bk-save-gold:hover{background:#fbf6e8;border-color:#c9a84c;color:#8a6a1f}"+
+".bk-save-gold:disabled{background:#f7f5f0;border-color:#e2ddd2;color:#b3ada3;cursor:default}";
 document.head.appendChild(css);
 
 document.addEventListener("DOMContentLoaded",function(){ setTimeout(bkRender,400) });
