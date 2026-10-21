@@ -48,9 +48,14 @@ function rcMaterials(){
     var k = m.cat || '';
     if (catOrder[k] === undefined) catOrder[k] = n++;
   });
-  return items.slice().sort(function(a, b){
+  /* 同一類裡也照庫存盤點拖曳排好的順序（2026-10-21 大熊：下拉跟庫存排的不一樣）。
+     以前這裡用數字自然排序，會把「3F 加木板畫布」插到 2F 和 3F 中間。
+     庫存那支沒載入時才退回自然排序。 */
+  var ord = (typeof getInvItemOrder === 'function') ? getInvItemOrder : null;
+  return items.filter(Boolean).sort(function(a, b){
     var ca = catOrder[a.cat || ''], cb = catOrder[b.cat || ''];
     if (ca !== cb) return ca - cb;
+    if (ord) { var d = ord(a) - ord(b); if (d) return d; }
     return rcNatCmp(a.name, b.name);
   });
 }
@@ -63,7 +68,7 @@ var RC_SCALE_CATS = ['顏料','膠體','水晶','金箔','熱熔膠','樹脂','�
 
 /* 一份配方拆成：固定材料（不隨尺寸）、隨尺寸材料，再各自加損耗。成本不含損耗的小計也一併回傳 */
 function rcParts(key, pick){
-  var r = rcData()[key], out = { fixed:0, scal:0, waste:0, raw:0 };
+  var r = rcData()[key], out = { fixed:0, scal:0, waste:0, raw:0, fixedW:0, scalW:0 };
   if (!r || !r.items) return out;
   out.waste = Math.max(0, +r.waste || 0);
   r.items.forEach(function(x){
@@ -184,6 +189,9 @@ function rcEdit(encKey){
   if (!c) return;
   rcOpen = key;
   var r = rcData()[key] || { items: [], note: '' };
+  /* 雲端不會存空陣列：還沒加過材料的課程讀回來只剩 {note:""}，沒有 items。
+     少了這行，選材料時 r2.items.some 直接出錯，下拉選了卻什麼都沒加進去 */
+  if (!Array.isArray(r.items)) r.items = [];
   if (!rcData()[key]) rcData()[key] = r;
   rcDrawModal(c, r);
   document.getElementById('rc-modal').style.display = 'block';
