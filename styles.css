@@ -11,6 +11,17 @@
   --shadow-sm:0 1px 2px rgba(43,41,38,.04);
   --serif:Georgia,'Noto Serif TC',serif;
   --radius:14px;
+
+  /* ── 共用規則（2026-10-21）──────────────────────────────
+     以後新寫的畫面只用下面這幾級，不要再自己寫 13px、13.5px、14px 這種半號差。
+     字級五級：小註解 / 次要文字 / 內文 / 區塊標題 / 頁面標題 */
+  --fs-xs:12px;--fs-sm:13.5px;--fs-md:14.5px;--fs-lg:16px;--fs-xl:20px;
+  /* 圓角三級：小元件（標籤、小按鈕）/ 輸入框與按鈕 / 卡片 */
+  --r-sm:6px;--r-md:8px;--r-lg:var(--radius);
+  /* 狀態色的淡底與框線，按鈕、提示框共用 */
+  --gold-soft:rgba(201,168,76,.08);--gold-line:rgba(201,168,76,.28);
+  --green-soft:rgba(61,155,106,.08);--green-line:rgba(61,155,106,.45);--green2:#2f7a52;
+  --red-soft:#fdf1ef;--red-line:#e8c9c5;--red2:#b5473a;
 }
 html{-webkit-text-size-adjust:100%}
 body{font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -79,14 +90,61 @@ body{font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
   transition:border-color .15s,box-shadow .15s}
 .fg input:focus,.fg select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.13)}
 
-.btn{padding:9px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14.5px;
-  font-weight:500;transition:background .15s,border-color .15s,color .15s;font-family:inherit}
-.btn-gold{background:var(--gold);color:#2b2410}.btn-gold:hover{background:var(--gold2);color:#fff}
-.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+/* ── 按鈕 ──
+   外觀三種：btn-gold 主要（一個區塊最多一顆）／btn-outline 次要／btn-del 危險（刪除、重置）
+   另外 btn-ok 給「存檔、確認」這類安全動作。大小兩種：一般、btn-sm。
+   .btn-sm 單獨用（沒加 .btn）也要長得一樣，以前漏加 .btn 的按鈕會變成瀏覽器預設樣式。 */
+.btn,.btn-sm{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 18px;min-height:38px;border-radius:var(--r-md);border:1px solid transparent;
+  cursor:pointer;font-size:var(--fs-md);font-weight:500;line-height:1.3;text-align:center;text-decoration:none;
+  transition:background .15s,border-color .15s,color .15s;font-family:inherit;
+  background:transparent;color:var(--text2)}
+.btn:disabled,.btn-sm:disabled{opacity:.55;cursor:default}
+.btn-gold{background:var(--gold);border-color:var(--gold);color:#2b2410}
+.btn-gold:hover{background:var(--gold2);border-color:var(--gold2);color:#fff}
+.btn-outline{background:#fff;border-color:var(--border2);color:var(--text2)}
 .btn-outline:hover{border-color:var(--gold);color:var(--gold2)}
-.btn-sm{padding:6px 13px;font-size:13.5px;border-radius:6px}
-.btn-del{background:transparent;border:1px solid #e8c9c5;color:#c06858}
-.btn-del:hover{background:#fdf1ef;border-color:var(--red);color:var(--red)}
+.btn-ok{background:#fff;border-color:var(--green-line);color:var(--green2)}
+.btn-ok:hover{background:var(--green-soft);border-color:var(--green)}
+.btn-sm{padding:6px 12px;min-height:32px;font-size:var(--fs-sm);border-radius:var(--r-sm)}
+.btn-del{background:#fff;border-color:var(--red-line);color:var(--red2)}
+.btn-del:hover{background:var(--red-soft);border-color:var(--red);color:var(--red)}
+
+/* ── 版面小零件 ── */
+/* 一排按鈕：會自動換行，間距固定 */
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+/* 區塊裡的小標題（比 card-title 小一級） */
+.sec-label{font-size:var(--fs-sm);font-weight:600;color:var(--text2);margin:0 0 10px;letter-spacing:.3px}
+/* 不常用的工具收在這裡（匯入、複製、重置…），日常畫面只留常用按鈕 */
+details.tools-box{margin-top:18px;border:1px solid var(--border);border-radius:var(--r-md);background:#FCFBF8}
+details.tools-box>summary{cursor:pointer;padding:11px 16px;font-size:var(--fs-sm);font-weight:600;
+  color:var(--text2);list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
+details.tools-box>summary::-webkit-details-marker{display:none}
+details.tools-box>summary::before{content:"▸";color:var(--text3);transition:transform .15s}
+details.tools-box[open]>summary::before{transform:rotate(90deg)}
+details.tools-box>summary{flex-wrap:wrap}
+details.tools-box>summary .t{white-space:nowrap}
+details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
+.tools-body{padding:4px 16px 16px;display:flex;flex-direction:column;gap:16px}
+.tools-sec{border-top:1px solid var(--border);padding-top:14px}
+.tools-sec textarea{width:100%;font-size:var(--fs-sm);font-family:inherit;padding:10px 12px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:#fff;outline:none;margin:8px 0}
+.tools-sec textarea:focus{border-color:var(--gold)}
+/* 危險區：跟其他按鈕隔開，旁邊一定寫清楚會發生什麼事 */
+.danger-zone{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:12px 14px;border:1px solid var(--red-line);border-radius:var(--r-md);background:var(--red-soft)}
+.danger-zone .dz-text{font-size:var(--fs-sm);color:var(--red2);line-height:1.5;flex:1;min-width:200px}
+/* 可收合的分組標題列（庫存品項、清單分類…） */
+.grp-head{cursor:pointer;padding:9px 14px;background:var(--gold-soft);border:1px solid var(--gold-line);
+  border-radius:var(--r-md);display:flex;align-items:center;gap:10px;user-select:none}
+.grp-head .arrow{font-size:var(--fs-xs);color:var(--gold2);width:12px}
+.grp-head .name{font-size:var(--fs-md);font-weight:600;color:var(--gold3)}
+.grp-head .count{font-size:var(--fs-xs);color:var(--text3)}
+.hint{font-size:var(--fs-sm);color:var(--text3);line-height:1.6}
+/* 固定五欄的表單（欄位剛好五個時用，不會在寬螢幕右邊空一大塊） */
+.form-grid.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:900px){.form-grid.cols-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:420px){.form-grid.cols-5{grid-template-columns:1fr}}
 .btn-dl{background:rgba(91,155,213,.12);border:1px solid rgba(91,155,213,.3);color:#3f7fb5}
 .btn-dl:hover{background:rgba(91,155,213,.22)}
 
@@ -247,273 +305,7 @@ label.chk.top input{margin-top:3px}
     width:18px;height:18px;min-width:18px;max-width:18px;
     flex:0 0 18px;padding:0;font-size:17px
   }
-}  return !!(me && me.role === "owner" && me.active !== false);
 }
-function stNobodyYet(){ return !stList || !stList.length }
-
-async function renderStaff(){
-  var el = document.getElementById("staff-body");
-  if (!el) return;
-  if (!stList){ el.innerHTML = '<div class="empty">載入帳號中…</div>'; await stLoad(); }
-
-  var h = '<div class="card">';
-  h += '<div class="card-title">🔑 帳號與權限</div>';
-
-  if (stNobodyYet()){
-    h += '<div class="info-box">還沒有任何帳號。先把自己設成管理員，之後才能發邀請給其他人。' +
-         '<div style="margin-top:10px"><button class="btn btn-gold btn-sm" onclick="stMakeMeOwner()">' +
-         '把我設為管理員</button></div></div>';
-  } else if (!stIsOwner()){
-    h += '<div class="info-box">只有管理員能管理帳號。</div></div>';
-    el.innerHTML = h;
-    return;
-  }
-
-  if (!stNobodyYet()){
-    h += '<table><thead><tr><th>姓名</th><th style="width:88px">身分</th>' +
-         '<th>看得到的分頁</th><th style="width:150px">可執行動作</th><th style="width:60px">狀態</th>' +
-         '<th style="width:150px"></th></tr></thead><tbody>';
-    stList.forEach(function(s, i){
-      var tabs = s.tabs || [];
-      var names = STAFF_TABS.filter(function(t){ return tabs.indexOf(t.k) >= 0 })
-                            .map(function(t){ return t.n });
-      h += '<tr>' +
-        '<td>' + stEsc(s.name || "（未命名）") +
-          (ME && s.uid === ME.userId ? '<span class="muted" style="font-size:12.5px">（你）</span>' : '') + '</td>' +
-        '<td><span class="badge ' + (s.role === "owner" ? "b-gold" : s.role === "admin" ? "b-blue" : "b-gray") + '">' +
-          ((STAFF_ROLES[s.role] || {}).n || s.role || "—") + '</span></td>' +
-        '<td style="font-size:13.5px;color:var(--text2)">' + (names.join("、") || "—") + '</td>' +
-        '<td style="font-size:13.5px;color:var(--text2)">' +
-          (STAFF_ACTS.filter(function(a){ return (s.acts||[]).indexOf(a.k) >= 0 })
-                     .map(function(a){ return a.n }).join("、") || "—") + '</td>' +
-        '<td>' + (s.active === false ? '<span class="badge b-red">停用</span>'
-                                     : '<span class="badge b-green">啟用</span>') + '</td>' +
-        '<td style="display:flex;gap:6px">' +
-          '<button class="btn btn-outline btn-sm" onclick="stEdit(' + i + ')">編輯</button>' +
-          (ME && s.uid === ME.userId ? '' :
-            '<button class="btn btn-del btn-sm" onclick="stRemove(' + i + ')">移除</button>') +
-        '</td></tr>';
-    });
-    h += '</tbody></table>';
-
-    /* 邀請 */
-    h += '<div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">';
-    h += '<div style="font-size:14.5px;font-weight:600;color:var(--gold2);margin-bottom:12px">邀請新帳號</div>';
-    h += '<div class="row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
-    h += '<div class="fg" style="flex:1;min-width:150px"><label>姓名</label>' +
-         '<input id="st-inv-name" placeholder="例：蓁蓁"></div>';
-    h += '<div class="fg" style="flex:0 0 150px"><label>身分</label><select id="st-inv-role">' +
-         '<option value="teacher">老師</option><option value="admin">行政</option>' +
-         '<option value="owner">管理員</option></select></div>';
-    h += '<button class="btn btn-gold" onclick="stMakeInvite()">產生邀請連結</button>';
-    h += '</div>';
-    h += '<div class="muted" style="font-size:13.5px;margin-top:8px">' +
-         '連結傳給對方，對方用 LINE 打開、授權完成就綁定好了。一組連結只能用一次。</div>';
-    h += '<div id="st-inv-out" style="margin-top:12px"></div>';
-
-    if (stInvites && stInvites.length){
-      h += '<div style="margin-top:14px"><div class="muted" style="font-size:13.5px;margin-bottom:6px">' +
-           '還沒被使用的邀請 ' + stInvites.length + ' 組</div>';
-      stInvites.forEach(function(iv, k){
-        h += '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' +
-             'border-bottom:1px solid var(--border);font-size:13.5px">' +
-             '<span>' + stEsc(iv.name || "—") + '</span>' +
-             '<span class="badge b-gray">' + ((STAFF_ROLES[iv.role] || {}).n || iv.role) + '</span>' +
-             '<button class="btn btn-outline btn-sm" style="margin-left:auto" ' +
-               'onclick="stCopyInvite(\'' + iv.token + '\')">複製連結</button>' +
-             '<button class="btn btn-del btn-sm" onclick="stKillInvite(' + k + ')">作廢</button>' +
-             '</div>';
-      });
-      h += '</div>';
-    }
-    h += '</div>';
-  }
-
-  h += '</div>';
-  el.innerHTML = h;
-}
-
-/* ── 第一個管理員 ── */
-async function stMakeMeOwner(){
-  if (!ME || !ME.userId){ alert("請先登入"); return }
-  if (!confirm("把「" + (ME.displayName || "你") + "」設為管理員？\n\n管理員看得到全部分頁，也能管理其他人的權限。")) return;
-  await stSave(ME.userId, {
-    name: ME.displayName || "管理員", role: "owner",
-    tabs: STAFF_ROLES.owner.tabs, acts: STAFF_ROLES.owner.acts, active: true,
-    addedAt: new Date().toISOString(), addedBy: "self"
-  });
-  await stLoad(1); renderStaff();
-  alert("已設定完成。重新整理後權限就會生效。");
-}
-
-async function stSave(uid, obj){
-  await fetch(STAFF_DB + "/staff/" + uid + ".json", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(obj)
-  });
-}
-
-/* ── 編輯 ── */
-function stEdit(i){
-  var s = stList[i]; if (!s) return;
-  var tabs = s.tabs || [];
-  var h = '<h3 style="margin:0 0 4px">' + stEsc(s.name || "（未命名）") + '</h3>';
-  h += '<div class="muted" style="font-size:12.5px;margin-bottom:16px;word-break:break-all">' + s.uid + '</div>';
-  h += '<div class="fg" style="margin-bottom:14px"><label>姓名</label>' +
-       '<input id="st-e-name" value="' + stEsc(s.name || "") + '"></div>';
-  h += '<div class="fg" style="margin-bottom:14px"><label>身分（換身分會套用預設分頁）</label>' +
-       '<select id="st-e-role" onchange="stRoleChanged()">';
-  Object.keys(STAFF_ROLES).forEach(function(k){
-    h += '<option value="' + k + '"' + (s.role === k ? " selected" : "") + '>' + STAFF_ROLES[k].n + '</option>';
-  });
-  h += '</select></div>';
-  h += '<div class="fg"><label>看得到的分頁</label><div id="st-e-tabs" style="display:grid;' +
-       'grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:6px">';
-  STAFF_TABS.forEach(function(t){
-    h += '<label style="display:flex;align-items:center;gap:8px;font-size:14.5px;cursor:pointer">' +
-         '<input type="checkbox" value="' + t.k + '"' + (tabs.indexOf(t.k) >= 0 ? " checked" : "") +
-         ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
-         '<span style="white-space:nowrap">' + t.n + '</span></label>';
-  });
-  h += '</div></div>';
-  h += '<div class="fg" style="margin-top:16px"><label>可執行的動作</label>' +
-       '<div id="st-e-acts" style="margin-top:6px">';
-  STAFF_ACTS.forEach(function(a){
-    h += '<label style="display:flex;align-items:flex-start;gap:9px;font-size:14.5px;' +
-         'cursor:pointer;padding:7px 0">' +
-         '<input type="checkbox" value="' + a.k + '"' +
-         ((s.acts || []).indexOf(a.k) >= 0 ? " checked" : "") +
-         ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:3px 0 0">' +
-         '<span style="flex:1;min-width:0">' + a.n +
-         '<span class="muted" style="display:block;font-size:12.5px;line-height:1.5;margin-top:2px">' +
-         a.d + '</span></span>' +
-         '</label>';
-  });
-  h += '</div></div>';
-  h += '<label style="display:flex;align-items:center;gap:8px;font-size:14.5px;margin-top:16px;cursor:pointer">' +
-       '<input type="checkbox" id="st-e-active"' + (s.active !== false ? " checked" : "") +
-       ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
-       '<span style="white-space:nowrap">啟用這個帳號</span></label>';
-  h += '<div class="row" style="margin-top:20px;display:flex;gap:8px">' +
-       '<button class="btn btn-outline" onclick="mbClose()">取消</button>' +
-       '<button class="btn btn-gold" style="margin-left:auto" onclick="stSaveEdit(' + i + ')">儲存</button></div>';
-  mbModal(h);
-}
-
-/* 換身分時，分頁勾選跟著跳到該身分的預設值 */
-function stRoleChanged(){
-  var r = document.getElementById("st-e-role").value;
-  var def = (STAFF_ROLES[r] || {}).tabs || [];
-  document.querySelectorAll("#st-e-tabs input").forEach(function(c){
-    c.checked = def.indexOf(c.value) >= 0;
-  });
-  var da = (STAFF_ROLES[r] || {}).acts || [];
-  document.querySelectorAll("#st-e-acts input").forEach(function(c){
-    c.checked = da.indexOf(c.value) >= 0;
-  });
-}
-
-async function stSaveEdit(i){
-  var s = stList[i]; if (!s) return;
-  var tabs = [], acts = [];
-  document.querySelectorAll("#st-e-tabs input:checked").forEach(function(c){ tabs.push(c.value) });
-  document.querySelectorAll("#st-e-acts input:checked").forEach(function(c){ acts.push(c.value) });
-  var obj = Object.assign({}, s, {
-    name: document.getElementById("st-e-name").value.trim() || s.name || "",
-    role: document.getElementById("st-e-role").value,
-    tabs: tabs,
-    acts: acts,
-    active: document.getElementById("st-e-active").checked
-  });
-  delete obj.uid;
-  /* 不讓自己把自己鎖在外面 */
-  if (ME && s.uid === ME.userId && (obj.role !== "owner" || !obj.active)){
-    if (!confirm("你正在調降自己的權限。\n儲存後可能就進不了這一頁了，確定嗎？")) return;
-  }
-  await stSave(s.uid, obj);
-  mbClose(); await stLoad(1); renderStaff();
-}
-
-async function stRemove(i){
-  var s = stList[i]; if (!s) return;
-  if (!confirm("移除「" + (s.name || s.uid) + "」的帳號？\n\n對方下次開後台就會被擋在登入畫面外。\n之後要再給權限，重發一次邀請即可。")) return;
-  await fetch(STAFF_DB + "/staff/" + s.uid + ".json", { method: "DELETE" });
-  await stLoad(1); renderStaff();
-}
-
-/* ── 邀請 ── */
-/* openExternalBrowser=1 是 LINE 專用參數：
-   從 LINE 對話點連結時，強制用手機的預設瀏覽器開，不要用 LINE 內建瀏覽器。
-   LINE 內建瀏覽器跑不了 LINE Login，會直接報「無法正常執行」。 */
-function stInviteLink(token){
-  return STAFF_URL + "?invite=" + token + "&openExternalBrowser=1";
-}
-function stToken(){
-  return "iv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-}
-async function stMakeInvite(){
-  var name = document.getElementById("st-inv-name").value.trim();
-  var role = document.getElementById("st-inv-role").value;
-  if (!name){ alert("請先填姓名，之後名單才看得懂是誰"); return }
-  var token = stToken();
-  await fetch(STAFF_DB + "/staffInvites/" + token + ".json", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name, role: role, tabs: (STAFF_ROLES[role] || {}).tabs || [],
-      acts: (STAFF_ROLES[role] || {}).acts || [],
-      createdAt: new Date().toISOString(), used: false,
-      createdBy: (ME && ME.displayName) || "" })
-  });
-  var link = stInviteLink(token);
-  document.getElementById("st-inv-out").innerHTML =
-    '<div class="info-box" style="margin:0"><div style="font-size:13.5px;margin-bottom:8px">' +
-    '給 ' + stEsc(name) + ' 的連結（只能用一次）</div>' +
-    '<div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:9px 11px;' +
-    'font-size:13.5px;word-break:break-all;margin-bottom:9px">' + link + '</div>' +
-    '<button class="btn btn-gold btn-sm" onclick="stCopy(\'' + link + '\')">複製連結</button></div>';
-  document.getElementById("st-inv-name").value = "";
-  /* 重畫一次，讓新產生的這組出現在「還沒被使用」清單，
-     舊清單也不會被這段 HTML 蓋掉 */
-  await stLoad(1);
-  var keep = document.getElementById("st-inv-out").innerHTML;
-  renderStaff().then(function(){
-    var box = document.getElementById("st-inv-out");
-    if (box) box.innerHTML = keep;
-  });
-}
-function stCopy(txt){
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(txt).then(function(){ alert("已複製，貼給對方即可") },
-      function(){ prompt("手動複製：", txt) });
-  } else prompt("手動複製：", txt);
-}
-function stCopyInvite(token){ stCopy(stInviteLink(token)) }
-async function stKillInvite(k){
-  var iv = stInvites[k]; if (!iv) return;
-  if (!confirm("作廢給「" + (iv.name || "—") + "」的邀請連結？")) return;
-  await fetch(STAFF_DB + "/staffInvites/" + iv.token + ".json", { method: "DELETE" });
-  await stLoad(1); renderStaff();
-}
-
-
-/* ── 保險：自己盯著這一頁 ─────────────────────────────
-   不依賴 app.js 的分頁切換，也不依賴點擊事件——
-   直接每半秒看一次「老師設定是不是打開著、卡片是不是空的」，
-   是的話就畫。畫完就停手，不會一直重畫。 */
-(function(){
-  var drawnFor = null;
-  function tick(){
-    var p = document.getElementById("tab-settings");
-    var box = document.getElementById("staff-body");
-    if (!p || !box) return;
-    var on = p.classList.contains("active");
-    if (!on){ drawnFor = null; return }
-    if (drawnFor === "on" && box.innerHTML.trim()) return;
-    drawnFor = "on";
-    try { renderStaff() } catch(e){ console.log("renderStaff 失敗", e) }
-  }
-  setInterval(tick, 500);
-  setTimeout(tick, 200);
-})();
 
 /* 團班報價：欄位分區、對齊（每格頂端對齊，標籤一律單行，提示字放下面不撐高同一列） */
 .qg-sec{font-size:13px;font-weight:600;color:var(--gold2);letter-spacing:.5px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--border)}

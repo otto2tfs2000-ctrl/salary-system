@@ -12,7 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<link rel="stylesheet" href="styles.css?v=20261015b">
+<link rel="stylesheet" href="styles.css?v=20261021a">
 </head>
 <body>
 
@@ -40,8 +40,8 @@
     <div class="logo-sub">旗艦店 + 國圖店 · 每月結算</div>
   </div>
   <div style="display:flex;align-items:center;gap:20px">
-    <a href="https://otto2tfs2000-ctrl.github.io/sales-system/" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0;padding:6px 14px;border-radius:7px;font-size:12px;text-decoration:none;font-weight:500">📊 業績系統 ↗</a>
-    <button onclick="manualSaveNow(this)" style="display:inline-flex;align-items:center;gap:6px;background:rgba(91,155,213,0.12);border:1px solid rgba(91,155,213,0.3);color:#80c0f0;padding:6px 14px;border-radius:7px;font-size:12px;font-weight:500;font-family:inherit;cursor:pointer">💾 立即存檔</button>
+    <a class="btn btn-outline btn-sm" href="https://otto2tfs2000-ctrl.github.io/sales-system/" target="_blank">📊 業績系統 ↗</a>
+    <button class="btn btn-ok btn-sm" onclick="manualSaveNow(this)">💾 立即存檔</button>
     <div class="sync-wrap"><span class="dot" id="sync-dot"></span><span id="sync-text" style="color:var(--text3)">連線中...</span></div>
     <div class="month-nav">
       <span style="font-size:12px;color:var(--text3)">月份</span>
@@ -398,9 +398,10 @@
   <div class="card" id="inv-item-modal" style="display:none">
     <div class="card-title" style="justify-content:space-between">
       <span>⚙️ 品項清單管理（<span id="inv-modal-store"></span>）</span>
-      <button class="btn-sm btn-outline" onclick="closeInvItemModal()">✕ 關閉</button>
+      <button class="btn btn-outline btn-sm" onclick="closeInvItemModal()">✕ 關閉</button>
     </div>
-    <div class="form-grid">
+    <div class="sec-label">新增一個品項</div>
+    <div class="form-grid cols-5">
       <div class="fg"><label>類別</label>
         <select id="inv-new-cat">
           <option value="畫布">🖼 畫布(F/P號)</option>
@@ -426,32 +427,40 @@
       </div>
       <div class="fg"><label>品項名稱</label><input id="inv-new-name" placeholder="例：白色壓克力顏料"></div>
       <div class="fg"><label>單位</label><input id="inv-new-unit" placeholder="例：瓶、包、捲、張" value="個"></div>
-      <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於此數警示" onwheel="this.blur()"></div>
-      <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="一個多少錢（克、張、條…算每一個單位）" onwheel="this.blur()"></div>
-      <div class="fg"><label class="chk top" style="margin-top:22px"><input type="checkbox" id="inv-new-nostock"><span>只算成本（不盤點、核銷時不扣庫存）</span></label></div>
+      <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於這個數字會警示" onwheel="this.blur()"></div>
+      <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="每一個單位多少錢" onwheel="this.blur()"></div>
     </div>
-    <details style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:10px 14px" id="inv-bulk-box">
-      <summary style="cursor:pointer;font-weight:600;color:var(--gold2)">📋 一次貼上多筆（從表格或我整理好的清單複製）</summary>
-      <div class="muted" style="font-size:13px;margin:8px 0;line-height:1.7">一行一個品項，格式：<b>類別，名稱，單位，單位成本</b>（逗號或 Tab 分隔，從 Excel／試算表整欄複製貼上也可以）。<br>
-      類別要用下拉裡的名稱（畫布、顏料、膠體、水晶、金箔、熱熔膠、紙杯、紙盤、隱性耗材…）。名稱重複的會跳過、不會蓋掉。膠體、水晶、金箔、熱熔膠、紙杯、紙盤、隱性耗材預設「只算成本」。</div>
-      <textarea id="inv-bulk-text" rows="8" style="width:100%;font-size:14px" placeholder="膠體,環氧快乾膠,克,0.477">膠體,環氧快乾膠,克,0.477
-水晶,水晶碎石（平價）,克,0.2
-水晶,水晶碎石（中價）,克,0.45
-水晶,水晶碎石（貴價）,克,1.3
-金箔,銅箔,張,4.85
-隱性耗材,每人次耗材費（顏料等）,人次,15</textarea>
-      <div style="margin-top:8px"><button class="btn btn-gold" onclick="bulkImportInvItems(this)">匯入這些品項</button></div>
+    <label class="chk top" style="margin-bottom:16px"><input type="checkbox" id="inv-new-nostock"><span>只算成本 <span class="hint">（不盤點、核銷時不扣庫存，適合膠、水晶、隱性耗材這類）</span></span></label>
+    <div class="toolbar">
+      <button class="btn btn-gold" onclick="addInvItem(this)">＋ 新增品項</button>
+      <button class="btn btn-ok" onclick="saveInvItemsNow(this)">☁️ 立即儲存並確認</button>
+    </div>
+
+    <details class="tools-box" id="inv-bulk-box">
+      <summary><span class="t">🧰 進階工具</span><span class="muted">一次貼多筆、匯入預設清單、跨店複製、重置</span></summary>
+      <div class="tools-body">
+        <div class="tools-sec" style="border-top:none;padding-top:0">
+          <div class="sec-label">📋 一次貼上多筆</div>
+          <div class="hint">一行一個品項：<b>類別，名稱，單位，單位成本</b>（逗號或 Tab 分隔，可從試算表整欄複製）。類別要用上面下拉裡的名稱；名稱重複的會跳過、不會蓋掉。膠體、水晶、金箔、熱熔膠、紙杯、紙盤、隱性耗材會自動設成「只算成本」。</div>
+          <textarea id="inv-bulk-text" rows="6" placeholder="膠體,環氧快乾膠,克,0.477&#10;水晶,水晶碎石（平價）,克,0.2&#10;金箔,銅箔,張,4.85"></textarea>
+          <button class="btn btn-outline btn-sm" onclick="bulkImportInvItems(this)">匯入這些品項</button>
+        </div>
+        <div class="tools-sec">
+          <div class="sec-label">一次性工具</div>
+          <div class="toolbar">
+            <button class="btn btn-outline btn-sm" onclick="batchImportItems()">📥 匯入預設品項清單</button>
+            <button class="btn btn-outline btn-sm" onclick="copyFlagshipItemsToGuotu()">📋 從旗艦店複製品項到國圖店</button>
+            <button class="btn btn-outline btn-sm" onclick="applyPaintJarPhotos()">📸 套用顏料罐照片（依編號）</button>
+          </div>
+        </div>
+        <div class="danger-zone">
+          <div class="dz-text"><b>重置本店庫存資料</b>：會清空這間店的品項清單和所有盤點紀錄，不能復原。</div>
+          <button class="btn btn-del btn-sm" onclick="resetInvStoreData()">🗑️ 重置</button>
+        </div>
+      </div>
     </details>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-gold" onclick="addInvItem(this)">+ 新增品項</button>
-      <button class="btn btn-outline" onclick="batchImportItems()">📥 匯入預設品項清單</button>
-      <button class="btn btn-outline" onclick="copyFlagshipItemsToGuotu()">📋 從旗艦店複製品項清單到國圖店</button>
-      <button class="btn btn-outline" style="border-color:rgba(96,163,110,0.5);color:var(--green)" onclick="saveInvItemsNow(this)">☁️ 立即儲存並確認</button>
-      <div style="flex:1"></div>
-      <button class="btn-sm" style="background:transparent;border:1px solid rgba(201,168,76,0.4);color:var(--gold2)" onclick="applyPaintJarPhotos()">📸 套用顏料罐照片（依編號）</button>
-      <button class="btn-sm" style="background:transparent;border:1px solid rgba(224,85,85,0.4);color:var(--red)" onclick="resetInvStoreData()">🗑️ 重置本店庫存資料</button>
-    </div>
-    <div style="margin-top:16px" id="inv-item-list"></div>
+
+    <div style="margin-top:22px" id="inv-item-list"></div>
   </div>
 
   <div class="card">
@@ -514,7 +523,7 @@
 <script src="auth.js?v=20261012a"></script>
 <script src="app.js?v=20261013a"></script>
 <script src="consumables.js?v=20261015a"></script>
-<script src="inventory.js?v=20261015b"></script>
+<script src="inventory.js?v=20261021a"></script>
 <script src="booking.js?v=20261013b"></script>
 <script src="member.js?v=20261020a"></script>
 <script src="recipe.js?v=20261016b"></script>

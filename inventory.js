@@ -1191,7 +1191,7 @@ function renderInvItemList() {
   var catOrder = INV_CATS.slice();
   Object.keys(byCat).forEach(function(c){ if (catOrder.indexOf(c) === -1) catOrder.push(c); });
 
-  var html = '<div class="muted" style="margin-bottom:8px;font-size:13.5px">🖐 按住每一列左側的「⠿」拖曳，可調整同分類內的順序；換分類請用「類別」下拉選單</div>';
+  var html = '<div class="hint" style="margin-bottom:10px">🖐 按住每一列左側的「⠿」拖曳，可調整同分類內的順序；換分類請用「類別」下拉選單</div>';
 
   catOrder.forEach(function(cat) {
     var catItems = byCat[cat];
@@ -1200,10 +1200,10 @@ function renderInvItemList() {
     var arrow = isOpen ? '▼' : '▶';
 
     html += '<div style="margin-bottom:10px">';
-    html += '<div onclick="toggleInvItemGroup(\''+cat+'\')" style="cursor:pointer;padding:9px 14px;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:8px;display:flex;align-items:center;gap:10px;user-select:none">';
-    html += '<span style="font-size:14.5px;color:var(--gold2)">'+arrow+'</span>';
-    html += '<span style="font-size:15.5px;font-weight:600;color:var(--gold)">'+(INV_CAT_ICONS[cat]||'📌')+' '+cat+'</span>';
-    html += '<span style="font-size:13px;color:var(--text3);margin-left:4px">('+catItems.length+' 項)</span>';
+    html += '<div class="grp-head" onclick="toggleInvItemGroup(\''+cat+'\')">';
+    html += '<span class="arrow">'+arrow+'</span>';
+    html += '<span class="name">'+(INV_CAT_ICONS[cat]||'📌')+' '+cat+'</span>';
+    html += '<span class="count">'+catItems.length+' 項</span>';
     html += '</div>';
 
     if (isOpen) {
@@ -1229,7 +1229,7 @@ function renderInvItemList() {
           imgHtml += '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onclick="event.preventDefault();showInvImage('+it.id+')">';
           imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
           imgHtml += '</label>';
-          imgHtml += ' <button class="btn-sm" style="font-size:12px;padding:2px 6px;background:transparent;border:1px solid rgba(224,85,85,0.3);color:var(--red)" onclick="removeInvImage('+it.id+')">✕</button>';
+          imgHtml += ' <button class="btn btn-del btn-sm" style="min-height:26px;padding:2px 8px" title="移除圖片" onclick="removeInvImage('+it.id+')">✕</button>';
         } else {
           imgHtml += '<span style="font-size:18px">📷</span>';
           imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
@@ -1242,7 +1242,7 @@ function renderInvItemList() {
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
         html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
-        html += '<td><button class="btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
+        html += '<td><button class="btn btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
