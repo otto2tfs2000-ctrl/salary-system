@@ -79,7 +79,7 @@ function getStockItems() {
 /* 盤法分四種（2026-10-22）：
    main＝主要材料，每週逐件盤（就是 noStock 沒勾的，原本那套全部照舊）
    pack＝固定要補的耗材，按「包／串」盤，例：紙杯一串 50 個、剩 2 串
-   bulk＝散裝數不了的（水晶碎石、膠、銅箔），只點「充足／剩一點／快沒了」
+   bulk＝散裝數不了的（水晶碎石），只點「充足／剩一點／快沒了」；膠、金箔數得出整包／整組，算 pack
    cost＝純算成本、不盤（例：每人次耗材費）
    pack/bulk/cost 一律 noStock=true：核銷不扣、不進週盤點表／建議訂購量，課程成本照算。
    舊資料沒有 tier 欄位，就用類別猜預設值，不用另外搬資料。 */
@@ -87,15 +87,24 @@ var INV_TIER_LABELS = { main:'主要材料（每週逐件盤）', pack:'耗材�
 function invTierOf(it) {
   if (!it.noStock) return 'main';
   if (it.tier && INV_TIER_LABELS[it.tier]) return it.tier;
-  if (['膠體','水晶','金箔'].indexOf(it.cat) >= 0) return 'bulk';
+  if (it.cat === '水晶') return 'bulk';
   if (/每人次/.test(it.name || '')) return 'cost';
-  if (['紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(it.cat) >= 0) return 'pack';
+  if (['膠體','金箔','紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(it.cat) >= 0) return 'pack';
   return 'cost';
 }
 function invDefaultTierForCat(cat) {
-  if (['膠體','水晶','金箔'].indexOf(cat) >= 0) return 'bulk';
-  if (['紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(cat) >= 0) return 'pack';
+  if (cat === '水晶') return 'bulk';
+  if (['膠體','金箔','紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(cat) >= 0) return 'pack';
   return 'main';
+}
+// 一包／一組：沒自己填過就照類別給預設，金箔習慣講「組」、熱熔膠直接數「條」
+function invPackUnit(it) {
+  return it.packUnit || (it.cat === '金箔' ? '組' : it.cat === '熱熔膠' ? '條' : '包');
+}
+// 盤點單位跟品項單位一樣（例：熱熔膠就數幾條）就不用設一包幾個
+function invPackIsUnit(it) {
+  var pu = invPackUnit(it);
+  return pu === '條' || pu === it.unit;
 }
 // 耗材／散裝的盤點只留「最新一次」，存在 st.supplyCheck[itemId] = {packs, status, savedAt, by}
 function getInvSupplyCheck(itemId) {
@@ -163,8 +172,8 @@ function renderInvSupplySection() {
       var tier = invTierOf(it);
       var how, input;
       if (tier === 'pack') {
-        var pu = it.packUnit || '包';
-        how = it.packSize ? '1'+pu+'＝'+it.packSize+(it.unit||'個') : '<span style="color:#e09e4d">還沒設一'+pu+'幾'+(it.unit||'個')+'</span>';
+        var pu = invPackUnit(it);
+        how = invPackIsUnit(it) ? '直接數幾'+pu : it.packSize ? '1'+pu+'＝'+it.packSize+(it.unit||'個') : '<span style="color:#e09e4d">還沒設一'+pu+'幾'+(it.unit||'個')+'</span>';
         how += '<div class="muted" style="font-size:11px">剩 '+(typeof it.packSafe === 'number' ? it.packSafe : 1)+' '+pu+'以下提醒</div>';
         input = '<input class="in-num" type="number" min="0" step="0.5" style="width:80px" value="'+(typeof rec.packs === 'number' ? rec.packs : '')+'" onwheel="this.blur()" onchange="saveInvSupply('+it.id+',\'packs\',this.value)"> '+pu;
       } else {
@@ -1342,9 +1351,9 @@ function renderInvSupplyItemList(items) {
       h += '<td><input class="in-num" type="number" min="0" step="any" style="width:72px" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)"></td>';
       h += '<td>'+invTierSelectHtml(it)+'</td>';
       if (tier === 'pack') {
-        h += '<td style="white-space:nowrap">1 <input class="in-num" style="width:44px" value="'+(it.packUnit||'包').replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'packUnit\',this.value)"> ＝ '
+        h += '<td style="white-space:nowrap">1 <input class="in-num" style="width:44px" value="'+invPackUnit(it).replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'packUnit\',this.value)"> ＝ '
            + '<input class="in-num" type="number" min="0" style="width:64px" placeholder="幾個" value="'+(it.packSize != null ? it.packSize : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'packSize\',this.value)"> '+it.unit+'</td>';
-        h += '<td style="white-space:nowrap"><input class="in-num" type="number" min="0" step="0.5" style="width:60px" value="'+(typeof it.packSafe === 'number' ? it.packSafe : 1)+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'packSafe\',this.value)"> '+(it.packUnit||'包')+'</td>';
+        h += '<td style="white-space:nowrap"><input class="in-num" type="number" min="0" step="0.5" style="width:60px" value="'+(typeof it.packSafe === 'number' ? it.packSafe : 1)+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'packSafe\',this.value)"> '+invPackUnit(it)+'</td>';
       } else {
         h += '<td class="muted">—</td><td class="muted" style="white-space:nowrap">'+(tier === 'bulk' ? '點「快沒了」' : '不盤')+'</td>';
       }
