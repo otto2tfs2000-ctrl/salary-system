@@ -495,10 +495,10 @@ function mbDrawHits(){
       '<td style="text-align:right;color:' + (m.points > 0 ? 'var(--gold2)' : 'var(--text3)') + '">' + m.points.toLocaleString() + '</td>' +
       '<td style="text-align:right">' + m.sessions + '</td>' +
       '<td style="text-align:right">' + m.bonus + '</td>' +
-      '<td style="display:flex;gap:6px">' +
+      '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' +
         '<button class="btn btn-outline btn-sm" onclick="mbDetail(\'' + m.phone + '\')">明細</button>' +
         (mbCan('sellPlan') ? '<button class="btn btn-sm btn-gold" onclick="mbSell(\'' + m.phone + '\')">賣方案</button>' : '') +
-      '</td></tr>';
+      '</div></td></tr>';
   });
   h += '</tbody></table>';
   if (r.length >= 20) h += '<div class="muted" style="font-size:var(--fs-sm);margin-top:6px">只顯示前 20 筆，請再輸入詳細一點</div>';
@@ -1314,11 +1314,11 @@ function mbPlansHtml(){
       '<td style="text-align:right;font-size:var(--fs-sm)">' + ((p.newBonusToday || p.newBonus || p.renewBonus) ? (+p.newBonusToday||0).toLocaleString() + ' / ' + (+p.newBonus||0).toLocaleString() + ' / ' + (+p.renewBonus||0).toLocaleString() : '—') + '</td>' +
       '<td style="font-size:var(--fs-xs);color:var(--text3)">' + created + '</td>' +
       '<td style="font-size:var(--fs-sm);color:' + (off ? 'var(--text3)' : 'var(--green)') + '">' + (off ? '已停用' : '啟用中') + '</td>' +
-      '<td style="display:flex;gap:6px">' +
+      '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' +
         '<button class="btn btn-outline btn-sm" onclick="mbPlanEdit(' + i + ')">編輯</button>' +
         '<button class="btn btn-sm" onclick="mbPlanToggle(' + i + ')">' + (off ? '啟用' : '停用') + '</button>' +
         '<button class="btn btn-del btn-sm" onclick="mbPlanDelete(' + i + ')">刪除</button>' +
-      '</td></tr>';
+      '</div></td></tr>';
   });
   h += '</tbody></table>';
   h += '<div class="info-box" style="margin-top:14px">' +

@@ -1251,10 +1251,10 @@ function renderDayForm() {
         '<td style="font-size:var(--fs-sm)">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
         '<td style="font-size:var(--fs-sm)">' + (summary.join(' ｜ ')||'—') + '</td>' +
         '<td style="font-size:var(--fs-sm);color:var(--text3)">' + (entry.note||'') + '</td>' +
-        '<td style="display:flex;gap:6px">' +
+        '<td><div style="display:flex;gap:6px;flex-wrap:wrap">' +
         '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">編輯</button>' +
         '<button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button>' +
-        '</td>' +
+        '</div></td>' +
         '</tr>';
     });
   }
@@ -1653,10 +1653,10 @@ function renderMonthly() {
           '<td style="color:var(--text3);font-size:var(--fs-sm)">獎金依總時數計算；總部時數的時薪費由總部支付；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在總時數內</td></tr>';
       }
       return '<tr><td><strong>' + t.name + '</strong></td><td>兼職</td>' +
-        '<td style="display:flex;align-items:center;gap:8px">' +
+        '<td><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
         '<input type="number" class="in-num md" value="' + hrs + '" onchange="setPTHours(\'' + ptKey + '\',\'' + t.id + '\',+this.value,\'' + iconId + '\')" placeholder="0" onwheel="this.blur()">' +
         '<span id="' + iconId + '" style="color:var(--green2);font-weight:700;opacity:0;transition:opacity .3s">✓ 已儲存</span>' +
-        '</td>' +
+        '</div></td>' +
         '<td><span style="font-weight:600;color:var(--gold2)">' + ((totals.teachers[t.id]?.campSessions)||0) + ' 堂</span></td>' +
         '<td style="color:var(--text3);font-size:var(--fs-sm)">填入後薪資頁自動計算；營隊堂數由「營隊登記」區自動加總，依每堂費用另計，不含在本月時數內</td></tr>';
     }).join('');
@@ -2178,10 +2178,10 @@ function renderTeacherList() {
       '<td class="muted">' + (t.adminG?'$'+t.adminG.toLocaleString():'—') + '</td>' +
       '<td class="muted">' + (t.base?'$'+t.base.toLocaleString():'—') + '</td>' +
       '<td class="muted">' + (t.campRate?'$'+parseFloat(t.campRate).toLocaleString():'—') + '</td>' +
-      '<td style="display:flex;gap:6px">' +
+      '<td><div style="display:flex;gap:6px">' +
       '<button class="btn btn-outline btn-sm" onclick="editTeacher(\'' + t.id + '\')">編輯</button>' +
       '<button class="btn btn-del btn-sm" onclick="delTeacher(\'' + t.id + '\')">刪除</button>' +
-      '</td></tr>';
+      '</div></td></tr>';
 
     return mainRow + editRow;
   }).join('');

@@ -163,6 +163,8 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 #day-form-area td:first-child,#day-form-area th:first-child{white-space:nowrap}
 /* 月報、薪資：老師名字和職別欄不准折行（以前「兼職」會被擠成直排） */
 #monthly-content td:nth-child(-n+2),#salary-content td:first-child{white-space:nowrap}
+/* 老師設定：名字欄不折行 */
+#teacher-list td:nth-child(2){white-space:nowrap}
 @media (max-width:700px){
   .cm-drow{grid-template-columns:repeat(3,minmax(0,1fr));padding-bottom:10px;border-bottom:1px dashed var(--border)}
   .cm-drow>.cmdr-name{grid-column:1/-1}

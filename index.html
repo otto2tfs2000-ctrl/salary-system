@@ -12,7 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<link rel="stylesheet" href="styles.css?v=20261022c">
+<link rel="stylesheet" href="styles.css?v=20261022d">
 </head>
 <body>
 
@@ -484,7 +484,11 @@
 <div id="tab-settings" class="page">
   <div id="staff-body"></div>
   <div class="card">
-    <div class="card-title">新增老師</div>
+    <div class="card-title">目前老師列表</div>
+    <div id="teacher-list"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">＋ 新增老師</div>
     <div class="form-grid">
       <div class="fg"><label>姓名／暱稱</label><input id="f-name" placeholder="例：蓁蓁"></div>
       <div class="fg"><label>所屬分店</label>
@@ -521,24 +525,20 @@
     </div>
     <button class="btn btn-gold" onclick="addTeacher()">+ 新增老師</button>
   </div>
-  <div class="card">
-    <div class="card-title">目前老師列表</div>
-    <div id="teacher-list"></div>
-  </div>
 </div>
 
 <script src="auth.js?v=20261012a"></script>
-<script src="app.js?v=20261022b"></script>
+<script src="app.js?v=20261022c"></script>
 <script src="consumables.js?v=20261022a"></script>
 <script src="inventory.js?v=20261022a"></script>
 <script src="booking.js?v=20261022a"></script>
-<script src="member.js?v=20261021a"></script>
+<script src="member.js?v=20261022a"></script>
 <script src="recipe.js?v=20261021a"></script>
 <script src="catalog.js?v=20261021a"></script>
 <script src="quote.js?v=20261017a"></script>
 <script src="init.js?v=20260805p"></script>
 <script src="finance.js?v=20261022a"></script>
-<script src="staff.js?v=20261014a"></script>
+<script src="staff.js?v=20261022a"></script>
 <script src="gacha.js?v=20261021a"></script>
 <script src="xmas.js?v=20261021a"></script>
 <script src="shop.js?v=20261021a"></script>
