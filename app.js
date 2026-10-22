@@ -999,11 +999,11 @@ function renderDaily() {
     '<span>📅 選擇日期</span>' +
     '<button class="btn btn-outline btn-sm" onclick="loadData()">重新讀取</button>' +
     '</div>' +
-    '<div style="display:flex;align-items:center;gap:12px">' +
-    '<button onclick="shiftDay(-1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:17px;cursor:pointer;line-height:1" title="前一天">‹</button>' +
-    '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:15.5px;outline:none;font-family:inherit">' + opts + '</select>' +
-    '<button onclick="shiftDay(+1)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 12px;border-radius:7px;font-size:17px;cursor:pointer;line-height:1" title="後一天">›</button>' +
-    '<span style="font-size:13.5px;color:var(--text3)">✓ 表示已有紀錄</span>' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<button class="btn btn-outline" style="padding:6px 14px;font-size:17px" onclick="shiftDay(-1)" title="前一天">‹</button>' +
+    '<select id="day-sel" onchange="renderDayForm()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:7px;font-size:var(--fs-md);outline:none;font-family:inherit">' + opts + '</select>' +
+    '<button class="btn btn-outline" style="padding:6px 14px;font-size:17px" onclick="shiftDay(+1)" title="後一天">›</button>' +
+    '<span style="font-size:var(--fs-sm);color:var(--text3)">✓ 表示已有紀錄</span>' +
     '</div></div>' +
     '<div id="day-form-area"></div>';
 
@@ -1093,9 +1093,9 @@ function dedRefresh(dateStr) {
 
 function buildDedHtml(dateStr) {
   var all = dedCache[dateStr];
-  if (!all) return '<div class="muted" style="font-size:13.5px">讀取核銷紀錄中…</div>';
+  if (!all) return '<div class="muted" style="font-size:var(--fs-sm)">讀取核銷紀錄中…</div>';
   var list = all.filter(function(r){ return dedStoreOf(r.dept) === curStore.daily });
-  if (!list.length) return '<div class="muted" style="font-size:13.5px">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
+  if (!list.length) return '<div class="muted" style="font-size:var(--fs-sm)">這天還沒有核銷紀錄。核銷後這裡會列出來，可以一鍵帶入下方欄位。</div>';
 
   var teachers = getTeachers(curStore.daily);
   var known = {}, unknown = [];
@@ -1119,13 +1119,13 @@ function buildDedHtml(dateStr) {
     if (r.kids) ak.push('小孩' + r.kids);
     var includedTxt = getIncludedMaterialsText(dedStoreOf(r.dept), dateStr, r.bookingId);
     rows += '<tr>' +
-      '<td style="font-size:13.5px">' + (r.customer || '—') + '</td>' +
-      '<td style="font-size:13.5px;color:var(--text3);white-space:nowrap">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
-      '<td style="font-size:13.5px;color:var(--text3)">' + (r.items || '—') +
+      '<td style="font-size:var(--fs-sm)">' + (r.customer || '—') + '</td>' +
+      '<td style="font-size:var(--fs-sm);color:var(--text3);white-space:nowrap">' + ppl + ' 位' + (ak.length ? '（' + ak.join('・') + '）' : '') + '</td>' +
+      '<td style="font-size:var(--fs-sm);color:var(--text3)">' + (r.items || '—') +
         (includedTxt ? '<br><span style="color:var(--text3)">含：' + includedTxt + '</span>' : '') +
         (r.addonText ? '<br><span style="color:var(--gold2)">＋' + r.addonText + '</span>' : '') + '</td>' +
-      '<td style="font-size:13.5px' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
-      '<td style="text-align:right;font-size:13.5px">$' + amt.toLocaleString() + '</td>' +
+      '<td style="font-size:var(--fs-sm)' + (bad ? ';color:var(--red)' : '') + '">' + (tName || '<span style="color:var(--red)">未指定</span>') + (bad ? ' ⚠' : '') + '</td>' +
+      '<td style="text-align:right;font-size:var(--fs-sm)">$' + amt.toLocaleString() + '</td>' +
       '<td><button class="btn btn-del btn-sm" onclick="delDeduction(\'' + r._id + '\',\'' + dateStr + '\')">刪除</button></td>' +
       '</tr>';
   });
@@ -1134,7 +1134,7 @@ function buildDedHtml(dateStr) {
   h += '<div style="overflow-x:auto"><table><thead><tr>' +
        '<th>客人</th><th style="width:110px">人數</th><th>課程</th><th style="width:90px">老師</th><th style="width:80px">金額</th><th style="width:60px"></th>' +
        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
-  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:14.5px">' +
+  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:var(--fs-md)">' +
        '<span>合計 <strong style="color:var(--gold2)">' + totalPpl + '</strong> 人次</span>' +
        '<span>核銷金額 <strong style="color:var(--gold2)">$' + totalAmt.toLocaleString() + '</strong></span>' +
        '</div>';
@@ -1144,7 +1144,7 @@ function buildDedHtml(dateStr) {
          '這幾筆人次帶不進去，請先到老師設定新增，或用「修正核銷」改成正確的名字。</div>';
   }
   h += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-       '<span class="muted" style="font-size:13.5px">人次與營收已自動填入下方欄位，' +
+       '<span class="muted" style="font-size:var(--fs-sm)">人次與營收已自動填入下方欄位，' +
        '確認後按「新增本次紀錄」與「儲存當日營收」存檔。</span>' +
        '<button class="btn btn-outline btn-sm" onclick="dedRefresh(\'' + dateStr + '\')">重新讀取</button>' +
        '</div>';
@@ -1202,13 +1202,13 @@ function renderDayForm() {
     var salesCell;
     if (fbAmt > 0) {
       salesCell = '<td>' +
-        '<span class="auto-val" style="font-size:15.5px;font-weight:600">$' + fbAmt.toLocaleString() + '</span>' +
-        '<br><span style="font-size:12px;color:var(--green)">● 業績系統</span>' +
+        '<span class="auto-val" style="font-size:var(--fs-md);font-weight:600">$' + fbAmt.toLocaleString() + '</span>' +
+        '<br><span style="font-size:var(--fs-xs);color:var(--green)">● 業績系統</span>' +
         '</td>';
     } else if (fbLoaded) {
-      salesCell = '<td><span class="zero-val" style="font-size:13.5px">— <span style="font-size:12px;color:var(--text3)">無紀錄</span></span></td>';
+      salesCell = '<td><span class="zero-val" style="font-size:var(--fs-sm)">— <span style="font-size:var(--fs-xs);color:var(--text3)">無紀錄</span></span></td>';
     } else {
-      salesCell = '<td><span style="font-size:12.5px;color:var(--text3)">載入中...</span></td>';
+      salesCell = '<td><span style="font-size:var(--fs-xs);color:var(--text3)">載入中...</span></td>';
     }
     tRows += '<tr>' +
       '<td><strong>' + t.name + '</strong><br><span class="muted">' + TYPE_NAME[t.type] + '</span></td>' +
@@ -1219,7 +1219,7 @@ function renderDayForm() {
       '<td><input type="number" class="in-num" id="inp_j_' + t.id + '" value="0" min="0" onchange="updateFee(\'' + t.id + '\')" onwheel="this.blur()"></td>' +
       '<td><input type="number" class="in-num lg" id="inp_tf_' + t.id + '" value="0" min="0" placeholder="0" onwheel="this.blur()"></td>' +
       salesCell +
-      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:13.5px;outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
+      '<td><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;width:100px;font-size:var(--fs-sm);outline:none;font-family:inherit" id="inp_n_' + t.id + '"></td>' +
       (store==='guotu' ? '<td style="text-align:center"><input type="checkbox" id="inp_hq_' + t.id + '" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"></td>' : '') +
       '</tr>';
   });
@@ -1247,10 +1247,10 @@ function renderDayForm() {
         if (parts.length && t) summary.push(t.name + ': ' + parts.join('、'));
       });
       logHtml += '<tr>' +
-        '<td style="color:var(--text3);font-size:13.5px;white-space:nowrap">' + (entry.time||'—') + '</td>' +
-        '<td style="font-size:13.5px">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
-        '<td style="font-size:13.5px">' + (summary.join(' ｜ ')||'—') + '</td>' +
-        '<td style="font-size:13.5px;color:var(--text3)">' + (entry.note||'') + '</td>' +
+        '<td style="color:var(--text3);font-size:var(--fs-sm);white-space:nowrap">' + (entry.time||'—') + '</td>' +
+        '<td style="font-size:var(--fs-sm)">' + (nc?'新客'+nc:'') + (oc?' 舊客'+oc:'') + ((!nc&&!oc)?'—':'') + '</td>' +
+        '<td style="font-size:var(--fs-sm)">' + (summary.join(' ｜ ')||'—') + '</td>' +
+        '<td style="font-size:var(--fs-sm);color:var(--text3)">' + (entry.note||'') + '</td>' +
         '<td style="display:flex;gap:6px">' +
         '<button class="btn btn-outline btn-sm" onclick="openEditEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">編輯</button>' +
         '<button class="btn btn-del btn-sm" onclick="delEntry(\'' + store + '\',\'' + mKey + '\',' + day + ',' + idx + ')">刪除</button>' +
@@ -1270,8 +1270,8 @@ function renderDayForm() {
       if (td && td.count) aggParts.push(t.name + ' <strong style="color:var(--gold2)">' + td.count + '</strong>人次');
     });
     if (aggParts.length) {
-      aggHtml = '<div class="entry-log"><div style="color:var(--text3);font-size:12.5px;margin-bottom:6px">今日合計</div>' +
-        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14.5px">' + aggParts.join(' ') + '</div></div>';
+      aggHtml = '<div class="entry-log"><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:6px">今日合計</div>' +
+        '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:var(--fs-md)">' + aggParts.join(' ') + '</div></div>';
     }
   }
 
@@ -1285,26 +1285,26 @@ function renderDayForm() {
     '<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label>新客人數（本次）</label><input type="number" class="in-num md" id="inp_nc" value="0" min="0" onwheel="this.blur()"></div>' +
     '<div class="day-meta-item"><label>舊客人數（本次）</label><input type="number" class="in-num md" id="inp_oc" value="0" min="0" onwheel="this.blur()"></div>' +
-    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14.5px;outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
+    '<div class="day-meta-item"><label>備註</label><input type="text" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:var(--fs-md);outline:none;font-family:inherit;width:150px" id="inp_en" placeholder="選填"></div>' +
 
     '</div>' +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr>' +
     '<th>老師</th>' +
-    '<th>一般人次<br><span style="font-size:12px;color:var(--green)">計獎金</span></th>' +
-    '<th>外派人次<br><span style="font-size:12px;color:var(--text3)">不計獎金</span></th>' +
-    '<th>主教場<br><span style="font-size:12px;color:var(--text3)">$2,000</span></th>' +
-    '<th>助教場<br><span style="font-size:12px;color:var(--text3)">$1,500</span></th>' +
-    '<th>小老師場<br><span style="font-size:12px;color:var(--text3)">$1,000</span></th>' +
-    '<th>外派培訓費<br><span style="font-size:12px;color:var(--text3)">記錄用</span></th>' +
-    '<th>當日業績<br><span style="font-size:12px;color:var(--green)">自動帶入</span></th>' +
+    '<th>一般人次<br><span style="font-size:var(--fs-xs);color:var(--green)">計獎金</span></th>' +
+    '<th>外派人次<br><span style="font-size:var(--fs-xs);color:var(--text3)">不計獎金</span></th>' +
+    '<th>主教場<br><span style="font-size:var(--fs-xs);color:var(--text3)">$2,000</span></th>' +
+    '<th>助教場<br><span style="font-size:var(--fs-xs);color:var(--text3)">$1,500</span></th>' +
+    '<th>小老師場<br><span style="font-size:var(--fs-xs);color:var(--text3)">$1,000</span></th>' +
+    '<th>外派培訓費<br><span style="font-size:var(--fs-xs);color:var(--text3)">記錄用</span></th>' +
+    '<th>當日業績<br><span style="font-size:var(--fs-xs);color:var(--green)">自動帶入</span></th>' +
     '<th>備註</th>' +
-    (store==='guotu' ? '<th>總部代課<br><span style="font-size:12px;color:var(--text3)">勾＝總部計薪</span></th>' : '') +
+    (store==='guotu' ? '<th>總部代課<br><span style="font-size:var(--fs-xs);color:var(--text3)">勾＝總部計薪</span></th>' : '') +
     '</tr></thead>' +
     '<tbody>' + tRows + '</tbody></table></div>' +
-    '<div style="margin-top:16px;display:flex;gap:10px;align-items:center">' +
-    '<button class="btn btn-gold" onclick="submitEntry(\'' + store + '\',\'' + mKey + '\',' + day + ')">✚ 新增本次紀錄</button>' +
-    '<span style="font-size:13.5px;color:var(--text3)">按下後儲存，欄位自動歸零</span>' +
+    '<div class="toolbar" style="margin-top:16px">' +
+    '<button class="btn btn-gold" style="white-space:nowrap" onclick="submitEntry(\'' + store + '\',\'' + mKey + '\',' + day + ')">✚ 新增本次紀錄</button>' +
+    '<span style="font-size:var(--fs-sm);color:var(--text3)">按下後儲存，欄位自動歸零</span>' +
     '</div></div>';
 
   // 獨立當日營收區塊
@@ -1313,7 +1313,7 @@ function renderDayForm() {
   var existExtra = (dayRec.revenueExtra != null) ? (+dayRec.revenueExtra || 0)
                  : Math.max(0, existRev - (DT.revenue || 0));   /* 舊資料沒有這欄，用差額推回去 */
   var revTotal = (DT.revenue || 0) + existExtra;
-  html += '<div class="card" style="border:1px solid var(--gold);margin-top:8px">' +
+  html += '<div class="card" style="border-color:var(--gold-line);margin-top:8px">' +
     '<div class="card-title" style="color:var(--gold2)">💰 當日營收（可單獨儲存）</div>' +
     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
     '<div class="day-meta-item"><label>核銷營收（自動）</label>' +
@@ -1327,9 +1327,9 @@ function renderDayForm() {
     '<div class="day-meta-item"><label>當日營收</label>' +
     '<div id="rev-total" style="width:130px;padding:8px 12px;font-size:18px;font-weight:700">$' + revTotal.toLocaleString() + '</div>' +
     '</div>' +
-    '<button class="btn" style="background:var(--gold);color:#000;font-weight:700" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ',' + (DT.revenue||0) + ')">💾 儲存當日營收</button>' +
+    '<button class="btn btn-ok" onclick="saveRevOnly(\'' + store + '\',\'' + mKey + '\',' + day + ',' + (DT.revenue||0) + ')">💾 儲存當日營收</button>' +
     '</div>' +
-    '<div style="font-size:12.5px;color:var(--text3);margin-top:8px" id="rev-hint">' +
+    '<div style="font-size:var(--fs-xs);color:var(--text3);margin-top:8px" id="rev-hint">' +
       '「其他收入」填純賣材料、雜項這種沒有走核銷的收入。核銷那格會自己算，不用動。' +
       (existRev && existRev !== revTotal ? '<br><span style="color:var(--red)">已儲存的是 $' + existRev.toLocaleString() + '，與目前算出來的 $' + revTotal.toLocaleString() + ' 不同，記得重新儲存</span>' : '') +
     '</div>' +
@@ -1341,36 +1341,36 @@ function renderDayForm() {
   var campRows = teachers.map(function(t) {
     var cd = campDay[t.id] || {};
     var cntCell = (t.type === 'part')
-      ? '<td style="text-align:center;color:var(--text3);font-size:13.5px">—</td>'
+      ? '<td style="text-align:center;color:var(--text3);font-size:var(--fs-sm)">—</td>'
       : '<td><input type="number" class="in-num md" id="cmp_p_' + t.id + '" value="' + (cd.count||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>';
     var sesCell = (t.type === 'part')
       ? '<td><input type="number" class="in-num md" id="cmp_s_' + t.id + '" value="' + (cd.sessions||'') + '" min="0" step="0.5" placeholder="0" onwheel="this.blur()"></td>'
-      : '<td style="text-align:center;color:var(--text3);font-size:13.5px">—</td>';
+      : '<td style="text-align:center;color:var(--text3);font-size:var(--fs-sm)">—</td>';
     var rate = parseFloat(t.campRate) || 0;
     var fee = rate ? (t.type==='part' ? (parseFloat(cd.sessions)||0)*rate : (parseFloat(cd.count)||0)*rate) : 0;
     return '<tr><td><strong>' + t.name + '</strong></td>' +
       '<td class="muted">' + TYPE_NAME[t.type] + '</td>' +
       cntCell + sesCell +
-      '<td style="font-size:13.5px;color:var(--text3)">' + (rate ? ('$' + rate.toLocaleString() + (t.type==='part'?'/堂':'/人次')) : '<span style="color:var(--red,#e74c3c)">未設定費率</span>') + '</td>' +
+      '<td style="font-size:var(--fs-sm);color:var(--text3)">' + (rate ? ('$' + rate.toLocaleString() + (t.type==='part'?'/堂':'/人次')) : '<span style="color:var(--red)">未設定費率</span>') + '</td>' +
       '<td class="' + (fee?'auto-val':'zero-val') + '">' + (fee ? '$' + fee.toLocaleString() : '—') + '</td></tr>';
   }).join('');
 
-  html += '<div class="card" style="border:1px solid var(--green);margin-top:8px">' +
-    '<div class="card-title" style="color:var(--green)">🏕️ 營隊登記（獨立計費，可單獨儲存）</div>' +
+  html += '<div class="card" style="border-color:var(--green-line);margin-top:8px">' +
+    '<div class="card-title" style="color:var(--green2)">🏕️ 營隊登記（獨立計費，可單獨儲存）</div>' +
     '<div class="info-box">這區跟上面的課程紀錄完全分開存放，同一位老師教營隊、教一般課不會互相影響。正職填人次、兼職填堂數，填完按下方按鈕儲存（會覆蓋當日營隊資料）。' + (campHasData ? '<br><strong style="color:var(--green)">● 本日已有營隊紀錄</strong>' : '') + '</div>' +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>老師</th><th>職別</th>' +
-    '<th>營隊人次<br><span style="font-size:12px;color:var(--text3)">正職計費</span></th>' +
-    '<th>營隊堂數<br><span style="font-size:12px;color:var(--text3)">兼職計費</span></th>' +
+    '<th>營隊人次<br><span style="font-size:var(--fs-xs);color:var(--text3)">正職計費</span></th>' +
+    '<th>營隊堂數<br><span style="font-size:var(--fs-xs);color:var(--text3)">兼職計費</span></th>' +
     '<th>費率</th><th>本日營隊費</th></tr></thead>' +
     '<tbody>' + campRows + '</tbody></table></div>' +
-    '<div style="margin-top:14px;display:flex;gap:10px;align-items:center">' +
-    '<button class="btn" style="background:var(--green);color:#000;font-weight:700" onclick="saveCamp(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存營隊登記</button>' +
-    '<span style="font-size:13.5px;color:var(--text3)">沒有營隊的日子不用填，留空即可</span>' +
+    '<div class="toolbar" style="margin-top:14px">' +
+    '<button class="btn btn-ok" style="white-space:nowrap" onclick="saveCamp(\'' + store + '\',\'' + mKey + '\',' + day + ')">💾 儲存營隊登記</button>' +
+    '<span style="font-size:var(--fs-sm);color:var(--text3)">沒有營隊的日子不用填，留空即可</span>' +
     '</div></div>';
 
   html += '<div class="card">' +
-    '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:13.5px;color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
+    '<div class="card-title">📋 今日累計紀錄 — ' + day + ' 日 <span style="font-size:var(--fs-sm);color:var(--text3);font-weight:400">共 ' + entries.length + ' 筆</span></div>' +
     aggHtml +
     '<div style="overflow-x:auto"><table>' +
     '<thead><tr><th>時間</th><th>新舊客</th><th>老師紀錄</th><th>備註</th><th></th></tr></thead>' +

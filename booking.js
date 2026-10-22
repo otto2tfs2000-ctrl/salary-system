@@ -2739,7 +2739,7 @@ async function bkSchedRender(){
   h+='<div class="bk-cfoot">本月開課 '+openDays+' 天・可容納 '+seats.toLocaleString()+' 人次'+
      '（白天每天 '+SLOTS.length+' 個時段'+(eveDays?'，另有 '+eveDays+' 天加開晚上':'')+'）<br>'+
      '中間數字「上午/下午」不一樣才會分開顯示，一樣就只顯示一個。<br>'+
-     '深色外框代表你手動指定過，淺色是照星期幾的預設值。點任一天可以改。<br>'+
+     '金色粗框代表你手動指定過，細框是照星期幾的預設值。點任一天可以改。<br>'+
      '格子右下角有「夜」的，代表那天有加開 '+EVE_SLOT+'。</div>';
   root.innerHTML=h;
 

@@ -159,6 +159,8 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 .cm-airow.cm-aihead{background:none;border:0;padding:0 14px;margin-bottom:4px}
 .cm-drow>*,.cm-airow>*{min-width:0}
 .cm-drow>button,.cm-airow>button{justify-self:end;padding:4px 10px}
+/* 每日填寫：老師名字欄不准折行（手機上會被擠成一個字一行），表格放不下就左右滑 */
+#day-form-area td:first-child,#day-form-area th:first-child{white-space:nowrap}
 @media (max-width:700px){
   .cm-drow{grid-template-columns:repeat(3,minmax(0,1fr));padding-bottom:10px;border-bottom:1px dashed var(--border)}
   .cm-drow>.cmdr-name{grid-column:1/-1}
