@@ -12,7 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<link rel="stylesheet" href="styles.css?v=20261021c">
+<link rel="stylesheet" href="styles.css?v=20261022a">
 </head>
 <body>
 
@@ -168,14 +168,14 @@
 <div id="tab-consumables" class="page">
   <!-- 耗材專用月份切換 -->
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-    <span style="font-size:12px;color:var(--text3)">查看月份</span>
-    <select id="cm-selYear" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit">
+    <span style="font-size:var(--fs-xs);color:var(--text3)">查看月份</span>
+    <select id="cm-selYear" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:var(--fs-sm);cursor:pointer;outline:none;font-family:inherit">
       <option value="2024">2024 年</option>
       <option value="2025">2025 年</option>
       <option value="2026" selected>2026 年</option>
       <option value="2027">2027 年</option>
     </select>
-    <select id="cm-selMonth" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;outline:none;font-family:inherit">
+    <select id="cm-selMonth" onchange="renderConsumables()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:var(--fs-sm);cursor:pointer;outline:none;font-family:inherit">
       <option value="01">1 月</option>
       <option value="02">2 月</option>
       <option value="03">3 月</option>
@@ -189,7 +189,7 @@
       <option value="11">11 月</option>
       <option value="12">12 月</option>
     </select>
-    <span style="font-size:12px;color:var(--gold2);font-weight:500" id="cm-month-total"></span>
+    <span style="font-size:var(--fs-xs);color:var(--gold2);font-weight:500" id="cm-month-total"></span>
   </div>
 
   <div class="store-tabs">
@@ -204,16 +204,16 @@
   <div class="card" id="cm-ai-card">
     <div class="card-title">📷 上傳憑證照片（AI 自動辨識）</div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">
-      <label for="cm-photo-input" style="display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;transition:all 0.15s" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
+      <label for="cm-photo-input" style="display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:10px 18px;border-radius:8px;cursor:pointer;font-size:var(--fs-sm);transition:all 0.15s" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">
         📎 選擇照片（可多張）
       </label>
       <input type="file" id="cm-photo-input" accept="image/*" multiple style="display:none" onchange="handleCMPhotos(this)">
-      <span style="font-size:12px;color:var(--text3)">支援淘寶截圖、手寫請款單、任何收據</span>
+      <span style="font-size:var(--fs-xs);color:var(--text3)">支援淘寶截圖、手寫請款單、任何收據</span>
     </div>
     <div id="cm-photo-preview" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
     <div id="cm-ai-status" style="display:none"></div>
     <div id="cm-ai-results" style="display:none">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:10px">✅ 辨識結果，確認後匯入：</div>
+      <div style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:10px">✅ 辨識結果，確認後匯入：</div>
       <div id="cm-ai-rows"></div>
       <div style="display:flex;gap:10px;margin-top:14px">
         <button class="btn btn-gold" onclick="importAIResults()">⬇ 全部匯入</button>
@@ -259,7 +259,7 @@
     <!-- 多筆明細區塊 -->
     <div style="margin-top:14px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <span style="font-size:13px;color:var(--text2)">📎 明細備註（選填，適合一張訂單含多種品項）</span>
+        <span style="font-size:var(--fs-sm);color:var(--text2)">📎 明細備註（選填，適合一張訂單含多種品項）</span>
         <button class="btn btn-outline btn-sm" onclick="addCMDetailRow()">＋ 新增明細行</button>
       </div>
       <div id="cm-detail-rows"></div>
@@ -273,11 +273,11 @@
   </div>
   <div class="card">
     <div class="card-title">💰 零用金結餘登記</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">本期結算後填寫「本期結餘」，下個月匯出時會自動帶入「上期餘額」。</div>
+    <div style="font-size:var(--fs-xs);color:var(--text3);margin-bottom:12px">本期結算後填寫「本期結餘」，下個月匯出時會自動帶入「上期餘額」。</div>
     <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-      <div style="font-size:13px;color:var(--text2)">上期餘額（自動帶入）：<span id="cm-opening-balance" class="auto-val">—</span></div>
+      <div style="font-size:var(--fs-sm);color:var(--text2)">上期餘額（自動帶入）：<span id="cm-opening-balance" class="auto-val">—</span></div>
       <div style="display:flex;align-items:center;gap:8px">
-        <label style="font-size:12px;color:var(--text3)">本期結餘</label>
+        <label style="font-size:var(--fs-xs);color:var(--text3)">本期結餘</label>
         <input id="cm-balance-input" type="number" class="in-num lg" placeholder="0" onwheel="this.blur()" onchange="setCMBalance(this.value)">
       </div>
     </div>
@@ -287,10 +287,10 @@
       <span>📋 本月明細</span>
       <button class="btn btn-outline btn-sm" onclick="dlConsumableExcel()">⬇ 匯出零用金支出明細表</button>
     </div>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);margin-bottom:12px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text2);margin-bottom:12px;cursor:pointer">
       <input type="checkbox" id="cm-unpaid-only" onchange="renderConsumables()"> 只顯示未撥款（匯出也只會匯出這裡看得到的）
     </label>
-    <div id="cm-debug" style="margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
+    <div id="cm-debug" style="display:none;margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
     <div id="cm-list-area"></div>
   </div>
 </div>
@@ -522,7 +522,7 @@
 
 <script src="auth.js?v=20261012a"></script>
 <script src="app.js?v=20261013a"></script>
-<script src="consumables.js?v=20261015a"></script>
+<script src="consumables.js?v=20261022a"></script>
 <script src="inventory.js?v=20261021a"></script>
 <script src="booking.js?v=20261021a"></script>
 <script src="member.js?v=20261021a"></script>

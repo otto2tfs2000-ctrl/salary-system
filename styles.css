@@ -151,6 +151,22 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 /* 左邊標籤、右邊內容的設定列（扭蛋、走格子…）。手機上改成上下排，不然右欄只剩一點點寬 */
 .lbl-grid{display:grid;grid-template-columns:140px minmax(0,1fr)}
 @media (max-width:560px){.lbl-grid{grid-template-columns:minmax(0,1fr);gap:4px!important}}
+/* 耗材記帳：多筆明細列、AI 辨識結果列。以前欄寬寫死在程式裡（合計 500px 以上），手機一定爆框。
+   電腦版照舊一排；手機版品項名稱自己一排，其他欄位三個一排 */
+.cm-drow{display:grid;grid-template-columns:minmax(0,1fr) 100px 80px 80px 80px auto;gap:8px;margin-bottom:8px;align-items:center}
+.cm-airow{display:grid;grid-template-columns:110px minmax(0,1fr) 80px 80px 80px 70px 80px auto;gap:8px;align-items:center;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;margin-bottom:8px}
+.cm-airow.cm-aihead{background:none;border:0;padding:0 14px;margin-bottom:4px}
+.cm-drow>*,.cm-airow>*{min-width:0}
+.cm-drow>button,.cm-airow>button{justify-self:end;padding:4px 10px}
+@media (max-width:700px){
+  .cm-drow{grid-template-columns:repeat(3,minmax(0,1fr));padding-bottom:10px;border-bottom:1px dashed var(--border)}
+  .cm-drow>.cmdr-name{grid-column:1/-1}
+  .cm-drow>.cmdr-twd{grid-column:span 2}
+  .cm-airow{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cm-airow>.ai-name{grid-column:1/-1;order:-1}
+  .cm-airow.cm-aihead{display:none}
+}
 /* 固定五欄的表單（欄位剛好五個時用，不會在寬螢幕右邊空一大塊） */
 .form-grid.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:900px){.form-grid.cols-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
