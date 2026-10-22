@@ -161,6 +161,8 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 .cm-drow>button,.cm-airow>button{justify-self:end;padding:4px 10px}
 /* 每日填寫：老師名字欄不准折行（手機上會被擠成一個字一行），表格放不下就左右滑 */
 #day-form-area td:first-child,#day-form-area th:first-child{white-space:nowrap}
+/* 月報、薪資：老師名字和職別欄不准折行（以前「兼職」會被擠成直排） */
+#monthly-content td:nth-child(-n+2),#salary-content td:first-child{white-space:nowrap}
 @media (max-width:700px){
   .cm-drow{grid-template-columns:repeat(3,minmax(0,1fr));padding-bottom:10px;border-bottom:1px dashed var(--border)}
   .cm-drow>.cmdr-name{grid-column:1/-1}
@@ -173,8 +175,9 @@ details.tools-box>summary .muted{font-weight:400;font-size:var(--fs-xs)}
 .form-grid.cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:900px){.form-grid.cols-5{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:420px){.form-grid.cols-5{grid-template-columns:1fr}}
-.btn-dl{background:rgba(91,155,213,.12);border:1px solid rgba(91,155,213,.3);color:#3f7fb5}
-.btn-dl:hover{background:rgba(91,155,213,.22);border-color:rgba(91,155,213,.45);color:#3f7fb5}
+/* 下載鈕（Excel／PDF）：以前淺藍色，全系統只剩它是藍的 → 跟次要按鈕一樣 */
+.btn-dl{background:#fff;border:1px solid var(--border2);color:var(--text2)}
+.btn-dl:hover{background:#fff;border-color:var(--gold);color:var(--gold2)}
 
 table{width:100%;border-collapse:collapse;font-size:14.5px}
 th{background:var(--bg3);color:var(--text3);font-weight:500;font-size:12px;text-transform:uppercase;
