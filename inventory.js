@@ -97,9 +97,9 @@ function invDefaultTierForCat(cat) {
   if (['膠體','金箔','紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(cat) >= 0) return 'pack';
   return 'main';
 }
-// 一包／一組：沒自己填過就照類別給預設，金箔習慣講「組」、熱熔膠直接數「條」
+// 一包／一組：沒自己填過就照類別給預設，膠、金箔習慣講「組」、熱熔膠直接數「條」
 function invPackUnit(it) {
-  return it.packUnit || (it.cat === '金箔' ? '組' : it.cat === '熱熔膠' ? '條' : '包');
+  return it.packUnit || (it.cat === '膠體' || it.cat === '金箔' ? '組' : it.cat === '熱熔膠' ? '條' : '包');
 }
 // 盤點單位跟品項單位一樣（例：熱熔膠就數幾條）就不用設一包幾個
 function invPackIsUnit(it) {
