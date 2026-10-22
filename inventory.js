@@ -26,7 +26,7 @@ let invCurWeek = invWeekKey(new Date());
 /* 分類收合狀態。以前預設全部展開，要一個個手動點三角形收起來很麻煩，
    改成預設全部收合，需要看哪一類再點開。鍵值要跟 renderInvWeekTable
    裡 INV_GROUPS 的 key 對上。 */
-var invGroupClosed = { canvas:true, board:true, parts:true, paint:true, gel:true, other:true };
+var invGroupClosed = { canvas:true, board:true, parts:true, paint:true, gel:true, other:true, supply:true };
 function toggleInvGroup(key) {
   invGroupClosed[key] = !invGroupClosed[key];
   renderInvWeekTable();
@@ -74,6 +74,117 @@ function getInvItems() {
    不盤點也不扣庫存）。課程用料選單、成本計算仍然用 getInvItems()，看得到全部 */
 function getStockItems() {
   return getInvStore().items.filter(function(m){ return !m.noStock; });
+}
+
+/* 盤法分四種（2026-10-22）：
+   main＝主要材料，每週逐件盤（就是 noStock 沒勾的，原本那套全部照舊）
+   pack＝固定要補的耗材，按「包／串」盤，例：紙杯一串 50 個、剩 2 串
+   bulk＝散裝數不了的（水晶碎石、膠、銅箔），只點「充足／剩一點／快沒了」
+   cost＝純算成本、不盤（例：每人次耗材費）
+   pack/bulk/cost 一律 noStock=true：核銷不扣、不進週盤點表／建議訂購量，課程成本照算。
+   舊資料沒有 tier 欄位，就用類別猜預設值，不用另外搬資料。 */
+var INV_TIER_LABELS = { main:'主要材料（每週逐件盤）', pack:'耗材（按包／串盤）', bulk:'散裝（只看夠不夠）', cost:'只算成本（不盤）' };
+function invTierOf(it) {
+  if (!it.noStock) return 'main';
+  if (it.tier && INV_TIER_LABELS[it.tier]) return it.tier;
+  if (['膠體','水晶','金箔'].indexOf(it.cat) >= 0) return 'bulk';
+  if (/每人次/.test(it.name || '')) return 'cost';
+  if (['紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(it.cat) >= 0) return 'pack';
+  return 'cost';
+}
+function invDefaultTierForCat(cat) {
+  if (['膠體','水晶','金箔'].indexOf(cat) >= 0) return 'bulk';
+  if (['紙杯','紙盤','熱熔膠','隱性耗材'].indexOf(cat) >= 0) return 'pack';
+  return 'main';
+}
+// 耗材／散裝的盤點只留「最新一次」，存在 st.supplyCheck[itemId] = {packs, status, savedAt, by}
+function getInvSupplyCheck(itemId) {
+  var st = getInvStore();
+  return (st.supplyCheck && st.supplyCheck[itemId]) || null;
+}
+// 回傳 'out'（該補了）/'low'（注意）/'ok'/null（還沒盤過）
+function invSupplyLevel(it) {
+  var rec = getInvSupplyCheck(it.id);
+  if (!rec) return null;
+  if (invTierOf(it) === 'bulk') return rec.status || null;
+  if (typeof rec.packs !== 'number') return null;
+  var safe = typeof it.packSafe === 'number' ? it.packSafe : 1;
+  if (rec.packs <= safe) return 'out';
+  if (rec.packs <= safe + 1) return 'low';
+  return 'ok';
+}
+function saveInvSupply(itemId, field, value) {
+  var st = getInvStore();
+  if (!st.supplyCheck) st.supplyCheck = {};
+  var prev = st.supplyCheck[itemId] || {};
+  var rec = { packs: prev.packs, status: prev.status };
+  if (field === 'packs') rec.packs = value === '' ? null : (parseFloat(value) || 0);
+  else rec.status = value;
+  if (rec.packs == null) delete rec.packs;
+  if (!rec.status) delete rec.status;
+  if (rec.packs == null && !rec.status) {
+    tombstonePath('inventory.' + curStore.inventory + '.supplyCheck.' + itemId);
+    delete st.supplyCheck[itemId];
+  } else {
+    rec.savedAt = Date.now();
+    rec.by = (typeof ME !== 'undefined' && ME && ME.displayName) || '';
+    st.supplyCheck[itemId] = rec;
+  }
+  save();
+  renderInvWeekTable();
+  var hint = document.getElementById('inv-save-hint');
+  if (hint) { hint.textContent = '✓ 已自動儲存'; hint.style.color = 'var(--green)'; setTimeout(function(){ hint.textContent = ''; }, 2000); }
+}
+function invLevelBadge(level) {
+  if (level === 'out') return '<span class="badge" style="background:rgba(224,85,85,0.15);color:var(--red);border:1px solid rgba(224,85,85,0.3)">該補了</span>';
+  if (level === 'low') return '<span class="badge" style="background:rgba(224,158,77,0.15);color:#e09e4d;border:1px solid rgba(224,158,77,0.35)">剩一點</span>';
+  if (level === 'ok') return '<span class="badge b-green">✓ 充足</span>';
+  return '<span class="muted">尚未盤點</span>';
+}
+// 週盤點表下方的「耗材・散裝」區
+function renderInvSupplySection() {
+  var items = sortInvItems(getInvItems().filter(function(it){ var t = invTierOf(it); return t === 'pack' || t === 'bulk'; }));
+  if (!items.length) return '';
+  var need = items.filter(function(it){ return invSupplyLevel(it) === 'out'; }).length;
+  var isOpen = !invGroupClosed.supply;
+  var html = '<div style="margin:22px 0 12px">';
+  html += '<div onclick="toggleInvGroup(\'supply\')" style="cursor:pointer;padding:10px 14px;background:rgba(120,140,110,0.08);border:1px dashed rgba(120,140,110,0.4);border-radius:8px;display:flex;align-items:center;gap:10px;user-select:none">';
+  html += '<span style="font-size:14.5px;color:var(--gold2)">'+(isOpen?'▼':'▶')+'</span>';
+  html += '<span style="font-size:16px;font-weight:600;color:var(--gold)">🧺 耗材・散裝</span>';
+  html += '<span style="font-size:13.5px;color:var(--text3);margin-left:4px">('+items.length+' 項・不用每週盤，快沒了再看)</span>';
+  if (need) html += '<span style="font-size:13.5px;color:var(--red);font-weight:600">⚠ '+need+' 項該補了</span>';
+  html += '</div>';
+  if (isOpen) {
+    html += '<table style="table-layout:fixed;width:100%;margin-top:4px"><thead><tr>';
+    html += '<th style="width:22%">品項</th><th style="width:150px">怎麼盤</th><th>現在剩多少</th><th style="width:100px">狀態</th><th style="width:120px">上次盤</th>';
+    html += '</tr></thead><tbody>';
+    items.forEach(function(it) {
+      var rec = getInvSupplyCheck(it.id) || {};
+      var tier = invTierOf(it);
+      var how, input;
+      if (tier === 'pack') {
+        var pu = it.packUnit || '包';
+        how = it.packSize ? '1'+pu+'＝'+it.packSize+(it.unit||'個') : '<span style="color:#e09e4d">還沒設一'+pu+'幾'+(it.unit||'個')+'</span>';
+        how += '<div class="muted" style="font-size:11px">剩 '+(typeof it.packSafe === 'number' ? it.packSafe : 1)+' '+pu+'以下提醒</div>';
+        input = '<input class="in-num" type="number" min="0" step="0.5" style="width:80px" value="'+(typeof rec.packs === 'number' ? rec.packs : '')+'" onwheel="this.blur()" onchange="saveInvSupply('+it.id+',\'packs\',this.value)"> '+pu;
+      } else {
+        how = '散裝，看夠不夠';
+        input = '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+        [['ok','充足'],['low','剩一點'],['out','快沒了']].forEach(function(o){
+          var on = rec.status === o[0];
+          input += '<button class="btn btn-sm '+(on?'btn-gold':'btn-outline')+'" onclick="saveInvSupply('+it.id+',\'status\',\''+(on?'':o[0])+'\')">'+o[1]+'</button>';
+        });
+        input += '</div>';
+      }
+      html += '<tr><td>'+it.name+'<div class="muted" style="font-size:11px">'+(INV_CAT_ICONS[it.cat]||'📌')+' '+it.cat+'</div></td>';
+      html += '<td style="font-size:13px">'+how+'</td><td>'+input+'</td>';
+      html += '<td>'+invLevelBadge(invSupplyLevel(it))+'</td>';
+      html += '<td class="muted" style="font-size:12px">'+(rec.savedAt ? invFmtDateTime(rec.savedAt)+(rec.by?'・'+rec.by:'') : '—')+'</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  return html;
 }
 
 // 不依賴目前選的店，直接指定店別取資料（給跨店操作用）
@@ -924,10 +1035,12 @@ async function addInvItem(btn) {
     var maxOrder = st.items.reduce(function(m, it){ return Math.max(m, getInvItemOrder(it)); }, -1);
     newOrder = maxOrder + 1;
   }
-  var nsEl = document.getElementById('inv-new-nostock');
-  var noStock = (nsEl && nsEl.checked) || cat === '隱性耗材';
-  st.items.push({ id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe,
-                  cost: cost, price: null, order: newOrder, noStock: noStock });
+  var tierEl = document.getElementById('inv-new-tier');
+  var tier = tierEl ? tierEl.value : invDefaultTierForCat(cat);
+  var newItem = { id: Date.now(), cat: cat, name: name, unit: unit, safeStock: safe,
+                  cost: cost, price: null, order: newOrder, noStock: tier !== 'main' };
+  if (tier !== 'main') newItem.tier = tier;
+  st.items.push(newItem);
   /* 老闆反應過填完按「新增品項」，畫面看起來沒存到——原本只呼叫 save()，
      那是背景防抖，800ms 後才真的寫 Firebase，失敗的話只有角落一行小字提示，
      很容易錯過，看起來就像「明明填了卻不見」。這裡改成新增當下就立即存、
@@ -938,7 +1051,6 @@ async function addInvItem(btn) {
   document.getElementById('inv-new-name').value = '';
   document.getElementById('inv-new-safe').value = '';
   if (costEl) costEl.value = '';
-  if (nsEl) nsEl.checked = false;
   renderInvItemList();
   renderInventory();
   if (!ok) {
@@ -1040,6 +1152,14 @@ function updateInvItemField(id, field, value) {
      留空代表沒設定，核銷那邊就維持原本讓行政手填的行為。 */
   else if (field === 'price') item[field] = value === '' ? null : (parseFloat(value) || 0);
   else if (field === 'estUsage') item[field] = value === '' ? null : (parseFloat(value) || 0);
+  else if (field === 'tier') {
+    // 改盤法：main 就是取消「只算成本」回到每週逐件盤；其他三種都不進週盤點表、核銷不扣
+    if (value === 'main') { item.noStock = false; delete item.tier; }
+    else { item.noStock = true; item.tier = value; }
+    save(); renderInvItemList(); renderInventory();
+    return;
+  }
+  else if (field === 'packSize' || field === 'packSafe') item[field] = value === '' ? null : (parseFloat(value) || 0);
   else item[field] = value;
   save();
   renderInventory();
@@ -1170,6 +1290,48 @@ function findSmartInsertPosition(newName, newCat, sortedItems) {
 /* 品項清單分類收合狀態，鍵是分類名稱（INV_CATS 裡的值）。
    預設全部收合，跟本週盤點那邊一樣，不用一個個手動點三角形關掉。 */
 var invItemGroupClosed = {};
+function invTierSelectHtml(it) {
+  var cur = invTierOf(it);
+  var h = '<select style="background:var(--bg3);border:1px solid var(--border);padding:3px 6px;border-radius:5px;font-size:13px;font-family:inherit" onchange="updateInvItemField('+it.id+',\'tier\',this.value)" title="主要材料每週逐件盤；其他三種不進週盤點表、核銷不扣庫存，但課程成本照算">';
+  Object.keys(INV_TIER_LABELS).forEach(function(k){
+    h += '<option value="'+k+'"'+(cur===k?' selected':'')+'>'+INV_TIER_LABELS[k]+'</option>';
+  });
+  return h + '</select>';
+}
+// 品項清單管理下方的「耗材・散裝」區：欄位跟主要材料不一樣（一包幾個、剩幾包提醒），所以分開一張表
+function renderInvSupplyItemList(items) {
+  if (!items.length) return '';
+  var isOpen = invItemGroupClosed.__supply === false;
+  var h = '<div style="margin-top:22px;margin-bottom:10px">';
+  h += '<div class="sec-label">🧺 耗材・散裝・只算成本 <span class="hint">（不進每週盤點表、核銷不扣庫存，課程成本照算）</span></div>';
+  h += '<div class="grp-head" onclick="toggleInvItemGroup(\'__supply\')">';
+  h += '<span class="arrow">'+(isOpen?'▼':'▶')+'</span><span class="name">🧺 耗材・散裝</span><span class="count">'+items.length+' 項</span></div>';
+  if (isOpen) {
+    var inStyle = 'background:var(--bg3);border:1px solid var(--border);color:var(--gold2);padding:3px 6px;border-radius:5px;font-size:13.5px;font-family:inherit';
+    h += '<table style="margin-top:4px"><thead><tr><th>類別</th><th>品項名稱</th><th>單位</th><th>單位成本</th><th>盤法</th><th title="例：紙杯 1 串 50 個，就填 50、串">一包幾個</th><th>剩幾包提醒</th><th></th></tr></thead><tbody>';
+    items.forEach(function(it) {
+      var tier = invTierOf(it);
+      var catSel = '<select style="'+inStyle+'" onchange="updateInvItemField('+it.id+',\'cat\',this.value)">';
+      INV_CATS.forEach(function(c){ catSel += '<option value="'+c+'"'+(it.cat===c?' selected':'')+'>'+(INV_CAT_ICONS[c]||'📌')+' '+c+'</option>'; });
+      catSel += '</select>';
+      h += '<tr><td>'+catSel+'</td>';
+      h += '<td><input class="in-num" style="width:100%;min-width:150px;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
+      h += '<td><input class="in-num" style="width:56px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
+      h += '<td><input class="in-num" type="number" min="0" step="any" style="width:72px" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)"></td>';
+      h += '<td>'+invTierSelectHtml(it)+'</td>';
+      if (tier === 'pack') {
+        h += '<td style="white-space:nowrap">1 <input class="in-num" style="width:44px" value="'+(it.packUnit||'包').replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'packUnit\',this.value)"> ＝ '
+           + '<input class="in-num" type="number" min="0" style="width:64px" placeholder="幾個" value="'+(it.packSize != null ? it.packSize : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'packSize\',this.value)"> '+it.unit+'</td>';
+        h += '<td style="white-space:nowrap"><input class="in-num" type="number" min="0" step="0.5" style="width:60px" value="'+(typeof it.packSafe === 'number' ? it.packSafe : 1)+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'packSafe\',this.value)"> '+(it.packUnit||'包')+'</td>';
+      } else {
+        h += '<td class="muted">—</td><td class="muted" style="white-space:nowrap">'+(tier === 'bulk' ? '點「快沒了」' : '不盤')+'</td>';
+      }
+      h += '<td><button class="btn btn-del btn-sm" onclick="delInvItem('+it.id+')">刪除</button></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  return h + '</div>';
+}
 function toggleInvItemGroup(cat) {
   invItemGroupClosed[cat] = invItemGroupClosed[cat] === false ? true : false;
   renderInvItemList();
@@ -1179,7 +1341,7 @@ function renderInvItemList() {
   var el = document.getElementById('inv-item-list');
   var items = getInvItems();
   if (items.length === 0) { el.innerHTML = '<div class="empty">尚無品項，請於上方新增</div>'; return; }
-  var sorted = sortInvItems(items);
+  var sorted = sortInvItems(items).filter(function(it){ return invTierOf(it) === 'main'; });
 
   // 依分類分組顯示，組內順序沿用原本拖曳排出來的順序；
   // 換分類是用列上的「類別」下拉選單，拖曳只在同一組內調整順序。
@@ -1207,7 +1369,7 @@ function renderInvItemList() {
     html += '</div>';
 
     if (isOpen) {
-      html += '<table style="margin-top:4px"><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th title="勾了就只拿來算課程成本：不盤點、核銷時不扣庫存">只算成本</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody>';
+      html += '<table style="margin-top:4px"><thead><tr><th style="width:36px"></th><th>類別</th><th>品項名稱</th><th>圖片</th><th>單位</th><th>單位成本</th><th>盤法</th><th>售價</th><th>安全庫存量</th><th>預估週消耗</th><th></th></tr></thead><tbody>';
       catItems.forEach(function(it) {
         html += '<tr draggable="true" data-inv-id="'+it.id+'" '+
           'ondragstart="invHandleDragStart(event,'+it.id+')" '+
@@ -1238,7 +1400,7 @@ function renderInvItemList() {
         html += '<td>'+imgHtml+'</td>';
         html += '<td><input class="in-num" style="width:60px" value="'+it.unit+'" onchange="updateInvItemField('+it.id+',\'unit\',this.value)"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.cost != null && it.cost !== '' ? it.cost : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'cost\',this.value)" title="這個品項一個單位多少錢，用來算課程成本與毛利"></td>';
-        html += '<td style="text-align:center"><input type="checkbox"'+(it.noStock?' checked':'')+' onchange="updateInvItemField('+it.id+',\'noStock\',this.checked)" title="勾了就只拿來算課程成本：不盤點、核銷時不扣庫存"></td>';
+        html += '<td>'+invTierSelectHtml(it)+'</td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:78px" placeholder="選填" value="'+(it.price != null && it.price !== '' ? it.price : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'price\',this.value)" title="核銷加購時跟客人收的金額，選到這個品項會自動帶入。留空就維持手動填寫"></td>';
         html += '<td><input class="in-num" type="number" min="0" style="width:70px" value="'+it.safeStock+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'safeStock\',this.value)"></td>';
         html += '<td><input class="in-num" type="number" min="0" step="any" style="width:70px" placeholder="選填" value="'+(it.estUsage != null && it.estUsage !== '' ? it.estUsage : '')+'" onwheel="this.blur()" onchange="updateInvItemField('+it.id+',\'estUsage\',this.value)" title="還沒累積夠盤點資料前，先用這個數字算建議訂購量；累積滿 '+INV_MIN_USAGE_SAMPLES_FOR_FORECAST+' 週實際資料後自動改用真實消耗速度"></td>';
@@ -1250,6 +1412,7 @@ function renderInvItemList() {
     html += '</div>';
   });
 
+  html += renderInvSupplyItemList(sortInvItems(items).filter(function(it){ return invTierOf(it) !== 'main'; }));
   el.innerHTML = html;
   // 初始化觸控拖移：整個清單容器一起掛，拖曳判斷本來就是靠 data-inv-id 查表，
   // 不吃 DOM 結構，分成多個 tbody 也一樣能動。
@@ -1441,7 +1604,7 @@ function renderInvWeekTable() {
     html += '</div>';
   });
 
-  el.innerHTML = html;
+  el.innerHTML = html + renderInvSupplySection();
 }
 
 // ── 清除本週盤點資料（只清數字，品項不動）──────────────

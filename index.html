@@ -403,7 +403,7 @@
     <div class="sec-label">新增一個品項</div>
     <div class="form-grid cols-5">
       <div class="fg"><label>類別</label>
-        <select id="inv-new-cat">
+        <select id="inv-new-cat" onchange="document.getElementById('inv-new-tier').value=invDefaultTierForCat(this.value)">
           <option value="畫布">🖼 畫布(F/P號)</option>
           <option value="框木板">🪞 框/木板</option>
           <option value="飾品配件">⏰ 飾品配件</option>
@@ -430,7 +430,14 @@
       <div class="fg"><label>安全庫存量</label><input id="inv-new-safe" type="number" min="0" placeholder="低於這個數字會警示" onwheel="this.blur()"></div>
       <div class="fg"><label>單位成本</label><input id="inv-new-cost" type="number" min="0" step="any" placeholder="每一個單位多少錢" onwheel="this.blur()"></div>
     </div>
-    <label class="chk top" style="margin-bottom:16px"><input type="checkbox" id="inv-new-nostock"><span>只算成本 <span class="hint">（不盤點、核銷時不扣庫存，適合膠、水晶、隱性耗材這類）</span></span></label>
+    <div class="fg" style="max-width:320px;margin-bottom:16px"><label>盤法</label>
+      <select id="inv-new-tier">
+        <option value="main">主要材料（每週逐件盤）</option>
+        <option value="pack">耗材（按包／串盤，例：紙杯、熱熔膠條）</option>
+        <option value="bulk">散裝（只看夠不夠，例：水晶碎石、膠）</option>
+        <option value="cost">只算成本（不盤）</option>
+      </select>
+    </div>
     <div class="toolbar">
       <button class="btn btn-gold" onclick="addInvItem(this)">＋ 新增品項</button>
       <button class="btn btn-ok" onclick="saveInvItemsNow(this)">☁️ 立即儲存並確認</button>
@@ -523,7 +530,7 @@
 <script src="auth.js?v=20261012a"></script>
 <script src="app.js?v=20261013a"></script>
 <script src="consumables.js?v=20261022a"></script>
-<script src="inventory.js?v=20261021a"></script>
+<script src="inventory.js?v=20261022a"></script>
 <script src="booking.js?v=20261021a"></script>
 <script src="member.js?v=20261021a"></script>
 <script src="recipe.js?v=20261021a"></script>
