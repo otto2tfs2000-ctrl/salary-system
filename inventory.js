@@ -425,6 +425,28 @@ function invRecipeGroups(items) {
   return out.filter(function(g){ return g.opts.length > 1 });
 }
 
+// 2026-10-22 畫布提醒（核銷時用）：有些課程（創作繪畫／選圖繪畫的「會員價」「單次原價」）
+// 故意不建課程用料表，畫布尺寸看會員當場選，靠核銷時「加價項目」手動選才扣庫存。
+// 這支只判斷「這個規格算不算要提醒」：自己沒配畫布、但同一門課其他規格有配畫布。
+function recipeHasCanvasItem(r) {
+  if (!r || !r.items) return false;
+  return r.items.some(function(x) {
+    var m = getInvItems().find(function(y){ return String(y.id) === String(x.id) });
+    return m && m.cat === '畫布';
+  });
+}
+function invNeedsCanvasReminder(name, spec) {
+  if (!S.recipes || !name) return false;
+  var ck = name + (spec ? '|' + spec : '');
+  if (recipeHasCanvasItem(S.recipes[ck]) || recipeHasCanvasItem(S.recipes[name])) return false;
+  // 這個規格有自己的用料（例如海洋流動的透明框、木板），核銷會照用料扣，不是漏扣，不提醒
+  if (S.recipes[ck] && (S.recipes[ck].items || []).length) return false;
+  return Object.keys(S.recipes).some(function(k) {
+    if (k !== name && k.indexOf(name + '|') !== 0) return false;
+    return recipeHasCanvasItem(S.recipes[k]);
+  });
+}
+
 // picks: { 群組key: 選中的 itemId }。沒給就用群組裡的第一個。
 // skipCats: 這筆訂單的加購裡已經另外扣過的分類（例如客人升級大尺寸畫布，加購已經扣了那張大的），
 //   課程用料表裡屬於同一分類的項目就不要重複扣——原本規格內附的那張畫布客人根本沒用到。

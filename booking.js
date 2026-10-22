@@ -757,7 +757,8 @@ async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.e
 
 /* ── 載入 ── */
 async function bkLoad(){
-  var got=await jget(bkf("/bookings.json"));
+  var got=await bkMirGet();
+  if(!got)got=await jget(bkf("/bookings.json"));
   /* 留一份給 inventory.js 的備料預警用，它剛好在畫完排課板後馬上要同一包預約，
      不用再下載一次（整包 400 多 KB，手機上很有感）。抓失敗就不留，讓它自己抓。 */
   if(got)window.bkBookingsSnap={at:Date.now(),all:got};
@@ -1541,10 +1542,68 @@ function bkStartLiveWatch(){
     bkSSE=new EventSource(bkf("/bookings.json"));
     bkSSE.addEventListener("put",bkHandleSSE);
     bkSSE.addEventListener("patch",bkHandleSSE);
+    bkSSE.addEventListener("keep-alive",function(){ bkMir.last=Date.now() });
+    bkSSE.addEventListener("error",function(){ bkMir.ok=false });
   }catch(e){ console.warn("即時監聽新預約失敗：",e&&e.message); }
 }
+
+/* ══ 預約即時副本（2026-10-22）══════════════════════════
+   預約資料庫是免費方案，每月下載上限 10GB，超過整個停到下個月。
+   以前每次畫排課板（換日期、核銷完、改座位…）都整包重抓一次（750KB 還在長），
+   但上面這條即時串流本來就把每一筆變動推過來了。
+   現在把串流收到的變動套到記憶體裡的一份副本，畫面直接用副本，不再重抓。
+   自己剛寫的東西要等串流回報（通常不到 0.3 秒）才用副本，等不到 1.5 秒就照舊下載；
+   串流斷線、90 秒沒收到任何訊號、按「重新讀取」、新增預約之後，也都照舊下載。 */
+var bkMir={data:null,ok:false,last:0,writing:0,pend:{},force:false};
+function bkMirKey(path){ return String(path).replace(/^\/bookings/,"").replace(/\.json$/,"") }
+function bkMirExpect(path,ok){
+  bkMir.writing=Math.max(0,bkMir.writing-1);
+  if(ok)bkMir.pend[bkMirKey(path)]=Date.now(); else bkMir.force=true;
+}
+function bkMirApply(type,path,d){
+  var seg=String(path||"/").split("/").filter(Boolean);
+  if(!seg.length){
+    if(type==="put"){ bkMir.data=(d&&typeof d==="object")?d:{}; return }
+    Object.keys(d||{}).forEach(function(k){ if(d[k]===null)delete bkMir.data[k]; else bkMir.data[k]=d[k] });
+    return;
+  }
+  var o=bkMir.data;
+  for(var i=0;i<seg.length-1;i++){
+    if(!o[seg[i]]||typeof o[seg[i]]!=="object"){ if(d===null)return; o[seg[i]]={} }
+    o=o[seg[i]];
+  }
+  var last=seg[seg.length-1];
+  if(type==="put"){ if(d===null)delete o[last]; else o[last]=d; return }
+  if(!o[last]||typeof o[last]!=="object")o[last]={};
+  Object.keys(d||{}).forEach(function(k){ if(d[k]===null)delete o[last][k]; else o[last][k]=d[k] });
+}
+function bkMirReady(){ return bkMir.ok&&bkMir.data&&Date.now()-bkMir.last<90000 }
+/* 回傳副本的複本（畫面程式會在預約物件上加 id 之類的欄位，不能改到副本本身）；
+   不能用就回 null，讓呼叫的地方自己下載。第一次開頁會先開串流、等它送來整包（最多 4 秒），
+   這樣開頁只下載一次，不是「整包下載＋串流再送一次整包」兩次。 */
+async function bkMirGet(){
+  if(bkMir.force){ bkMir.force=false; return null }
+  if(!bkSSE){
+    bkStartLiveWatch();
+    for(var w=0;w<20&&!bkMirReady();w++)await new Promise(function(r){ setTimeout(r,200) });
+  }
+  for(var t=0;t<15&&(bkMir.writing||Object.keys(bkMir.pend).length);t++)
+    await new Promise(function(r){ setTimeout(r,100) });
+  if(bkMir.writing||Object.keys(bkMir.pend).length){ bkMir.pend={}; return null }
+  if(!bkMirReady()||bkMir.force){ bkMir.force=false; return null }
+  return JSON.parse(JSON.stringify(bkMir.data));
+}
+
 function bkHandleSSE(e){
   var msg; try{ msg=JSON.parse(e.data); }catch(err){ return }
+  bkMir.last=Date.now();
+  if(e.type==="put"&&msg.path==="/")bkMir.ok=true;
+  if(bkMir.data||(e.type==="put"&&msg.path==="/")){
+    try{ bkMirApply(e.type,msg.path,msg.data) }catch(err){ bkMir.ok=false }
+  }
+  /* 串流回報的路徑跟自己剛寫的一樣（或在它底下）就算收到了 */
+  Object.keys(bkMir.pend).forEach(function(k){
+    if(msg.path===k||msg.path.indexOf(k+"/")===0||k.indexOf(msg.path==="/"?"/":msg.path+"/")===0)delete bkMir.pend[k] });
   var path=msg.path, data=msg.data;
   var fresh=[];
   if(path==="/"){
@@ -2236,7 +2295,7 @@ async function bkRender(noReload){
   document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
-  document.getElementById("bkReload").onclick=function(){ bkRefresh() };
+  document.getElementById("bkReload").onclick=function(){ bkMir.force=true; bkRefresh() };
   /* ＋／− 以雲端最新的老師數為準加減，不是畫面上可能已經過時的數字 */
   var bkTStep=async function(pm,delta){
     if(!(await bkSchedFreshOrStop(dsNow)))return;
@@ -2679,8 +2738,13 @@ function bkCard(b){
 }
 
 /* ── 寫入小工具 ── */
-function bkPatch(path,data){ return fetch(bkf(path),{method:"PATCH",
-  headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}) }
+function bkPatch(path,data){
+  var bp=/^\/bookings\//.test(path);
+  if(bp)bkMir.writing++;
+  return fetch(bkf(path),{method:"PATCH",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})
+    .then(function(r){ if(bp)bkMirExpect(path,r.ok); return r },
+          function(e){ if(bp)bkMirExpect(path,false); throw e }) }
 function bkLedger(phone,e){ return fetch(bkf("/members/"+phone+"/ledger.json"),{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify(e)}) }
 async function bkCache(phone,type,delta){
@@ -3476,6 +3540,28 @@ async function bkCheckout(id){
         alert("加價項目「"+(addons[i].name||"未命名")+"」的數量要大於 0"); return }
       if(!addons[i].amt){ alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"); return }
       if(ap&&ap.member&&!payer){ alert("加價項目不能用點數，這筆沒有綁會員"); return }
+    }
+    /* 2026-10-22 畫布提醒：創作繪畫／選圖繪畫的會員價、單次原價沒有固定用料
+       （尺寸當場選，而且接續上次的畫不會用新畫布），要在「加價項目」選畫布才會扣庫存。
+       10 月這類核銷 97 筆有 70 筆沒選畫布，所以送出前問一次；只提醒、不擋，
+       接續舊畫沒用新畫布的直接按確定。 */
+    if(typeof invNeedsCanvasReminder==="function"){
+      var needCanvasFor=[];
+      ckItemsOut().forEach(function(it){
+        if(!invNeedsCanvasReminder(it.name,it.spec))return;
+        var label=it.name+(it.spec?"（"+it.spec+"）":"");
+        if(needCanvasFor.indexOf(label)<0)needCanvasFor.push(label);
+      });
+      if(needCanvasFor.length){
+        var hasCanvasAddon=addons.some(function(a){
+          var m=a.materialId?bkMatById(a.materialId):null;
+          return m&&m.cat==="畫布";
+        });
+        if(!hasCanvasAddon&&!confirm(
+          "「"+needCanvasFor.join("、")+"」這次有用新畫布嗎？\n\n"+
+          "・有用新畫布 → 按「取消」，在「加價項目」選畫布（沒加收就填 0）\n"+
+          "・接續上次的畫、沒用新畫布 → 按「確定」直接核銷"))return;
+      }
     }
     var courseDue=Math.max(0,course.amt-depAmt);
     var usePt=(course.way==="points"?courseDue:0)+
@@ -4579,6 +4665,7 @@ async function bkManual(editId,repeatId,holdId){
           rec.actualTime=null;
         await bkPatch("/bookings/"+editId+".json",rec);
       }else{
+        bkMir.force=true;
         var rr=await (await fetch(bkf("/bookings.json"),{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)})).json();
         newId=rr&&rr.name;
@@ -4609,6 +4696,7 @@ async function bkManual(editId,repeatId,holdId){
       var fxFail=[];
       for(var fi=1;fi<fxDates.length;fi++){
         try{
+          bkMir.force=true;
           var fr=await fetch(bkf("/bookings.json"),{method:"POST",headers:{"Content-Type":"application/json"},
             body:JSON.stringify(Object.assign({},fxBase,{date:fxDates[fi],ts:new Date().toISOString(),
               fixed:Object.assign({},fxBase.fixed,{i:fi+1})}))});
