@@ -4545,6 +4545,19 @@ async function bkManual(editId,repeatId,holdId){
                           "用料是照件數扣的，少的那 "+(ppl-iq)+" 位不會扣到材料。\n確定要這樣存嗎？"))return;
     }
     var d=g("mDate").replace(/-/g,"/");
+    /* 2026-10-22 擋日期：9/27 有三筆登記年份變成 2025（多半是截圖自動填猜錯年），
+       排課板和名額都看不到，一個月後才發現。新登記不能選過去的日期；
+       修改舊預約時，日期沒動就照舊可以存，有改日期才不能改到過去。
+       年份只接受今年或明年，而且不能超過一年以後。 */
+    var todayK=ds(new Date());
+    if(!/^\d{4}\/\d{2}\/\d{2}$/.test(d)){ alert("請選上課日期"); return }
+    var dY=+d.slice(0,4), nowY=+todayK.slice(0,4);
+    var yearLater=new Date(); yearLater.setFullYear(yearLater.getFullYear()+1);
+    var sameAsBefore=!!(eb&&d===eb.date);
+    if(!sameAsBefore&&(dY<nowY||dY>nowY+1||d>ds(yearLater))){
+      alert("上課日期是 "+d+"，年份看起來不對。\n請重新選日期（截圖自動填的日期也要檢查年份）。"); return }
+    if(d<todayK&&!sameAsBefore){
+      alert("上課日期 "+d+" 已經過了，不能登記到過去的日期。\n請確認日期，今天是 "+todayK+"。"); return }
     if(!mSlots.length){ alert("請選時段"); return }
     var useSlots=bkSortSlots(mSlots);
     /* 每個時段都要檢查，一整天的預約在每一格都會佔位 */
