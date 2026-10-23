@@ -19,7 +19,7 @@
    現在伺服器回名單前會把 appKey 拔掉，前端只看得到 hasKey。
 
    寫入（新增、編輯、移除、發邀請、作廢邀請）這一輪還是直連資料庫，
-   等 .write 那輪一起搬。所以 STAFF_DB 現在只有寫入在用。 */
+   等 .write 那輪一起搬。（2026-10-23 寫入也搬完了，STAFF_DB 已經沒人在用） */
 var STAFF_DB  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
 var STAFF_URL = "https://otto2tfs2000-ctrl.github.io/salary-system/";
 
@@ -224,10 +224,12 @@ async function stMakeMeOwner(){
    PUT 下去會連帶把對方的專屬連結金鑰洗掉，害他下次開 APP 進不來。
    改成 PATCH，只更新有帶的欄位，沒帶的原封不動。 */
 async function stSave(uid, obj){
-  await fetch(STAFF_DB + "/staff/" + uid + ".json", {
-    method: "PATCH", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(obj)
-  });
+  await stApiOk("/staff/save", { uid: uid, data: obj });
+}
+/* 2026-10-23 寫入也搬到 Railway：/staff、/staffInvites 在資料庫規則鎖起來了，瀏覽器直接寫會被擋 */
+async function stApiOk(path, body){
+  try { return await staffApi(path, body) }
+  catch (e) { alert("儲存失敗：" + e.message); throw e }
 }
 
 /* ── 編輯 ── */
@@ -366,7 +368,7 @@ async function stSaveEdit(i){
 async function stRemove(i){
   var s = stList[i]; if (!s) return;
   if (!confirm("移除「" + (s.name || s.uid) + "」的帳號？\n\n對方下次開後台就會被擋在登入畫面外。\n之後要再給權限，重發一次邀請即可。")) return;
-  await fetch(STAFF_DB + "/staff/" + s.uid + ".json", { method: "DELETE" });
+  await stApiOk("/staff/remove", { uid: s.uid });
   await stLoad(1); renderStaff();
 }
 
@@ -385,13 +387,9 @@ async function stMakeInvite(){
   var role = document.getElementById("st-inv-role").value;
   if (!name){ alert("請先填姓名，之後名單才看得懂是誰"); return }
   var token = stToken();
-  await fetch(STAFF_DB + "/staffInvites/" + token + ".json", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name, role: role, tabs: (STAFF_ROLES[role] || {}).tabs || [],
-      acts: (STAFF_ROLES[role] || {}).acts || [],
-      createdAt: new Date().toISOString(), used: false,
-      createdBy: (ME && ME.displayName) || "" })
-  });
+  await stApiOk("/staff/invite", { invite: token, data: { name: name, role: role,
+      tabs: (STAFF_ROLES[role] || {}).tabs || [], acts: (STAFF_ROLES[role] || {}).acts || [],
+      createdBy: (ME && ME.displayName) || "" } });
   var link = stInviteLink(token);
   document.getElementById("st-inv-out").innerHTML =
     '<div class="info-box" style="margin:0"><div style="font-size:var(--fs-sm);margin-bottom:8px">' +
@@ -419,7 +417,7 @@ function stCopyInvite(token){ stCopy(stInviteLink(token)) }
 async function stKillInvite(k){
   var iv = stInvites[k]; if (!iv) return;
   if (!confirm("作廢給「" + (iv.name || "—") + "」的邀請連結？")) return;
-  await fetch(STAFF_DB + "/staffInvites/" + iv.token + ".json", { method: "DELETE" });
+  await stApiOk("/staff/invite", { invite: iv.token, remove: true });
   await stLoad(1); renderStaff();
 }
 

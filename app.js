@@ -1,4 +1,3 @@
-const BOSS_PWD = 'Otto212707656';
 const SALES_YEAR = 2026;
 
 // ── Firebase SDK 初始化 ──────────────────────────────────
@@ -728,16 +727,19 @@ function onGlobalMonthChange() {
 }
 
 // ── Lock ───────────────────────────────────────────────
-function doUnlock() {
+/* 2026-10-23 老闆密碼改由伺服器比對（Railway 的 BOSS_PWD），程式碼裡不再放密碼 */
+async function doUnlock() {
   const pwd = document.getElementById('lock-pwd').value;
-  if (pwd === BOSS_PWD) {
+  let j = null;
+  try { j = await staffApi('/staff/boss', { pwd: pwd }); } catch (e) { j = { ok: false, error: e.message }; }
+  if (j && j.ok) {
     tabUnlocked.salary = tabUnlocked.settings = true;   /* 打一次密碼，兩個都開（重新整理前不用再打） */
     document.getElementById('lock-overlay').style.display = 'none';
     document.getElementById('lock-pwd').value = '';
     document.getElementById('lock-err').textContent = '';
     doSwitchTab(pendingTab);
   } else {
-    document.getElementById('lock-err').textContent = '密碼錯誤';
+    document.getElementById('lock-err').textContent = (j && j.error) || '密碼錯誤';
   }
 }
 
