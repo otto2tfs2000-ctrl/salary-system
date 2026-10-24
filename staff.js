@@ -33,6 +33,7 @@ var STAFF_TABS = [
   { k:"xmas",        n:"聖誕走格子" },
   { k:"shop",        n:"選品館" },
   { k:"events",      n:"活動公告" },
+  { k:"pets",        n:"寵物離家出走" },
   { k:"fun",         n:"藝術家小活動（整組）" },
   { k:"monthly",     n:"月報總覽" },
   { k:"finance",     n:"報表" },

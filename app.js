@@ -773,6 +773,7 @@ function doSwitchTab(tab) {
   if (tab==='events' && window.renderEvents) renderEvents();
   if (tab==='gacha' && window.renderGacha) renderGacha();
   if (tab==='xmas' && window.renderXmas) renderXmas();
+  if (tab==='pets' && window.renderPets) renderPets();
   if (tab==='shop' && window.renderShop) renderShop();
   if (tab==='catalog' && window.renderCatalog) renderCatalog();
   if (tab==='recipe') renderRecipe();
