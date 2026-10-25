@@ -2430,8 +2430,9 @@ async function computeUpcomingShortages(days) {
     var snap = window.bkBookingsSnap;
     if (snap && Date.now() - snap.at < 30000) all = snap.all;
     else {
-      var res = await fetch(SHORTAGE_FC_BK_URL+"/bookings.json");
-      all = await res.json();
+      /* 2026-10-25 改跟伺服器拿（省預約資料庫的免費下載量），拿不到才直接下載 */
+      if (typeof window.bkFetchAll === 'function') all = await window.bkFetchAll();
+      else { var res = await fetch(SHORTAGE_FC_BK_URL+"/bookings.json"); all = await res.json(); }
     }
   } catch(e){ return { error: e.message||"讀取預約失敗", dates:dates, shortages:[], bookingCount:0, missCourses:[] }; }
   all = all || {};

@@ -760,7 +760,7 @@ async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.e
 /* ── 載入 ── */
 async function bkLoad(){
   var got=await bkMirGet();
-  if(!got)got=await jget(bkf("/bookings.json"));
+  if(!got)got=await bkFetchAll();
   /* 留一份給 inventory.js 的備料預警用，它剛好在畫完排課板後馬上要同一包預約，
      不用再下載一次（整包 400 多 KB，手機上很有感）。抓失敗就不留，讓它自己抓。 */
   if(got)window.bkBookingsSnap={at:Date.now(),all:got};
@@ -1543,17 +1543,35 @@ window.bkClearNewBadge=bkClearNewBadge;
    不用另外載入完整的 Firebase SDK。斷線瀏覽器會自動重連，不用自己處理。
    跟公開網址、跟現有的 bkf("/bookings.json") 是同一份資料，
    不用額外的後端或密鑰。 */
-var bkSSE=null;
+var bkSSE=null, bkRelayFail=0;
+/* 2026-10-25 預約資料庫這個月快用完免費下載量（9.34GB／10GB）：串流改接伺服器轉出來的
+   （/staff/bookings/stream，格式跟 Firebase 一樣），開頁、手機醒來重連都不再從 Firebase 整包下載。
+   伺服器連不上（重新部署中、登入過期）就隔 10 秒再試，連續失敗 3 次才退回直接連 Firebase。 */
 function bkStartLiveWatch(){
   if(bkSSE||typeof EventSource==="undefined")return;
   try{
-    bkSSE=new EventSource(bkf("/bookings.json"));
-    bkSSE.addEventListener("put",bkHandleSSE);
-    bkSSE.addEventListener("patch",bkHandleSSE);
-    bkSSE.addEventListener("keep-alive",function(){ bkMir.last=Date.now() });
-    bkSSE.addEventListener("error",function(){ bkMir.ok=false });
+    var relay=bkRelayFail<3&&typeof ME!=="undefined"&&ME&&ME.token&&typeof AUTH_API!=="undefined";
+    var es=new EventSource(relay?AUTH_API+"/staff/bookings/stream?token="+encodeURIComponent(ME.token):bkf("/bookings.json"));
+    bkSSE=es;
+    es.addEventListener("put",function(e){ if(relay)bkRelayFail=0; bkHandleSSE(e) });
+    es.addEventListener("patch",bkHandleSSE);
+    es.addEventListener("keep-alive",function(){ bkMir.last=Date.now() });
+    es.addEventListener("error",function(){
+      bkMir.ok=false;
+      /* 伺服器回 401／503 時瀏覽器不會自己重連（CLOSED），要自己重開 */
+      if(es.readyState===2&&bkSSE===es){
+        if(relay)bkRelayFail++;
+        bkSSE=null; setTimeout(bkStartLiveWatch,relay&&bkRelayFail<3?10000:1000);
+      }
+    });
   }catch(e){ console.warn("即時監聽新預約失敗：",e&&e.message); }
 }
+/* 要「現在這一刻的整包預約」時：先跟伺服器拿（伺服器記憶體裡的副本，不算 Firebase 下載量），拿不到才直接下載 */
+async function bkFetchAll(){
+  try{ if(typeof staffApi==="function"&&typeof ME!=="undefined"&&ME&&ME.token){ var j=await staffApi("/staff/bookings",{}); if(j&&j.bookings)return j.bookings } }catch(e){}
+  return await jget(bkf("/bookings.json"));
+}
+window.bkFetchAll=bkFetchAll;
 
 /* ══ 預約即時副本（2026-10-22）══════════════════════════
    預約資料庫是免費方案，每月下載上限 10GB，超過整個停到下個月。
