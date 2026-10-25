@@ -1418,7 +1418,9 @@ function renderInvItemList() {
         html += '<td><input class="in-num" style="width:100%;text-align:left" value="'+it.name.replace(/"/g,'&quot;')+'" onchange="updateInvItemField('+it.id+',\'name\',this.value)"></td>';
         // 圖片欄
         var imgHtml = '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">';
-        if (it.image) {
+        if (it.cat === '顏料') {
+          imgHtml = '<span class="muted">—</span>';   /* 2026-10-25 顏料不放照片（整包資料太大），見 app.js stripPaintPhotos */
+        } else if (it.image) {
           imgHtml += '<img src="'+it.image+'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onclick="event.preventDefault();showInvImage('+it.id+')">';
           imgHtml += '<input type="file" accept="image/*" style="display:none" onchange="uploadInvImage('+it.id+',this)">';
           imgHtml += '</label>';

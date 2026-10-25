@@ -258,6 +258,7 @@ async function loadData() {
     migratePlanSalesDateKeys();
     migratePlanDedupReset();
     migrateTombstoneKeys();
+    if (stripPaintPhotos()) save();
   } catch(e) {
     console.error('loadData error:', e);
     setSync('err','使用本機資料');
@@ -268,6 +269,22 @@ async function loadData() {
   renderAll();
 }
 
+
+// ── 2026-10-25 顏料照片拿掉 ────────────────────────────────
+// 36 個顏料品項的小照片（base64）佔了整包 salaryData 1.6MB 裡的 1.28MB，開頁、每次存檔都要整包上下傳，
+// 大熊說顏料照片沒人在看，直接清掉。刪前備份：Desktop/Otto2/backups/2026-10-25_庫存品項含顏料照片_刪照片前.json
+// 用 '' 不用 delete：存檔前的 fillMissingFromCloud 會把「本機沒有的 key」從雲端補回來。
+function stripPaintPhotos() {
+  var n = 0, inv = S && S.inventory;
+  if (!inv || typeof inv !== 'object') return 0;
+  Object.keys(inv).forEach(function(k){
+    var items = inv[k] && inv[k].items;
+    if (!Array.isArray(items)) return;
+    items.forEach(function(it){ if (it && it.cat === '顏料' && it.image) { it.image = ''; n++; } });
+  });
+  if (n) console.log('[Otto2] 已清掉 ' + n + ' 張顏料照片');
+  return n;
+}
 
 // ── 初始化歷史耗材資料 ────────────────────────────────────
 function injectMayData() {
@@ -635,6 +652,7 @@ async function doSave() {
     try {
       const snap = await fbDb2.ref('salaryData').once('value');
       fillMissingFromCloud(S, snap.val());
+      stripPaintPhotos();   // 補缺會把雲端舊的顏料照片補回來，補完再清一次
     } catch(e2) {
       console.warn('doSave: 存檔前讀雲端補缺失敗，直接存本機版本', e2);
     }
