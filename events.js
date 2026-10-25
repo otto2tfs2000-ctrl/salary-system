@@ -149,7 +149,7 @@ function balMode(b){ return b.useEvImg ? 'ev' : (b.img || b._own) ? 'own' : 'non
 function balStatus(b){
   var t = evData.today, live = evData.live || [];
   if (b.on === false) return '<span style="color:var(--text3)">已關閉</span>';
-  if (b.style === 'S' && t < '2026-11-01' && !(b.to && t > b.to)) return '<span style="color:var(--gold2)">11/1 聖誕老公公出現後才會飛</span>';
+  if (b.style === 'S' && t < '2026-10-25' && !(b.to && t > b.to)) return '<span style="color:var(--gold2)">10/25 聖誕老公公出現後才會飛</span>';
   if (b.to && t > b.to) return '<span style="color:var(--text3)">已結束</span>';
   if (b.from && t < b.from) return '<span style="color:var(--gold2)">' + evMd(b.from) + ' 開始出現</span>';
   if (live.indexOf(b.id) >= 0) return '<span style="color:var(--green2)">島上出現中</span>';
