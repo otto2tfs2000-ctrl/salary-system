@@ -257,6 +257,8 @@ function bkCatEntries(j){
     }else if(r.tier==="base"){ price=r.pOrig||r.price }
     else if(!(r.hourly>0)){
       tiers={orig:orig,member:r.pMember||orig,first:r.pFirst||r.pMember||orig};
+      /* 本月主打：沒方案的人一律會員價，三種價別都一樣 */
+      if(r.feat&&r.pMember)tiers={orig:r.pMember,member:r.pMember,first:r.pMember};
     }
     var early=!(r.hourly>0)&&r.early>0&&/^\d{4}-\d{2}-\d{2}$/.test(r.earlyUntil)&&String(today)<=r.earlyUntil;
     var origPrice=price;
@@ -829,6 +831,12 @@ function bkIsPainting(v){
   return it.every(function(i){
     var c=(bkCourses||[]).filter(function(x){ return x.name===i.name })[0];
     return c?c.cat==="我想學畫畫":/^(選圖繪畫|創作繪畫|邏輯素描|零基礎繪畫)/.test(String(i.name||"")) });
+}
+/* 單一品項是繪畫還是多媒材（2026-10-25 價格分兩類用，跟伺服器 catGroupOf 同一條） */
+function bkItemGrp(i){
+  var nm=String(i&&i.name||""), c=(bkCourses||[]).filter(function(x){ return x.name===nm })[0];
+  var cat=c?((c._row&&c._row.home)||c.cat):"";
+  return (cat==="我想學畫畫"||/^(選圖繪畫|創作繪畫|邏輯素描|零基礎繪畫)/.test(nm))?"paint":"mixed";
 }
 /* 同一支電話可能是一家人（兄弟姊妹共用爸媽的電話），
    上次來的如果不是這次這位，前面標出名字，才不會把哥哥的紀錄當成弟弟的。 */
@@ -2690,7 +2698,13 @@ function bkCard(b){
         return '<span class="bk-tag '+(paint?"vp":"vm")+'" title="'+esc(tip)+'">二次體驗・上次 '+
           esc(String(lv.date).slice(5))+' '+(paint?"繪畫":"多媒材")+'・'+esc(bkVisitWho(lv,b)+bkVisitItems(lv))+
           (pv.length>1?'（來過 '+pv.length+' 次）':'')+
-          (bkIsTrial(b)?'<b class="bk-rt">收原價</b>':'')+'</span>';
+          ((function(){
+            /* 2026-10-25：只有之前上過「同一類」（繪畫／多媒材）才收原價 */
+            var tr=(b.items||[]).filter(function(i){ return /體驗/.test(String(i.name||"")+String(i.spec||"")) });
+            if(!tr.length)return false;
+            var gs=tr.map(bkItemGrp);
+            return pv.some(function(v){ return (v.items||[]).some(function(i){ return gs.indexOf(bkItemGrp(i))>=0 }) });
+          })()?'<b class="bk-rt">收原價</b>':'')+'</span>';
       })()+
       depTag+
       (b.fixed?'<span class="bk-tag fx" title="'+esc((b.fixed.dates||[]).join("、"))+'">固定 '+
@@ -4105,22 +4119,26 @@ async function bkManual(editId,repeatId,holdId){
   function mPplNow(){
     return (+document.getElementById("mAdult").value||0)+(+document.getElementById("mKid").value||0);
   }
-  /* 這位客人預設用哪個價（課程管理開著才有用）：有方案／點數堂數的會員 → 會員價；沒有會員檔案、也沒來過 → 初次體驗價；
-     其他（來過的非會員、還沒填電話）→ 原價。每一列可以手動改。跟客人端 index.html 的 catStatus 同一條規則。 */
-  function mAutoKind(){
+  /* 這位客人預設用哪個價（課程管理開著才有用）：有方案／點數堂數的會員 → 會員價；
+     2026-10-25 起分兩類看：這一列是繪畫還是多媒材，之前上過同一類 → 原價，沒上過 → 初次體驗價；
+     有會員檔案但系統裡沒有來店紀錄（7/30 以前的老客人）、還沒填電話 → 原價。每一列可以手動改。跟客人端 index.html 的 catStatus 同一條規則。 */
+  function mAutoKind(r){
     var phEl=document.getElementById("mPhone"), ph=bkNorm((phEl&&phEl.value)||"");
     var who=picked;
     if(!who&&bkMembers&&ph)who=bkMembers.filter(function(m){ return bkNorm(m.phone)===ph })[0]||null;
     if(who&&(+who.points>0||+who.sessions>0||+who.tkt>0))return "member";
     if(!ph&&!who)return "orig";                       /* 還沒填電話，先照原價，行政再改 */
-    if(who)return "orig";                            /* 有會員檔案但沒有方案了 */
     var dEl=document.getElementById("mDate");
     var pb={id:"",date:((dEl&&dEl.value)||"").replace(/-/g,"/")||new Date(Date.now()+288e5).toISOString().slice(0,10).replace(/-/g,"/"),customer:{phone:phEl.value},memberPhone:""};
     var pv=[]; try{ pv=bkPastVisits(pb) }catch(e){}
-    return pv.length?"orig":"first";
+    if(who&&!pv.length)return "orig";                 /* 有會員檔案、但查不到上過什麼 */
+    var c=r&&r.ci!==""?bkCourses[+r.ci]:null;
+    if(!c)return pv.length?"orig":"first";
+    var g=bkItemGrp(c);
+    return pv.some(function(v){ return (v.items||[]).some(function(i){ return bkItemGrp(i)===g }) })?"orig":"first";
   }
   var BK_KIND_NM={orig:"原價",member:"會員價",first:"初次體驗價"};
-  function mKindOf(r){ return (r.kind&&r.kind!=="auto")?r.kind:mAutoKind() }
+  function mKindOf(r){ return (r.kind&&r.kind!=="auto")?r.kind:mAutoKind(r) }
   function mRowPrice(r){
     if(r.ci==="")return 0;
     var c=bkCourses[+r.ci]; if(!c)return 0;
@@ -4213,7 +4231,7 @@ async function bkManual(editId,repeatId,holdId){
           : "")+
         (c&&c.tiers&&!c.early&&(c.tiers.member!==c.tiers.orig||c.tiers.first!==c.tiers.orig)
           ? '<div class="bk-left bk-iinfo">價別：<select data-ir="'+i+'" data-f="kind" style="margin:0 6px">'+
-            '<option value="auto"'+((!r.kind||r.kind==="auto")?" selected":"")+'>自動（目前判斷：'+BK_KIND_NM[mAutoKind()]+'）</option>'+
+            '<option value="auto"'+((!r.kind||r.kind==="auto")?" selected":"")+'>自動（目前判斷：'+BK_KIND_NM[mAutoKind(r)]+'）</option>'+
             ["orig","member","first"].map(function(k){ return '<option value="'+k+'"'+(r.kind===k?" selected":"")+'>'+BK_KIND_NM[k]+' $'+(+c.tiers[k]).toLocaleString()+'</option>' }).join("")+
             '</select></div>':'')+
         (c?'<div class="bk-left bk-iinfo">單價 $'+mRowPrice(r).toLocaleString()+
@@ -4548,16 +4566,21 @@ async function bkManual(editId,repeatId,holdId){
     /* 2026-10-22 擋日期：9/27 有三筆登記年份變成 2025（多半是截圖自動填猜錯年），
        排課板和名額都看不到，一個月後才發現。新登記不能選過去的日期；
        修改舊預約時，日期沒動就照舊可以存，有改日期才不能改到過去。
-       年份只接受今年或明年，而且不能超過一年以後。 */
+       年份只接受今年或明年，而且不能超過一年以後。
+       2026-10-25 大熊要能補登（當天來不及登記的）：過去的日期不擋了，改成跳確認視窗把日期講清楚；
+       60 天以前的再多提醒一次年份。 */
     var todayK=ds(new Date());
     if(!/^\d{4}\/\d{2}\/\d{2}$/.test(d)){ alert("請選上課日期"); return }
     var dY=+d.slice(0,4), nowY=+todayK.slice(0,4);
     var yearLater=new Date(); yearLater.setFullYear(yearLater.getFullYear()+1);
     var sameAsBefore=!!(eb&&d===eb.date);
-    if(!sameAsBefore&&(dY<nowY||dY>nowY+1||d>ds(yearLater))){
+    var yearAgo=new Date(); yearAgo.setFullYear(yearAgo.getFullYear()-1);
+    if(!sameAsBefore&&(dY<nowY-1||dY>nowY+1||d>ds(yearLater)||d<ds(yearAgo))){
       alert("上課日期是 "+d+"，年份看起來不對。\n請重新選日期（截圖自動填的日期也要檢查年份）。"); return }
     if(d<todayK&&!sameAsBefore){
-      alert("上課日期 "+d+" 已經過了，不能登記到過去的日期。\n請確認日期，今天是 "+todayK+"。"); return }
+      var ago=Math.round((new Date(todayK.replace(/\//g,"-"))-new Date(d.replace(/\//g,"-")))/864e5);
+      if(!confirm("上課日期 "+d+" 是 "+ago+" 天前（今天 "+todayK+"）。\n\n確定是要補登過去的預約嗎？"+
+        (ago>60?"\n\n⚠ 已經超過兩個月，請再看一次年份對不對。":"")))return }
     if(!mSlots.length){ alert("請選時段"); return }
     var useSlots=bkSortSlots(mSlots);
     /* 每個時段都要檢查，一整天的預約在每一格都會佔位 */

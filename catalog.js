@@ -277,7 +277,8 @@ function catListHtml(){
     var ec = encodeURIComponent(r.cat || ''), en = encodeURIComponent(r.name || '');
     h += '<tr data-k="course" data-cat="' + ec + '" data-course="' + en + '"' + (off ? ' style="opacity:.55"' : '') + '><td style="text-align:center">' +
       (canDrag && firstOfCourse ? '<span class="cat-h" draggable="true" title="按住拖移，換這門課的順序" ondragstart="catDragStart(event,\'course\',\'' + en + '\',\'' + ec + '\')" ondragend="catDragEnd()">⠿</span>' : '') + '</td><td>' + catEsc(r.name) + (catIsBase(r) ? '<span class="muted" style="font-size:var(--fs-sm)">（體驗／會員／原價三種價格）</span>' : (r.spec ? '<span class="muted" style="font-size:var(--fs-sm)">（' + catEsc(r.spec) + '）</span>' : '')) +
-      (r.src === 'new' ? ' <span style="font-size:var(--fs-xs);color:var(--gold2)">新增</span>' : '') + '</td>' +
+      (r.src === 'new' ? ' <span style="font-size:var(--fs-xs);color:var(--gold2)">新增</span>' : '') +
+      (r.feat === true ? ' <span style="font-size:var(--fs-xs);padding:1px 6px;border-radius:8px;background:#FFF4E0;color:#8A5A00;white-space:nowrap">⭐ 本月主打</span>' : '') + '</td>' +
       (catIsLegacy(r) ? '<td colspan="4" class="muted" style="font-size:var(--fs-xs)">舊的價格別列（試算表 ' + (r.price ? r.price.toLocaleString() : '—') + '）・價格請看「單次原價」那一列</td>' :
       '<td style="text-align:right">' + (r.pOrig ? r.pOrig.toLocaleString() :
         (r.price ? '<span class="muted" style="font-size:var(--fs-xs)" title="試算表原本的價格，預約頁現在還是收這個">試算表 ' + r.price.toLocaleString() + '</span>' : '<span class="muted">—</span>')) + '</td>' +
@@ -465,7 +466,9 @@ function catDrawModal(){
   var sty = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)';
   var W = '100%';
   var h = CAT_CSS + '<h3 style="margin:0 0 10px">' + (e._new ? '新增課程' : catEsc(r.name) + (catIsBase(r) ? '' : (r.spec ? '（' + catEsc(r.spec) + '）' : ''))) + '</h3>' +
-    '<label style="display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:var(--bg3);font-size:var(--fs-md);cursor:pointer"><input type="checkbox" id="cf-on" style="width:18px;height:18px"' + (r.on !== false ? ' checked' : '') + '> <b>上架</b><span class="muted" style="font-size:var(--fs-sm)">（勾起來客人才看得到、才能預約）</span></label>';
+    '<label style="display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:var(--bg3);font-size:var(--fs-md);cursor:pointer"><input type="checkbox" id="cf-on" style="width:18px;height:18px"' + (r.on !== false ? ' checked' : '') + '> <b>上架</b><span class="muted" style="font-size:var(--fs-sm)">（勾起來客人才看得到、才能預約）</span></label>' +
+    /* 2026-10-25 本月主打：勾了就搬到預約頁「每月主打」那區顯示，沒買方案的人一律收會員價（不看上過沒），取消勾就回原本分類 */
+    (kind === 'legacy' || r.cat === '每月主打' ? '' : '<label style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px;padding:10px 12px;border-radius:10px;background:#FFF4E0;font-size:var(--fs-md);cursor:pointer"><input type="checkbox" id="cf-feat" style="width:18px;height:18px"' + (r.feat === true ? ' checked' : '') + '> <b>本月主打</b><span class="muted" style="font-size:var(--fs-sm)">（放到預約頁「每月主打」、沒方案的人都收會員價）</span></label>');
   h += catGrid(
     catCell('分類', '<select id="cf-catsel" onchange="catCatSel()" style="' + sty + '">' +
       (!r.cat ? '<option value="" selected disabled>請選擇分類…</option>' : '') +
@@ -600,7 +603,7 @@ function catFormGet(){
   return { cat: cat, name: catStr(g('cf-name')), spec: catStr(g('cf-spec')), desc: catStr(g('cf-desc')), dur: catStr(g('cf-dur')),
     pMember: num('cf-pm', 'pMember'), pFirst: num('cf-pf', 'pFirst'), pOrig: num('cf-po', 'pOrig'), early: num('cf-early', 'early'),
     earlyUntil: has('cf-until') ? catDay(g('cf-until')) : (o.earlyUntil || ''), pair: num('cf-pair', 'pair'), img: catStr(g('cf-img')),
-    on: !!(document.getElementById('cf-on') || {}).checked, sort: +o.sort || 99, minAge: parseInt(g('cf-age'), 10) || 0,
+    on: !!(document.getElementById('cf-on') || {}).checked, feat: has('cf-feat') ? !!document.getElementById('cf-feat').checked : (o.feat === true), sort: +o.sort || 99, minAge: parseInt(g('cf-age'), 10) || 0,
     multi: g('cf-multi') === 'Y', addon: has('cf-addon') ? catStr(g('cf-addon')) : (o.addon || ''), seats: catNum(g('cf-seats')), hourly: catNum(g('cf-hourly')) };
 }
 /* 用料掛在「課程名|規格」上。改名時把舊的用料複製到新名稱（舊的留著，不刪、不覆蓋新名稱已經有的）。
@@ -1160,7 +1163,8 @@ function catAddonCheckHtml(){
    價格規則（跟客人端／伺服器／後台同一條）：會員→會員價；第一次來的新客→初次體驗價（沒填用會員價／優惠價）；其他→原價；早鳥期間所有人早鳥價。 */
 function catPriceOf(r, st, today){
   var orig = r.pOrig || r.price || 0, price = orig, tier = 'orig';
-  if (catIsBase(r)) {
+  if (!st.member && (r.feat === true || r.cat === '每月主打') && r.pMember) { price = r.pMember; tier = 'feat' }
+  else if (catIsBase(r)) {
     if (st.member && r.pMember) { price = r.pMember; tier = 'member' }
     else if (!st.member && st.first && r.pFirst) { price = r.pFirst; tier = 'first' }
   } else if (st.member) { if (r.pMember) { price = r.pMember; tier = 'member' } }
