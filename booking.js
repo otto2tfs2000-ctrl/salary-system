@@ -1663,7 +1663,10 @@ function bkHandleSSE(e){
   }
   var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
   var freshWeb=fresh.filter(function(b){
-    return b&&b.source==="web"&&b.status!=="cancelled"&&b.status!=="expired"&&String(b.ts||"")>lastSeen; });
+    return b&&b.source==="web"&&b.status!=="cancelled"&&b.status!=="expired"&&String(b.ts||"")>lastSeen&&
+      /* 2026-10-26 串流斷線重連會再送一次整包，整筆改寫也會送整筆；已經在 bkAllWeb 的就是看過的舊預約，
+         不能再跳「有 N 筆新預約」、也不能再加一次月曆人數 */
+      !bkAllWeb.some(function(x){ return x.id===b.id }); });
   if(!freshWeb.length)return;
   var today=ds(bkDate);
   freshWeb.forEach(function(b){
