@@ -305,8 +305,16 @@ function gcDrawLog(){
     return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">' +
       '<div style="display:flex;gap:8px;align-items:center;padding:10px 14px;cursor:pointer;background:#fbfaf6;flex-wrap:wrap" onclick="gcOpen[' + gcEsc(JSON.stringify(k)) + ']=!gcOpen[' + gcEsc(JSON.stringify(k)) + '];gcDrawLog()">' +
       '<span style="width:12px;color:var(--text3)">' + (open ? '▾' : '▸') + '</span>' + head + '</div>' +
+      (gcCat !== 'bonus' && gcRule(k) ? '<div style="padding:6px 14px 8px 34px;background:#FFF8EC;color:#9A4B12;font-size:var(--fs-xs);line-height:1.6">⚠️ ' + gcRule(k) + '</div>' : '') +
       (open ? '<div style="padding:0 14px">' + g.map(function(x){ return gcLogRow(x, gcCat === 'bonus' || gcCat === 'all') }).join('').replace('border-top:1px solid var(--border);', '') + '</div>' : '') + '</div>';
   }).join('');
+}
+/* 2026-10-26 大熊：給櫃檯看的使用規則，客人拿券來時照這個收 */
+function gcRule(nm){
+  nm = String(nm || '');
+  if (/折抵/.test(nm)) return '只能折抵原價課程（已經有優惠的課程不行，例如當月優惠價）或加購的材料（例如加大畫布）・要有消費才能折、不可折現、不可換其他商品・一次限用一張・最多兩個月內用完';
+  if (/畫布/.test(nm) && !/升/.test(nm)) return '畫布要搭配課程使用（課程費另計）・不可折現';
+  return '';
 }
 function gcSum(g){ return g.reduce(function(s, x){ return s + (+x.v || 0) }, 0) }
 /* 一般抽到的票券用抽獎紀錄編號對；集章保底的票券編號是「那一次抽獎編號-ms」 */
