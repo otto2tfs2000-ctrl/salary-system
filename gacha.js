@@ -316,6 +316,13 @@ function gcRule(nm){
   if (/畫布/.test(nm) && !/升/.test(nm)) return '畫布要搭配課程使用（課程費另計）・不可折現';
   return '';
 }
+function gcSetAlt(i, v){
+  var m = gcDraft.milestones[i]; if (!m) return;
+  v = String(v || '').trim();
+  if (!v) delete m.newAlt;
+  else m.newAlt = { type:'ticket', kind: /折抵/.test(v) ? 'cash' : 'goods', nm: v };
+  renderGacha();
+}
 function gcSum(g){ return g.reduce(function(s, x){ return s + (+x.v || 0) }, 0) }
 /* 一般抽到的票券用抽獎紀錄編號對；集章保底的票券編號是「那一次抽獎編號-ms」 */
 function gcFindTkt(phone, gid, x){
@@ -484,7 +491,8 @@ function gcSettingsHtml(){
     '<button class="btn btn-del" onclick="gcResetTest()">🧹 清空所有測試紀錄</button></div>';
 
   h += '<div class="card"><div class="card-title">集章保底</div>' +
-    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:10px">累積玩滿幾天（不用連續）就自動送，不算在紅利上限裡。</div>';
+    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:10px;line-height:1.7">累積玩滿幾天（不用連續）就自動送，不算在紅利上限裡。<br>' +
+    '「非會員改送」：沒有點數、堂數的人到這一天改送這個（例如課程折抵券）。名稱有「折抵」就照折抵券規則：原價課程才能用、不可折現、最多兩個月。</div>';
   (c.milestones || []).forEach(function(m, i){
     h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-sm)">' +
       '累積 <input type="number" value="' + (m.d || '') + '" style="width:56px;padding:5px;border:1px solid var(--border);border-radius:6px" onchange="gcSetM(' + i + ',\'d\',this.value)"> 天　送' +
@@ -492,6 +500,7 @@ function gcSettingsHtml(){
       '<option value="bonus"' + (m.type === 'bonus' ? ' selected' : '') + '>紅利</option><option value="ticket"' + (m.type === 'ticket' ? ' selected' : '') + '>票券／贈品</option></select>' +
       (m.type === 'bonus' ? '<input type="number" value="' + (m.v || '') + '" style="width:56px;padding:5px;border:1px solid var(--border);border-radius:6px" onchange="gcSetM(' + i + ',\'v\',this.value)"> 點' : '') +
       '　名稱 <input value="' + gcEsc(m.nm) + '" style="width:180px;padding:5px;border:1px solid var(--border);border-radius:6px" onchange="gcSetM(' + i + ',\'nm\',this.value)">' +
+      '　<span style="color:#4F7A9A">非會員改送</span> <input value="' + gcEsc((m.newAlt && m.newAlt.nm) || '') + '" placeholder="空白＝跟會員一樣" style="width:190px;padding:5px;border:1px solid var(--border);border-radius:6px" onchange="gcSetAlt(' + i + ',this.value)">' +
       '<button class="btn btn-del btn-sm" onclick="gcDraft.milestones.splice(' + i + ',1);renderGacha()">刪除</button></div>';
   });
   h += '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="gcDraft.milestones=gcDraft.milestones||[];gcDraft.milestones.push({d:28,type:\'ticket\',kind:\'goods\',nm:\'新保底獎\'});renderGacha()">＋ 新增一格</button></div>';
