@@ -17,7 +17,7 @@ var gcgData = null, gcgDraft = null, gcgCoinQ = '';
 
 function gcEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
-var GC_WHO = { all:'所有人', mem:'只有會員', new:'只有新客' };
+var GC_WHO = { all:'所有人', mem:'只有會員', new:'只有非會員' };
 var GC_TYPE = { bonus:'紅利', ticket:'票券／贈品', none:'銘謝惠顧' };
 var GC_WHY = { gold:'黃金扭蛋', daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試' };
 var gcQuiz = null;
@@ -349,6 +349,10 @@ function gcPct(p, who){
     .reduce(function(s, x){ return s + (+x.w || 0) }, 0);
   return tot ? (+p.w || 0) / tot * 100 : 0;
 }
+/* 2026-10-26 大熊：獎品表直接分成「會員」「非會員」兩塊，一眼看出誰抽得到什麼。
+   會員＝手上有儲值點數或堂數的人。「兩邊都有」的獎品（例如明天再來）兩塊都會列出來，改哪一邊都是同一個。 */
+var GC_GRP = { mem:{ t:'👑 會員抽的獎品', d:'手上還有儲值點數或堂數的人', c:'#B8892B' }, new:{ t:'🙂 非會員抽的獎品', d:'沒有點數、也沒有堂數的人（新朋友、方案用完的老客人）', c:'#4F7A9A' } };
+var GC_WHO2 = { mem:'只有會員', new:'只有非會員', all:'兩邊都有' };
 function gcPrizesHtml(){
   var inp = function(i, k, v, w, type){
     return '<input ' + (type ? 'type="' + type + '" ' : '') + 'value="' + gcEsc(v == null ? '' : v) + '" style="width:' + w + 'px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" ' +
@@ -358,31 +362,40 @@ function gcPrizesHtml(){
     return '<select style="padding:5px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="gcSetP(' + i + ',\'' + k + '\',this.value)">' +
       Object.keys(opts).map(function(o){ return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + opts[o] + '</option>' }).join('') + '</select>';
   };
-  var h = '<div class="card"><div class="card-title">獎品設定</div>' +
-    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:12px">' +
-    '「權重」越大越容易抽到，右邊的百分比是實際機率，會員跟新客分開算。「限量」空白代表不限；「每人上限」空白代表同一個人可以一直中。<br>' +
-    '改完要按最下面的「儲存」才會生效。已經送出去的紅利、票券不會因為改設定而收回。</div>' +
-    '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:var(--fs-sm);min-width:980px">' +
-    '<tr style="text-align:left;color:var(--text2)"><th style="padding:6px 4px">圖示</th><th>名稱</th><th>說明</th><th>誰能抽</th><th>類型</th><th>送幾點</th><th>票券性質</th><th>權重</th><th>限量</th><th>每人上限</th><th>已送</th><th>會員機率</th><th>新客機率</th><th></th></tr>';
-  gcDraft.prizes.forEach(function(p, i){
-    var pm = gcPct(p, 'mem'), pn = gcPct(p, 'new');
-    h += '<tr style="border-top:1px solid var(--border)">' +
-      '<td style="padding:6px 4px">' + inp(i, 'ic', p.ic, 40) + '</td>' +
-      '<td>' + inp(i, 'nm', p.nm, 130) + '</td><td>' + inp(i, 'sub', p.sub, 130) + '</td>' +
-      '<td>' + sel(i, 'who', p.who, GC_WHO) + '</td><td>' + sel(i, 'type', p.type, GC_TYPE) + '</td>' +
-      '<td>' + (p.type === 'bonus' ? inp(i, 'v', p.v, 48, 'number') : '<span class="muted">—</span>') + '</td>' +
-      '<td>' + (p.type === 'ticket' ? sel(i, 'kind', p.kind || 'goods', GC_KIND) : '<span class="muted">—</span>') + '</td>' +
-      '<td>' + inp(i, 'w', p.w, 56, 'number') + '</td><td>' + inp(i, 'qty', p.qty, 56, 'number') + '</td><td>' + inp(i, 'per', p.per, 48, 'number') + '</td>' +
-      '<td style="text-align:right;padding-right:6px">' + (+(gcData.stock || {})[p.id] || 0) + '</td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (pm == null ? '<span class="muted">—</span>' : pm.toFixed(1) + '%') + '</td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (pn == null ? '<span class="muted">—</span>' : pn.toFixed(1) + '%') + '</td>' +
-      '<td><button class="btn btn-del btn-sm" onclick="gcDelP(' + i + ')">刪除</button></td></tr>';
-  });
-  h += '</table></div>' +
-    '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="gcAddP()">＋ 新增獎品</button>' +
-    '<span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcResetDraft()">放棄修改</button>' +
+  var table = function(who){
+    var g = GC_GRP[who];
+    var t = '<div style="margin-top:16px;border:1px solid var(--border);border-left:4px solid ' + g.c + ';border-radius:10px;padding:12px 12px 10px">' +
+      '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:var(--fs-md);color:' + g.c + '">' + g.t + '</b>' +
+      '<span class="muted" style="font-size:var(--fs-xs)">' + g.d + '</span></div>' +
+      '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:var(--fs-sm);min-width:900px">' +
+      '<tr style="text-align:left;color:var(--text2)"><th style="padding:6px 4px">圖示</th><th>名稱</th><th style="text-align:right;padding-right:10px">機率</th><th>誰能抽</th><th>說明</th><th>類型</th><th>送幾點</th><th>票券性質</th><th>權重</th><th>限量</th><th>每人上限</th><th>已送</th><th></th></tr>';
+    var n = 0;
+    gcDraft.prizes.forEach(function(p, i){
+      if (!(p.who === who || p.who === 'all')) return;
+      n++;
+      var pc = gcPct(p, who);
+      t += '<tr style="border-top:1px solid var(--border)">' +
+        '<td style="padding:6px 4px">' + inp(i, 'ic', p.ic, 40) + '</td>' +
+        '<td>' + inp(i, 'nm', p.nm, 130) + '</td>' +
+        '<td style="text-align:right;padding-right:10px;font-variant-numeric:tabular-nums;font-weight:600">' + (pc == null ? '<span class="muted">—</span>' : pc.toFixed(1) + '%') + '</td>' +
+        '<td>' + sel(i, 'who', p.who, GC_WHO2) + '</td><td>' + inp(i, 'sub', p.sub, 120) + '</td><td>' + sel(i, 'type', p.type, GC_TYPE) + '</td>' +
+        '<td>' + (p.type === 'bonus' ? inp(i, 'v', p.v, 48, 'number') : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (p.type === 'ticket' ? sel(i, 'kind', p.kind || 'goods', GC_KIND) : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + inp(i, 'w', p.w, 56, 'number') + '</td><td>' + inp(i, 'qty', p.qty, 56, 'number') + '</td><td>' + inp(i, 'per', p.per, 48, 'number') + '</td>' +
+        '<td style="text-align:right;padding-right:6px">' + (+(gcData.stock || {})[p.id] || 0) + '</td>' +
+        '<td><button class="btn btn-del btn-sm" title="刪除" onclick="gcDelP(' + i + ')">✕</button></td></tr>';
+    });
+    if (!n) t += '<tr><td colspan="13" class="muted" style="padding:10px 4px">還沒有獎品</td></tr>';
+    return t + '</table></div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="gcAddP(\'' + who + '\')">＋ 新增' + (who === 'mem' ? '會員' : '非會員') + '獎品</button></div>';
+  };
+  return '<div class="card"><div class="card-title">獎品設定</div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8">' +
+    '「權重」越大越容易抽到，「機率」是這一區實際抽到的百分比。「限量」空白代表不限；「每人上限」空白代表同一個人可以一直中。<br>' +
+    '想把獎品換到另一區，改右邊的「誰能抽」。改完要按最下面的「儲存」才會生效。已經送出去的紅利、票券不會因為改設定而收回。</div>' +
+    table('mem') + table('new') +
+    '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><span style="flex:1"></span><button class="btn btn-outline btn-sm" onclick="gcResetDraft()">放棄修改</button>' +
     '<button class="btn btn-gold" onclick="gcSave()">💾 儲存</button></div></div>';
-  return h;
 }
 function gcSetP(i, k, v){
   var p = gcDraft.prizes[i]; if (!p) return;
@@ -398,8 +411,8 @@ function gcDelP(i){
   if (!confirm('要刪除「' + p.nm + '」嗎？（按儲存才會生效）')) return;
   gcDraft.prizes.splice(i, 1); renderGacha();
 }
-function gcAddP(){
-  gcDraft.prizes.push({ id:'p' + Date.now().toString(36), ic:'🎁', nm:'新獎品', sub:'', who:'all', type:'ticket', kind:'goods', w:5, qty:10, per:1 });
+function gcAddP(who){
+  gcDraft.prizes.push({ id:'p' + Date.now().toString(36), ic:'🎁', nm:'新獎品', sub:'', who:who || 'all', type:'ticket', kind:'goods', w:5, qty:10, per:1 });
   renderGacha();
 }
 function gcResetDraft(){ gcDraft = JSON.parse(JSON.stringify(gcData.cfg)); renderGacha() }
