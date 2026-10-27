@@ -19,6 +19,7 @@ async function renderEvents(){
 function evMd(d){ return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : '' }
 function evDaysTo(d){ return Math.round((Date.parse(d + 'T00:00:00+08:00') - Date.parse(evData.today + 'T00:00:00+08:00')) / 864e5) }
 function evHtml(){
+  if (regEv) return regHtml();
   if (evEdit) return evFormHtml();
   if (balEdit) return balFormHtml();
   var list = Object.values(evData.list || {}).sort(function(a, b){ return String(b.date).localeCompare(String(a.date)) });
@@ -41,7 +42,7 @@ function evHtml(){
       '<div style="font-size:var(--fs-sm);margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
       (evShowWant[e.id] && ws.length ? '<div style="font-size:var(--fs-xs);margin-top:6px;line-height:1.9">' + ws.map(function(x){
         return gcEsc(x.name || x.nm) + ' <span class="muted">' + gcEsc(x.phone || '（沒綁電話）') + '・' + String(x.at).slice(5, 10).replace('-', '/') + '</span>' }).join('<br>') + '</div>' : '') +
-      '</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-outline btn-sm" onclick="evOpen(\'' + e.id + '\')">編輯</button></div></div>';
+      '</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-gold btn-sm" onclick="regOpen(\'' + e.id + '\')">📝 報名登記</button><button class="btn btn-outline btn-sm" onclick="evOpen(\'' + e.id + '\')">編輯</button></div></div>';
   });
   return h + '</div>' + balListHtml();
 }
@@ -123,9 +124,167 @@ async function evSave(){
   catch(e) { alert('儲存失敗：' + e.message) }
 }
 async function evDel(){
-  if (!confirm('確定刪除這個活動？島上會馬上拿掉，「我想去」的名單也會一起刪掉。')) return;
+  if (!confirm('確定刪除這個活動？島上會馬上拿掉，「我想去」的名單也會一起刪掉。（📝 報名登記的名單會留著，不會刪）')) return;
   try { await staffApi('/staff/events/delete', { id: evEdit.id }); evEdit = null; evData = null; await renderEvents() }
   catch(e) { alert('刪除失敗：' + e.message) }
+}
+
+/* ══════════════════════════════════════════════════════════
+   📝 報名登記（2026-10-27，「坐下，聊花」餐敘起用）：每個活動卡片右邊「📝 報名登記」。
+   櫃檯報名後登記：姓名、電話、作品有沒有交（作品名稱＋照片，印製前核對用）、餐敘幾位（0＝不參加）、有沒有繳費（金額、方式）。
+   資料在 f9ef7 events/reg/{活動id}/{rid}，透過 /staff/events/reg* 讀寫；跟島上的「我想去」是兩回事。
+   ══════════════════════════════════════════════════════════ */
+var regEv = null, regList = null, regEdit = null, regFilter = 'all', regQ = '';
+var REG_WAYS = ['現金', '轉帳', '刷卡', 'LINE Pay', '其他'];
+async function regOpen(id){
+  regEv = evData.list[id]; regList = null; regEdit = null; regFilter = 'all'; regQ = '';
+  await regReload();
+}
+async function regReload(){
+  regList = null; renderEvents();
+  try { regList = (await staffApi('/staff/events/reg', { id: regEv.id })).reg || {} }
+  catch(e) { regList = null; alert('讀不到報名名單：' + e.message); regEv = null }
+  renderEvents();
+}
+function regFeeNum(){ var m = String(regEv.fee || '').replace(/,/g, '').match(/\d+/); return m ? +m[0] : 0 }
+function regRows(){ return Object.values(regList || {}).sort(function(a, b){ return String(a.createdAt).localeCompare(String(b.createdAt)) }) }
+function regHtml(){
+  if (regEdit) return regFormHtml();
+  var e = regEv, h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">' +
+    '<button class="btn btn-outline btn-sm" onclick="regEv=null;renderEvents()">← 活動公告</button>' +
+    '<span>📝 報名登記・' + gcEsc(e.title) + '</span>' +
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="regReload()">↻ 重新讀取</button>' +
+    (regList ? '<button class="btn btn-outline btn-sm" onclick="regCsv()">⬇ 下載名單</button><button class="btn btn-gold btn-sm" onclick="regNew()">＋ 新增報名</button>' : '') + '</div>' +
+    '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:10px">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.fee ? '　費用：' + gcEsc(e.fee) : '') + '</div>';
+  if (!regList) return h + '<div class="empty">載入報名名單中…</div></div>';
+  var all = regRows(), n = all.length,
+    nWork = all.filter(function(r){ return r.workDone }).length,
+    nPaid = all.filter(function(r){ return r.paid }).length,
+    sum = all.reduce(function(t, r){ return t + (r.paid ? +r.payAmt || 0 : 0) }, 0),
+    din = all.reduce(function(t, r){ return t + (+r.dinner || 0) }, 0),
+    noDin = all.filter(function(r){ return !(+r.dinner) }).length;
+  var tile = function(lb, v, sub, warn){ return '<div style="flex:1 1 130px;border:1px solid var(--border);border-radius:10px;padding:8px 12px">' +
+    '<div class="muted" style="font-size:var(--fs-xs)">' + lb + '</div><div style="font-size:20px;font-weight:600' + (warn ? ';color:var(--red,#c0392b)' : '') + '">' + v + '</div>' +
+    (sub ? '<div class="muted" style="font-size:var(--fs-xs)">' + sub + '</div>' : '') + '</div>' };
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+    tile('報名人數', n + ' 人') +
+    tile('作品已交', nWork + ' / ' + n, n - nWork ? '還有 ' + (n - nWork) + ' 人沒交' : (n ? '全部交齊' : ''), n - nWork > 0) +
+    tile('餐敘人數', din + ' 位', noDin ? noDin + ' 人不參加餐敘' : '') +
+    tile('已繳費', nPaid + ' / ' + n, '已收 $' + sum.toLocaleString() + (n - nPaid ? '・' + (n - nPaid) + ' 人未繳' : ''), n - nPaid > 0) + '</div>';
+  var chip = function(k, lb){ return '<button class="btn btn-sm ' + (regFilter === k ? 'btn-gold' : 'btn-outline') + '" onclick="regFilter=\'' + k + '\';renderEvents()">' + lb + '</button>' };
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('all', '全部') + chip('nowork', '作品未交') + chip('nopay', '未繳費') + chip('nodin', '不參加餐敘') +
+    '<input id="reg-q" value="' + gcEsc(regQ) + '" placeholder="搜尋姓名／電話／作品" oninput="regQ=this.value;regListOnly()" style="margin-left:auto;width:180px;max-width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)"></div>';
+  return h + '<div id="reg-list">' + regListHtml() + '</div></div>';
+}
+function regListOnly(){ var el = document.getElementById('reg-list'); if (el) el.innerHTML = regListHtml() }
+function regListHtml(){
+  var q = regQ.trim().toLowerCase();
+  var rows = regRows().filter(function(r){
+    if (regFilter === 'nowork' && r.workDone) return false;
+    if (regFilter === 'nopay' && r.paid) return false;
+    if (regFilter === 'nodin' && +r.dinner) return false;
+    return !q || [r.name, r.phone, r.workTitle, r.note].join(' ').toLowerCase().indexOf(q) >= 0;
+  });
+  if (!regRows().length) return '<div class="empty">還沒有人報名，按右上角「＋ 新增報名」。</div>';
+  if (!rows.length) return '<div class="empty">沒有符合的報名。</div>';
+  var ok = function(t){ return '<span style="color:var(--green2)">✅ ' + t + '</span>' }, no = function(t){ return '<span style="color:var(--red,#c0392b)">❌ ' + t + '</span>' };
+  return rows.map(function(r, i){
+    return '<div style="display:flex;gap:12px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;flex-wrap:wrap">' +
+      (r.workImg ? '<a href="' + gcEsc(r.workImg) + '" target="_blank" title="看大圖" style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--bg3) center/cover no-repeat;background-image:url(\'' + gcEsc(r.workImg) + '\')"></a>'
+        : '<div style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);color:var(--text3)">沒照片</div>') +
+      '<div style="flex:1 1 150px;min-width:0"><div style="font-weight:600">' + (i + 1) + '. ' + gcEsc(r.name) + '</div>' +
+      '<div class="muted" style="font-size:var(--fs-sm)">' + gcEsc(r.phone || '（沒填電話）') + '</div>' +
+      (r.note ? '<div class="muted" style="font-size:var(--fs-xs)">📌 ' + gcEsc(r.note) + '</div>' : '') + '</div>' +
+      '<div style="flex:1 1 260px;font-size:var(--fs-sm);line-height:1.8">' +
+      '<div>作品：' + (r.workDone ? ok('已交' + (r.workTitle ? '《' + gcEsc(r.workTitle) + '》' : '')) : no('未交' + (r.workTitle ? '（' + gcEsc(r.workTitle) + '）' : ''))) + '</div>' +
+      '<div>餐敘：' + (+r.dinner ? '<b>' + r.dinner + ' 位</b>' : '<span class="muted">不參加</span>') + '</div>' +
+      '<div>繳費：' + (r.paid ? ok('$' + (+r.payAmt || 0).toLocaleString() + (r.payWay ? '・' + gcEsc(r.payWay) : '') + (r.paidAt ? '・' + evMd(r.paidAt.slice(0, 10)) : '') + (r.paidBy ? ' ' + gcEsc(r.paidBy) : '')) : no('未繳')) + '</div></div>' +
+      '<button class="btn btn-outline btn-sm" onclick="regOpenOne(\'' + r.rid + '\')">編輯</button></div>';
+  }).join('');
+}
+function regNew(){ regEdit = { rid:'r' + Date.now().toString(36), name:'', phone:'', workDone:false, workTitle:'', workImg:'', dinner:1, paid:false, payAmt:regFeeNum(), payWay:'現金', note:'', _new:true }; renderEvents() }
+function regOpenOne(rid){ regEdit = JSON.parse(JSON.stringify(regList[rid])); if (!regEdit.paid && !regEdit.payAmt) regEdit.payAmt = regFeeNum(); renderEvents() }
+function regFormHtml(){
+  var r = regEdit, din = '';
+  for (var i = 0; i <= 6; i++) din += '<option value="' + i + '"' + (+r.dinner === i ? ' selected' : '') + '>' + (i ? i + ' 位' : '不參加餐敘') + '</option>';
+  var ways = REG_WAYS.map(function(w){ return '<option' + (r.payWay === w ? ' selected' : '') + '>' + w + '</option>' }).join('');
+  return '<div class="card"><div class="card-title">' + (r._new ? '新增報名' : '編輯報名') + '・' + gcEsc(regEv.title) + '</div>' +
+    (evData.cloudinary ? '' : '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm)">伺服器還沒設定 Cloudinary，作品照片暫時不能上傳。</div>') +
+    '<div style="display:flex;gap:16px;flex-wrap:wrap"><div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:4px">作品照片（印製前核對用）</div>' +
+    '<div id="reg-pv" style="width:180px;height:180px;border-radius:10px;background:var(--bg3) center/contain no-repeat;border:1px solid var(--border)' + (r.workImg ? ";background-image:url('" + gcEsc(r.workImg) + "')" : '') + '"></div>' +
+    '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳作品照片<input type="file" accept="image/*" style="display:none" onchange="regPickImg(this)"></label> ' +
+    '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="regClearImg()">移除</button>' +
+    '<div id="reg-st" class="muted" style="font-size:var(--fs-xs);margin-top:4px;max-width:200px"></div></div>' +
+    '<div style="flex:1 1 320px">' +
+    evRow('姓名', evInp('reg-name', r.name, 'text', 220, '例：王小明'), '空白的話會用電話找會員名字') +
+    evRow('電話', evInp('reg-phone', r.phone, 'tel', 220, '09xxxxxxxx'), '同一支電話重複報名會先提醒') +
+    evRow('作品', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="reg-work" ' + (r.workDone ? 'checked' : '') + '> 作品已繳交</label>') +
+    evRow('作品名稱', evInp('reg-wtitle', r.workTitle, 'text', 260, '例：盛開的向日葵')) +
+    evRow('餐敘', '<select id="reg-din" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)">' + din + '</select>', '本人也算一位；只交作品不吃飯就選「不參加餐敘」') +
+    evRow('繳費', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="reg-paid" ' + (r.paid ? 'checked' : '') + '> 已繳費</label>　金額 $' + evInp('reg-amt', r.payAmt || '', 'number', 100) +
+      ' <select id="reg-way" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)">' + ways + '</select>',
+      r.paid && r.paidAt ? '已於 ' + evMd(r.paidAt.slice(0, 10)) + ' 由 ' + gcEsc(r.paidBy || '—') + ' 登記收款' : '') +
+    evRow('備註', evInp('reg-note', r.note, 'text', 300, '例：絲巾要印大一點、跟朋友同桌…')) +
+    '<input type="hidden" id="reg-img" value="' + gcEsc(r.workImg || '') + '">' +
+    '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="regSave()">儲存</button><button class="btn btn-outline" onclick="regEdit=null;renderEvents()">取消</button>' +
+    (r._new ? '' : '<button class="btn btn-del" style="margin-left:auto" onclick="regDel()">刪除這筆報名</button>') + '</div>' +
+    '</div></div></div>';
+}
+/* 作品照片：最長邊 1600px（看得清楚細節）、轉 JPEG 再傳 Cloudinary */
+function regPickImg(inp){
+  var f = inp.files && inp.files[0]; if (!f) return;
+  var st = document.getElementById('reg-st'); st.textContent = '處理照片中…';
+  var url = URL.createObjectURL(f), im = new Image();
+  im.onload = async function(){
+    var k = Math.min(1, 1600 / Math.max(im.width, im.height)), cv = document.createElement('canvas');
+    cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+    try {
+      st.textContent = '上傳中…';
+      var j = await staffApi('/staff/events/reg/img', { id: regEv.id, rid: regEdit.rid, dataUrl: cv.toDataURL('image/jpeg', .88) });
+      document.getElementById('reg-img').value = j.url;
+      document.getElementById('reg-pv').style.backgroundImage = "url('" + j.url + "')";
+      st.textContent = '✅ 照片已上傳，記得按「儲存」';
+    } catch(e) { st.textContent = '❌ ' + e.message }
+  };
+  im.onerror = function(){ st.textContent = '❌ 這個檔案打不開' };
+  im.src = url;
+}
+function regClearImg(){
+  document.getElementById('reg-img').value = '';
+  document.getElementById('reg-pv').style.backgroundImage = '';
+  document.getElementById('reg-st').textContent = '照片已移除，記得按「儲存」';
+}
+async function regSave(){
+  var v = function(id){ return document.getElementById(id).value.trim() };
+  var r = { rid: regEdit.rid, name: v('reg-name'), phone: v('reg-phone').replace(/\D/g, ''), workDone: document.getElementById('reg-work').checked, workTitle: v('reg-wtitle'),
+    workImg: v('reg-img'), dinner: +v('reg-din') || 0, paid: document.getElementById('reg-paid').checked, payAmt: +v('reg-amt') || 0, payWay: v('reg-way'), note: v('reg-note') };
+  if (!r.name && !r.phone) return alert('請填姓名或電話');
+  if (r.phone && !/^09\d{8}$/.test(r.phone)) return alert('電話要 09 開頭 10 碼');
+  if (r.paid && !r.payAmt && !confirm('勾了已繳費但金額是 0，確定嗎？')) return;
+  var dup = r.phone && regRows().filter(function(x){ return x.phone === r.phone && x.rid !== r.rid })[0];
+  if (dup && !confirm('這支電話已經報名過了（' + dup.name + '），確定要再登記一筆？')) return;
+  try {
+    var j = await staffApi('/staff/events/reg/save', { id: regEv.id, r: r });
+    regList[j.r.rid] = j.r; regEdit = null; renderEvents();
+  } catch(e) { alert('儲存失敗：' + e.message) }
+}
+async function regDel(){
+  if (!confirm('確定刪除「' + regEdit.name + '」這筆報名？' + (regEdit.paid ? '\n（這筆有繳費紀錄，刪了就查不到了）' : ''))) return;
+  try { await staffApi('/staff/events/reg/delete', { id: regEv.id, rid: regEdit.rid }); delete regList[regEdit.rid]; regEdit = null; renderEvents() }
+  catch(e) { alert('刪除失敗：' + e.message) }
+}
+/* 下載名單（Excel 打得開的 CSV，前面加 BOM 中文才不會亂碼） */
+function regCsv(){
+  var cell = function(x){ x = String(x == null ? '' : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x };
+  var lines = [['#', '姓名', '電話', '作品已交', '作品名稱', '作品照片', '餐敘人數', '已繳費', '金額', '方式', '收款日', '備註'].join(',')];
+  regRows().forEach(function(r, i){
+    lines.push([i + 1, r.name, r.phone ? "'" + r.phone : '', r.workDone ? '是' : '否', r.workTitle, r.workImg, +r.dinner || 0, r.paid ? '是' : '否', r.paid ? r.payAmt : '', r.payWay, (r.paidAt || '').slice(0, 10), r.note].map(cell).join(','));
+  });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = regEv.title.replace(/[\\/:*?"<>|，, ]/g, '') + '_報名名單.csv'; a.click();
 }
 
 /* ══════════════════════════════════════════════════════════
