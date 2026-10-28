@@ -51,7 +51,7 @@ function xmOverviewHtml(){
     xmStat(lights.toLocaleString(), '聖誕樹燈數', '目標 ' + (L[4] || 0).toLocaleString() + '，已亮 ' + done + ' / 5 層') +
     xmStat(d.stats.trees, '森林裡的樹', '上限 ' + (c.forestMax || 251)) +
     xmStat(d.stats.lots, '被認領的小屋', '共 ' + ((c.lotIdx || []).length) + ' 間') +
-    xmStat(d.stats.pts, '已發出的紅利', '每人上限 ' + c.pointCap + ' 點') + '</div>';
+    xmStat(d.stats.pts, '已發出的紅利', '會員上限 ' + c.pointCap + ' 點・非會員 ' + (c.pointCapNew == null ? 2 : c.pointCapNew) + ' 點') + '</div>';
   var rows = (d.players || []).map(function(p){
     return '<tr><td>' + xmEsc(p.name || '—') + '</td><td>' + xmEsc(p.phone.slice(0,4) + '-***-' + p.phone.slice(7)) + '</td>' +
       '<td style="text-align:center">' + p.lights + '</td><td style="text-align:center">' + p.gifts + '</td>' +
@@ -101,6 +101,7 @@ function xmRewardsHtml(){
     xmRow('選票券', xmInp('ornTicket.nm', (c.ornTicket || {}).nm, '', 160), '會寫進會員的票券，期限看「活動設定」的票券期限') + '</div>';
   h += '<div class="card"><div class="card-title">每人上限</div>' +
     xmRow('紅利總上限', xmInp('pointCap', c.pointCap, 'number', 80) + ' 點', '一個會員整個活動從走格子拿到的紅利最多幾點（樹、吊飾、扭蛋機加起來）。拿滿就改送禮物。') +
+    xmRow('非會員紅利上限', xmInp('pointCapNew', c.pointCapNew == null ? 2 : c.pointCapNew, 'number', 80) + ' 點', '還不是會員的客人整個活動最多拿幾點紅利。拿滿就改送禮物，並提示成為會員能領更多。') +
     xmRow('每天扭蛋機次數', xmInp('gachaDayMax', c.gachaDayMax, 'number', 70) + ' 次　其中真獎勵最多 ' + xmInp('gachaRealDay', c.gachaRealDay, 'number', 60) + ' 次', '真獎勵＝紅利、票券；超過就改抽禮物') + '</div>';
   return h + xmSaveBar();
 }
