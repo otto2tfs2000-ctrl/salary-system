@@ -2852,8 +2852,8 @@ function mbTktAnalyze(){
       now: m ? (+m.sessions || 0) : 0,
       sess: sess,
       bad: bad,
-      had: !!(m && m.tickets && m.tickets.length),
-      state: m ? ((m.tickets && m.tickets.length) ? 'over' : 'new') : 'miss'
+      had: mbTktHasOwn(m),
+      state: m ? (mbTktHasOwn(m) ? 'over' : 'new') : 'miss'
     });
   });
   renderMember();
@@ -2873,13 +2873,29 @@ function mbTktGo(){
 }
 function mbTktClear(){ mbTktRaw = ''; mbTktRows = null; renderMember() }
 
+/* 會員票券清單裡不只夯客匯入的，還有扭蛋、選品館、走格子發的券（都帶 src）。
+   匯入／撤銷只動沒有 src 的那些，其他的要原封不動留著（2026-10-28）。 */
+function mbTktArr(v){ return !v ? [] : (Array.isArray(v) ? v : Object.keys(v).map(function(k){ return v[k] })).filter(Boolean) }
+function mbTktHasOwn(m){ return !!m && mbTktArr(m.tickets).some(function(t){ return !t.src }) }
+async function mbTktFresh(phone){
+  var r = await fetch(mbf('/members/' + phone + '/tickets.json'));
+  if (!r.ok) throw new Error('讀取票券失敗 ' + r.status);
+  return mbTktArr(await r.json());
+}
+async function mbTktPut(phone, list){
+  var r = await fetch(mbf('/members/' + phone + '/tickets.json'), list.length
+    ? { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(list) }
+    : { method:'DELETE' });
+  if (!r.ok) throw new Error('寫入票券失敗 ' + r.status);
+}
+
 async function mbTktRun(){
   if (mbTktBusy) return;
   var rows = (mbTktRows || []).filter(function(r){ return r.found });
   if (!rows.length){ alert('沒有可以寫入的資料'); return }
   if (!confirm('這批「' + mbTktBatch + '」會把票券清單寫到 ' + rows.length + ' 位會員底下。\n\n' +
                '只是掛一份清單，堂數、點數、紅利通通不會動。\n' +
-               '同一個人重貼會整份覆蓋，不會累加。\n\n確定嗎？')) return;
+               '同一個人重貼會把舊的夯客票券整份換掉，不會累加；扭蛋、選品館、走格子的券會保留。\n\n確定嗎？')) return;
 
   mbTktBusy = true; renderMember();
   var now = mbNow(), by = mbWho(), ok = 0, fail = 0, msg = '';
@@ -2890,8 +2906,10 @@ async function mbTktRun(){
                raw:t.raw, batch:mbTktBatch, at:now, by:by };
     });
     try {
-      await fetch(mbf('/members/' + r.phone + '/tickets.json'), { method:'PUT',
-        headers:{'Content-Type':'application/json'}, body: JSON.stringify(list) });
+      /* 寫之前重讀一次雲端，頁面開著期間客人可能剛抽到扭蛋券 */
+      var keep = (await mbTktFresh(r.phone)).filter(function(t){ return t.src });
+      list = list.concat(keep);
+      await mbTktPut(r.phone, list);
       var m = mbList.filter(function(x){ return x.phone === r.phone })[0];
       if (m) m.tickets = list;
       ok++;
@@ -2910,7 +2928,7 @@ async function mbTktUndo(){
   mbTktSync();
   if (!mbTktBatch){ alert('請先填批次名稱，要跟當初匯入時一模一樣'); return }
   var hit = mbList.filter(function(m){
-    return m.tickets && m.tickets.length && m.tickets[0].batch === mbTktBatch;
+    return mbTktArr(m.tickets).some(function(t){ return !t.src && t.batch === mbTktBatch });
   });
   if (!hit.length){ alert('找不到「' + mbTktBatch + '」這一批的票券。名稱要完全一樣。'); return }
   if (!confirm('要清掉「' + mbTktBatch + '」這批票券嗎？\n會影響 ' + hit.length + ' 位會員。\n餘額本來就沒動過，所以不受影響。')) return;
@@ -2918,13 +2936,14 @@ async function mbTktUndo(){
   var n = 0;
   for (var i = 0; i < hit.length; i++){
     try {
-      await fetch(mbf('/members/' + hit[i].phone + '/tickets.json'), { method:'DELETE' });
-      hit[i].tickets = null; n++;
+      var left = (await mbTktFresh(hit[i].phone)).filter(function(t){ return t.src || t.batch !== mbTktBatch });
+      await mbTktPut(hit[i].phone, left);
+      hit[i].tickets = left.length ? left : null; n++;
     } catch(e){}
   }
   mbTktBusy = false;
   await mbLoad(1); mbTktAnalyze();
-  alert('已清掉 ' + n + ' 位會員的票券清單');
+  alert('已清掉 ' + n + ' 位會員這批的夯客票券（扭蛋等其他券保留）');
 }
 
 /* ── 匯入頁的區塊 ── */
