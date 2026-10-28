@@ -1767,60 +1767,75 @@ function printInvBlankSheet() {
   var storeName = {'flagship':'旗艦店','guotu':'國圖店'}[curStore.inventory];
   var weekKey = invCurWeek;
 
-  var ROWS = 24;              // 每一欄的列數
-  var PER_PAGE = ROWS * 2;    // 一張 A4 兩大欄
+  // 版面：一欄 ROWS 列（類別標題也佔一列），兩欄一張 A4，列高固定讓整張紙填滿
+  var ROWS = 27;
+  var ROW_MM = 9.2;
 
-  function row(it, no) {
-    if (!it) return '<tr><td class="no"></td><td class="cat"></td><td class="nm"></td><td class="un"></td><td></td></tr>';
-    return '<tr><td class="no">'+no+'</td><td class="cat">'+escAttr(it.cat)+'</td>'+
-           '<td class="nm">'+escAttr(it.name)+'</td><td class="un">'+escAttr(it.unit)+'</td><td></td></tr>';
+  // 攤平成「行」：類別換了就插一列標題；編號照 items 順序，拍照回填靠它對品項
+  var lines = [], lastCat = null;
+  items.forEach(function(it, i) {
+    if (it.cat !== lastCat) { lines.push({ head: it.cat || '其他' }); lastCat = it.cat; }
+    lines.push({ it: it, no: i + 1 });
+  });
+
+  // 切成一欄一欄：標題不放在欄底，欄頂若不是標題就補上「（續）」
+  var cols = [], cur = [], curCat = null;
+  lines.forEach(function(ln) {
+    if (ln.head) curCat = ln.head;
+    if (cur.length === ROWS || (ln.head && cur.length === ROWS - 1)) { cols.push(cur); cur = []; }
+    if (cur.length === 0 && !ln.head) cur.push({ head: curCat + '（續）' });
+    cur.push(ln);
+  });
+  if (cur.length) cols.push(cur);
+  if (cols.length % 2) cols.push([]);
+
+  function row(ln) {
+    if (!ln) return '<tr><td class="no"></td><td class="nm"></td><td class="un"></td><td class="qty"></td></tr>';
+    if (ln.head) return '<tr class="grp"><td colspan="4">'+escAttr(ln.head)+'</td></tr>';
+    var name = String(ln.it.name || '').replace(/\s+/g, ' ').trim();
+    var len = name.replace(/[\x00-\xff]/g, '').length + name.replace(/[^\x00-\xff]/g, '').length * 0.55;
+    var cls = len > 12 ? 'nm xs' : 'nm';   // 字級統一，只有特別長的才縮小換行
+    return '<tr><td class="no">'+ln.no+'</td><td class="'+cls+'">'+escAttr(name)+'</td>'+
+           '<td class="un">'+escAttr(ln.it.unit)+'</td><td class="qty"></td></tr>';
   }
 
-  function block(list, startNo, pad) {
+  function block(col) {
     var body = '';
-    for (var i = 0; i < list.length; i++) body += row(list[i], startNo + i);
-    for (var j = 0; j < pad; j++) body += row(null, '');
-    return '<table><colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>'+
-      '<thead><tr><th>編號</th><th>類別</th><th>品項</th><th>單位</th><th>實際庫存</th></tr></thead>'+
+    for (var i = 0; i < ROWS; i++) body += row(col[i]);   // 不足的補空白列，臨時品項可手寫
+    return '<table><colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>'+
+      '<thead><tr><th>編號</th><th>品項</th><th>單位</th><th>實際庫存</th></tr></thead>'+
       '<tbody>'+body+'</tbody></table>';
   }
 
-  var pagesHtml = '';
-  for (var p = 0; p * PER_PAGE < items.length; p++) {
-    var chunk = items.slice(p * PER_PAGE, (p + 1) * PER_PAGE);
-    var half = Math.min(ROWS, Math.ceil(chunk.length / 2));
-    var left = chunk.slice(0, half);
-    var right = chunk.slice(half);
-    var isLast = (p + 1) * PER_PAGE >= items.length;
-    var padL = isLast ? 0 : ROWS - left.length;
-    var padR = isLast ? 2 : ROWS - right.length;   // 最後一頁多留 2 列給臨時品項
-    var base = p * PER_PAGE;
+  var pagesHtml = '', pageCount = cols.length / 2;
+  for (var p = 0; p < pageCount; p++) {
     pagesHtml += '<div class="sheet">'+
       '<div class="head"><h1>Otto2 ARTCLUB '+storeName+' 庫存盤點</h1>'+
-      '<div class="meta">週次 '+invWeekLabel(weekKey)+'　盤點人 ＿＿＿＿＿　日期 ＿＿＿＿＿'+
-      (p > 0 ? '　（第 '+(p+1)+' 頁）' : '')+'</div></div>'+
-      '<div class="cols">'+block(left, base + 1, padL)+block(right, base + left.length + 1, padR)+'</div>'+
+      '<div class="meta"><span>週次 '+invWeekLabel(weekKey)+'</span><span>盤點人 ＿＿＿＿＿＿</span><span>日期 ＿＿＿＿＿＿</span>'+
+      (pageCount > 1 ? '<span>第 '+(p+1)+' / '+pageCount+' 頁</span>' : '')+'</div></div>'+
+      '<div class="cols">'+block(cols[p*2])+block(cols[p*2+1])+'</div>'+
       '</div>';
   }
 
-  var css = '@page{size:A4 portrait;margin:11mm 9mm}'+
+  var css = '@page{size:A4 portrait;margin:10mm 9mm}'+
     '*{box-sizing:border-box}'+
     'body{font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;color:#111;background:#fff;margin:0;padding:16px}'+
-    '.sheet{page-break-after:always}.sheet:last-child{page-break-after:auto}'+
-    '.head{border-bottom:2.5px solid #111;padding-bottom:5px;margin-bottom:9px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}'+
-    'h1{font-size:18px;margin:0;letter-spacing:1px}'+
-    '.meta{font-size:13.5px;color:#444}'+
-    '.cols{display:flex;gap:7mm;align-items:flex-start}'+
+    '.sheet{width:192mm;page-break-after:always}.sheet:last-child{page-break-after:auto}'+
+    '.head{height:13mm;border-bottom:2.5px solid #111;margin-bottom:3mm;display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:2mm}'+
+    'h1{font-size:19px;margin:0;letter-spacing:1px;white-space:nowrap}'+
+    '.meta{font-size:13px;color:#333;display:flex;gap:5mm;white-space:nowrap}'+
+    '.cols{display:flex;gap:6mm;align-items:flex-start}'+
     'table{width:100%;border-collapse:collapse;table-layout:fixed}'+
-    'th,td{border:1px solid #444;text-align:center;overflow:hidden}'+
-    'th{background:#ebebeb;font-size:12.5px;font-weight:600;padding:5px 0}'+
-    'td{height:26px;font-size:13.5px}'+
-    'tbody tr:nth-child(even) td{background:#f6f6f6}'+
-    '.c1{width:12%}.c2{width:19%}.c3{width:37%}.c4{width:12%}.c5{width:20%}'+
+    'th,td{border:1px solid #555;text-align:center;overflow:hidden}'+
+    'th{background:#e4e4e4;font-size:12.5px;font-weight:600;height:8mm}'+
+    'td{height:'+ROW_MM+'mm;font-size:14px}'+
+    '.c1{width:13%}.c2{width:51%}.c3{width:12%}.c4{width:24%}'+
     '.no{color:#555;font-size:12.5px}'+
-    '.cat{color:#555;font-size:12px}'+
-    '.nm{font-weight:600;font-size:13.5px;border-right:2px solid #111;white-space:nowrap;text-overflow:ellipsis;padding:0 3px}'+
-    '.un{color:#555;font-size:12px}'+
+    '.nm{font-weight:600;font-size:14px;line-height:1.15;padding:0 4px;word-break:break-all}'+
+    '.nm.xs{font-size:12px}'+
+    '.un{color:#555;font-size:12.5px}'+
+    '.qty{border-left:2px solid #111}'+
+    'tr.grp td{background:#f0ece4;font-size:12.5px;font-weight:700;text-align:left;padding-left:8px;letter-spacing:2px;border-left:1px solid #555}'+
     '@media print{.noprint{display:none}body{padding:0}}';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><title>庫存盤點空白表</title>'+
