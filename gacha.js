@@ -185,11 +185,13 @@ function gcOverviewHtml(){
     h += '<div style="font-size:var(--fs-sm);line-height:1.9;margin-bottom:10px">' + lot.map(function(x){
       return gcEsc(x.name || '（未填姓名）') + ' <span class="muted">' + x.phone + '</span>' }).join('<br>') + '</div>' +
       (gcLotPrizes().length ? '<div style="font-size:var(--fs-sm);margin-bottom:8px">獎項（照順序抽）：' + gcLotPrizes().map(function(p){ return gcEsc(p.nm) + ' ' + p.n + ' 名' }).join('、') + '</div>' +
-        '<button class="btn btn-gold btn-sm" onclick="gcDrawLottery()">🎲 抽獎</button>' :
+        (gcOctLot.result ? gcOctResultHtml(gcOctLot.result) :
+        '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:8px;line-height:1.7">按下去就是正式抽獎，只能抽一次：結果會存起來、紅利自動入帳、實體獎品自動發獎品券、每位得主自動收到 LINE。</div>' +
+        '<button class="btn btn-gold btn-sm" id="gc-oct-draw" onclick="gcDrawOct()">🎲 正式抽獎</button>') :
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:var(--fs-sm)">抽出</span>' +
       '<input id="gc-lot-n" type="number" min="1" value="3" style="width:64px;padding:6px 8px;border:1px solid var(--border);border-radius:6px">' +
       '<span style="font-size:var(--fs-sm)">位</span><button class="btn btn-gold btn-sm" onclick="gcDrawLottery()">🎲 抽獎</button></div>');
-    if (gcLotteryPick) h += '<div style="margin-top:12px;padding:12px;background:#fbf6e8;border-radius:8px;font-size:var(--fs-sm);line-height:1.9">🎉 ' +
+    if (gcLotteryPick && !gcLotPrizes().length) h += '<div style="margin-top:12px;padding:12px;background:#fbf6e8;border-radius:8px;font-size:var(--fs-sm);line-height:1.9">🎉 ' +
       gcLotteryPick.map(function(x, i){ return (i + 1) + '. ' + (x.prize ? '<b>' + gcEsc(x.prize) + '</b>　' : '') + gcEsc(x.name || '（未填姓名）') + '　' + x.phone }).join('<br>') +
       '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">這個結果沒有存起來，請截圖或記下來。重按會重新抽。</div></div>';
   }
@@ -202,10 +204,26 @@ function gcSetLotSrc(k){ gcLotSrc = k; gcLotteryPick = null; renderGacha(); }
 async function gcLoadOctLot(){
   if (gcOctLoading) return;
   gcOctLoading = true;
-  try { var j = await staffApi('/staff/gacha/lottery-oct', {}); gcOctLot = { list: j.list || [], prizes: j.prizes || [] }; }
-  catch(e){ gcOctLot = { list: [], prizes: [] }; alert('讀十月名單失敗：' + (e && e.message || e)); }
+  try { var j = await staffApi('/staff/gacha/lottery-oct', {}); gcOctLot = { list: j.list || [], prizes: j.prizes || [], result: j.result || null }; }
+  catch(e){ gcOctLot = { list: [], prizes: [], result: null }; alert('讀十月名單失敗：' + (e && e.message || e)); }
   gcOctLoading = false;
   renderGacha();
+}
+/* 十月正式抽獎：伺服器抽、存結果、自動發紅利／獎品券、推 LINE（2026-10-28 大熊要自動），只能抽一次 */
+async function gcDrawOct(){
+  if (!confirm('確定要正式抽十月大抽獎嗎？\n\n抽完會自動入紅利、發獎品券、傳 LINE 給得主，不能重抽。')) return;
+  var b = document.getElementById('gc-oct-draw'); if (b) { b.disabled = true; b.textContent = '抽獎中…'; }
+  try { var j = await staffApi('/staff/gacha/lottery-oct/draw', {}); gcOctLot.result = j.result; }
+  catch(e){ alert('抽獎失敗：' + (e && e.message || e)); gcOctLot = null; }
+  renderGacha();
+}
+function gcOctResultHtml(r){
+  return '<div style="margin-top:4px;padding:12px;background:#fbf6e8;border-radius:8px;font-size:var(--fs-sm);line-height:1.9">🎉 已正式抽出（' + gcEsc(String(r.at || '').slice(0, 16).replace('T', ' ')) + ' UTC・' + gcEsc(r.by || '') + '・' + (r.total || 0) + ' 人參加）<br>' +
+    (r.winners || []).map(function(w, i){
+      return (i + 1) + '. <b>' + gcEsc(w.prize) + '</b>　' + gcEsc(w.name || '（未填姓名）') + '　' + w.phone +
+        '　<span class="muted">' + (w.given === false ? '⚠️ 發獎失敗' : w.type === 'bonus' ? '紅利已入帳' : '獎品券已發') + '・' +
+        (w.pushed ? 'LINE 已通知' : '<span style="color:var(--red)">LINE 沒送到（' + gcEsc(w.pushErr || '') + '），請手動聯絡</span>') + '</span>';
+    }).join('<br>') + '</div>';
 }
 /* 十月有設定獎項（後端 G_OCT_LOT）：照獎項順序分等級抽，每人最多中一個；聖誕季還沒設獎項，照人數抽 */
 function gcLotPrizes(){ return gcLotSrc === 'oct' && gcOctLot ? gcOctLot.prizes : []; }
