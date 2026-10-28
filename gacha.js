@@ -170,7 +170,7 @@ function gcOverviewHtml(){
   var lot = [];
   if (gcLotSrc === 'oct') {
     if (!gcOctLot) { gcLoadOctLot(); }
-    else lot = gcOctLot.slice();
+    else lot = gcOctLot.list.slice();
   } else {
     var pl = gcData.players || {};
     Object.keys(pl).forEach(function(ph){ if ((+pl[ph].lottery || 0) > 0) lot.push({ phone:ph, name:pl[ph].name || '' }) });
@@ -178,17 +178,19 @@ function gcOverviewHtml(){
   lot.sort(function(a, b){ return String(a.name).localeCompare(String(b.name)) });
   var tab = function(k, label){ return '<button class="btn btn-sm' + (gcLotSrc === k ? ' btn-gold' : '') + '" onclick="gcSetLotSrc(\'' + k + '\')">' + label + '</button>' };
   h += '<div class="card"><div class="card-title">' + gcEsc(cfg.lotteryName || '月底大抽獎券') + '</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:10px">' + tab('oct', '十月畢卡索（10/3–10/25）') + tab('now', '聖誕季（現在）') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px">' + tab('oct', '十月畢卡索（10/1–10/25）') + tab('now', '聖誕季（現在）') + '</div>' +
     '<div style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:10px;line-height:1.7">紅利領滿上限（會員 ' + cfg.cap + ' 點、新朋友 ' + (cfg.capNew != null ? cfg.capNew : cfg.cap) + ' 點）的人，每人一張抽獎券，大家中獎機會一樣。' +
     (gcLotSrc === 'oct' && !gcOctLot ? '讀取十月名單中…' : '目前 <b>' + lot.length + '</b> 人。') + '</div>';
   if (lot.length) {
     h += '<div style="font-size:var(--fs-sm);line-height:1.9;margin-bottom:10px">' + lot.map(function(x){
       return gcEsc(x.name || '（未填姓名）') + ' <span class="muted">' + x.phone + '</span>' }).join('<br>') + '</div>' +
+      (gcLotPrizes().length ? '<div style="font-size:var(--fs-sm);margin-bottom:8px">獎項（照順序抽）：' + gcLotPrizes().map(function(p){ return gcEsc(p.nm) + ' ' + p.n + ' 名' }).join('、') + '</div>' +
+        '<button class="btn btn-gold btn-sm" onclick="gcDrawLottery()">🎲 抽獎</button>' :
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:var(--fs-sm)">抽出</span>' +
       '<input id="gc-lot-n" type="number" min="1" value="3" style="width:64px;padding:6px 8px;border:1px solid var(--border);border-radius:6px">' +
-      '<span style="font-size:var(--fs-sm)">位</span><button class="btn btn-gold btn-sm" onclick="gcDrawLottery()">🎲 抽獎</button></div>';
+      '<span style="font-size:var(--fs-sm)">位</span><button class="btn btn-gold btn-sm" onclick="gcDrawLottery()">🎲 抽獎</button></div>');
     if (gcLotteryPick) h += '<div style="margin-top:12px;padding:12px;background:#fbf6e8;border-radius:8px;font-size:var(--fs-sm);line-height:1.9">🎉 ' +
-      gcLotteryPick.map(function(x, i){ return (i + 1) + '. ' + gcEsc(x.name || '（未填姓名）') + '　' + x.phone }).join('<br>') +
+      gcLotteryPick.map(function(x, i){ return (i + 1) + '. ' + (x.prize ? '<b>' + gcEsc(x.prize) + '</b>　' : '') + gcEsc(x.name || '（未填姓名）') + '　' + x.phone }).join('<br>') +
       '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">這個結果沒有存起來，請截圖或記下來。重按會重新抽。</div></div>';
   }
   h += '</div>';
@@ -200,15 +202,22 @@ function gcSetLotSrc(k){ gcLotSrc = k; gcLotteryPick = null; renderGacha(); }
 async function gcLoadOctLot(){
   if (gcOctLoading) return;
   gcOctLoading = true;
-  try { gcOctLot = (await staffApi('/staff/gacha/lottery-oct', {})).list || []; }
-  catch(e){ gcOctLot = []; alert('讀十月名單失敗：' + (e && e.message || e)); }
+  try { var j = await staffApi('/staff/gacha/lottery-oct', {}); gcOctLot = { list: j.list || [], prizes: j.prizes || [] }; }
+  catch(e){ gcOctLot = { list: [], prizes: [] }; alert('讀十月名單失敗：' + (e && e.message || e)); }
   gcOctLoading = false;
   renderGacha();
 }
+/* 十月有設定獎項（後端 G_OCT_LOT）：照獎項順序分等級抽，每人最多中一個；聖誕季還沒設獎項，照人數抽 */
+function gcLotPrizes(){ return gcLotSrc === 'oct' && gcOctLot ? gcOctLot.prizes : []; }
 function gcDrawLottery(){
-  var n = Math.max(1, +document.getElementById('gc-lot-n').value || 1);
+  var tiers = [];
+  gcLotPrizes().forEach(function(p){ for (var i = 0; i < p.n; i++) tiers.push(p.nm) });
+  var n = tiers.length || Math.max(1, +document.getElementById('gc-lot-n').value || 1);
   var pool = gcLotList.slice(), picked = [];
-  while (picked.length < n && pool.length) picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  while (picked.length < n && pool.length) {
+    var x = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    picked.push({ phone: x.phone, name: x.name, prize: tiers[picked.length] || '' });
+  }
   gcLotteryPick = picked;
   renderGacha();
 }
