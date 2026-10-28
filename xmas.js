@@ -51,7 +51,7 @@ function xmOverviewHtml(){
     xmStat(lights.toLocaleString(), '聖誕樹燈數', '目標 ' + (L[4] || 0).toLocaleString() + '，已亮 ' + done + ' / 5 層') +
     xmStat(d.stats.trees, '森林裡的樹', '上限 ' + (c.forestMax || 251)) +
     xmStat(d.stats.lots, '被認領的小屋', '共 ' + ((c.lotIdx || []).length) + ' 間') +
-    xmStat(d.stats.pts, '已發出的紅利', '會員上限 ' + c.pointCap + ' 點・非會員 ' + (c.pointCapNew == null ? 2 : c.pointCapNew) + ' 點') + '</div>';
+    xmStat(d.stats.pts, '已發出的紅利', '會員 每天 ' + c.pointDay + '／最多 ' + c.pointCap + ' 點・非會員 每天 ' + c.pointDayNew + '／最多 ' + c.pointCapNew + ' 點') + '</div>';
   var rows = (d.players || []).map(function(p){
     return '<tr><td>' + xmEsc(p.name || '—') + '</td><td>' + xmEsc(p.phone.slice(0,4) + '-***-' + p.phone.slice(7)) + '</td>' +
       '<td style="text-align:center">' + p.lights + '</td><td style="text-align:center">' + p.gifts + '</td>' +
@@ -100,8 +100,11 @@ function xmRewardsHtml(){
     xmRow('選紅利', xmInp('ornPoint', c.ornPoint, 'number', 70) + ' 點', '每人整個活動只能領一次真獎勵（紅利或票券擇一）；之後再集滿只能換禮物') +
     xmRow('選票券', xmInp('ornTicket.nm', (c.ornTicket || {}).nm, '', 160), '會寫進會員的票券，期限看「活動設定」的票券期限') + '</div>';
   h += '<div class="card"><div class="card-title">每人上限</div>' +
-    xmRow('紅利總上限', xmInp('pointCap', c.pointCap, 'number', 80) + ' 點', '一個會員整個活動從走格子拿到的紅利最多幾點（樹、吊飾、扭蛋機加起來）。拿滿就改送禮物。') +
-    xmRow('非會員紅利上限', xmInp('pointCapNew', c.pointCapNew == null ? 2 : c.pointCapNew, 'number', 80) + ' 點', '還不是會員的客人整個活動最多拿幾點紅利。拿滿就改送禮物，並提示成為會員能領更多。') +
+    /* 2026-10-28 大熊：每天都有機會，非會員每天 2／到 12/25 最多 25，會員兩倍；拿不到的改送禮物 */
+    xmRow('紅利上限（會員）', '每天 ' + xmInp('pointDay', c.pointDay == null ? 4 : c.pointDay, 'number', 60) + ' 點　整個活動 ' + xmInp('pointCap', c.pointCap, 'number', 70) + ' 點',
+      '整個活動＝樹、吊飾、扭蛋機、連續天數加起來；每天上限只管扭蛋機和連續天數，聖誕樹、吊飾的紅利不吃每天額度。') +
+    xmRow('紅利上限（非會員）', '每天 ' + xmInp('pointDayNew', c.pointDayNew == null ? 2 : c.pointDayNew, 'number', 60) + ' 點　整個活動 ' + xmInp('pointCapNew', c.pointCapNew == null ? 25 : c.pointCapNew, 'number', 70) + ' 點') +
+    xmRow('拿不到改送', '每 1 點紅利改送 ' + xmInp('ptsGift', c.ptsGift == null ? 3 : c.ptsGift, 'number', 60) + ' 個禮物', '超過上限不會跳「領滿」，直接改送聖誕禮物，客人可以拿去點燈。') +
     xmRow('每天扭蛋機次數', xmInp('gachaDayMax', c.gachaDayMax, 'number', 70) + ' 次　其中真獎勵最多 ' + xmInp('gachaRealDay', c.gachaRealDay, 'number', 60) + ' 次', '真獎勵＝紅利、票券；超過就改抽禮物') + '</div>';
   return h + xmSaveBar();
 }
