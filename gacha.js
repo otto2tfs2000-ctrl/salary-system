@@ -681,7 +681,7 @@ function gcgCheckHtml(){
     + chk(sumsOk, '每一級的機率加起來都是 100%')
     + chk(plansOk, '每一級都填了方案金額')
     + chk(!!sv.enabled, '「開放黃金扭蛋」已打開', '沒打開之前客人看不到金幣、不能抽（金幣照常發）')
-    + chk(!sv.expiry || sv.expiry >= gcgData.today, sv.expiry ? '金幣期限 ' + sv.expiry + ' 還沒過' : '金幣沒有設期限', '期限已經過了，客人抽不到');
+    + chk(true, '期限：金幣拿到後一個月內要轉，抽到的獎品再給一個月領，過了自動失效', '');
   /* 方案對照 */
   if (typeof mbActivePlans === 'function') {
     var plans = []; try { plans = mbActivePlans() } catch(e) {}
@@ -716,8 +716,8 @@ function gcgHtml(){
   h += '<div class="card"><div class="card-title">🪙 黃金扭蛋</div>' +
     '<label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-sm);margin:6px 0"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcgDraft.enabled=this.checked"> 開放黃金扭蛋</label>' +
     '<div class="lbl-grid" style="gap:10px;align-items:center;margin-top:10px;font-size:var(--fs-sm)">' +
-    '<label style="color:var(--text2)">金幣使用期限</label><div><input type="date" value="' + gcEsc(g.expiry || '') + '" style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="gcgDraft.expiry=this.value"> ' +
-    '<span class="muted" style="font-size:var(--fs-xs)">空白＝不限期限</span></div></div></div>';
+    /* 2026-10-28 大熊定：不再用統一日期，改成每枚金幣各自算（伺服器 gGoldCoinExp），這裡只說明 */
+    '<label style="color:var(--text2)">期限</label><div style="color:var(--text2)">金幣拿到後一個月內要轉；轉到的獎品從那天起一個月內要來領。過期都自動失效。</div></div></div>';
 
   /* 方案等級 */
   h += '<div class="card"><div class="card-title">方案等級</div>' +
@@ -808,7 +808,7 @@ function gcgHtml(){
     .sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
   var q = gcgCoinQ.trim(), qd = q.replace(/\D/g, '');
   var shown = list.filter(function(x){ return !q || (x.name && x.name.indexOf(q) >= 0) || (qd.length >= 3 && String(x.phone).indexOf(qd) >= 0) }).slice(0, 200);
-  var unused = list.filter(function(x){ return !x.used }).length;
+  var unused = list.filter(function(x){ return !x.used && !(x.exp && x.exp < gcgData.today) }).length;
   h += '<div class="card"><div class="card-title">金幣紀錄　<span style="font-size:var(--fs-sm);color:var(--text2);font-weight:400">共 ' + list.length + ' 枚・還沒抽 ' + unused + ' 枚</span></div>' +
     '<input placeholder="搜尋姓名或電話" value="' + gcEsc(gcgCoinQ) + '" onchange="gcgCoinQ=this.value;renderGacha()" style="width:100%;max-width:300px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:var(--fs-sm);margin-bottom:10px">';
   if (!shown.length) h += '<div class="empty">還沒有金幣紀錄</div>';
@@ -823,7 +823,9 @@ function gcgHtml(){
       (x.used
         ? '<span style="flex:1 1 160px;font-size:var(--fs-xs);color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">已抽' + (x.prizeNm ? '：' + gcEsc(x.prizeNm) : '') + '</span>' +
           '<a style="flex:0 0 64px;text-align:right;font-size:var(--fs-xs);white-space:nowrap;cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgUndoDraw(\'' + x._k + '\')">收回獎項</a>'
-        : '<span style="flex:1 1 160px;font-size:var(--fs-xs);color:var(--green2);white-space:nowrap">未抽</span>' +
+        : (x.exp && x.exp < gcgData.today
+          ? '<span style="flex:1 1 160px;font-size:var(--fs-xs);color:var(--text3);white-space:nowrap">已過期（' + gcEsc(x.exp.slice(5).replace('-', '/')) + '）</span>'
+          : '<span style="flex:1 1 160px;font-size:var(--fs-xs);color:var(--green2);white-space:nowrap">未抽' + (x.exp ? '・' + gcEsc(x.exp.slice(5).replace('-', '/')) + ' 到期' : '') + '</span>') +
           '<a style="flex:0 0 64px;text-align:right;font-size:var(--fs-xs);white-space:nowrap;cursor:pointer;text-decoration:underline;color:var(--red)" onclick="gcgRevoke(\'' + x._k + '\')">收回</a>') + '</div>';
   }).join('');
   return h + '</div>';
