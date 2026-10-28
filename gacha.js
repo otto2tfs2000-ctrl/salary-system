@@ -39,17 +39,21 @@ async function renderGacha(){
     el.innerHTML = '<div class="empty">載入扭蛋資料中…</div>';
     try { await gcLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到扭蛋資料：' + gcEsc(e.message) + '</div>'; return }
   }
-  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋']];
+  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋'],['silver','🥈 銀色扭蛋']];
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (gcTab === t[0] ? ' active' : '') + '" onclick="gcSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="gcReload()">↻ 重新讀取</button></div>';
-  if (gcData.isDefault && gcTab !== 'gold') h += '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm);margin-bottom:14px">' +
+  if (gcData.isDefault && gcTab !== 'gold' && gcTab !== 'silver') h += '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm);margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完獎品或活動設定按「儲存」之後，就會以這裡的為準。</div>';
   if (gcTab === 'gold' && !gcgData) {
     el.innerHTML = h + '<div class="empty">載入黃金扭蛋設定中…</div>';
     try { await gcgLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到黃金扭蛋設定：' + gcEsc(e.message) + '</div>'; return }
   }
-  h += gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
+  if (gcTab === 'silver' && !gcsData) {
+    el.innerHTML = h + '<div class="empty">載入銀色扭蛋設定中…</div>';
+    try { await gcsLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到銀色扭蛋設定：' + gcEsc(e.message) + '</div>'; return }
+  }
+  h += gcTab === 'silver' ? gcsHtml() : gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
   el.innerHTML = h;
   if (gcTab === 'log') {
     var sb = document.getElementById('gc-search');
@@ -1091,4 +1095,54 @@ async function gcgRevoke(key){
     await staffApi('/staff/gacha/gold/revoke', { key:key });
     await gcgLoad(); renderGacha();
   } catch(e) { alert('收回失敗：' + e.message) }
+}
+
+/* ══ 銀色扭蛋（2026-10-28）══
+   11 月來上課（報到或核銷後），家長下次打開遊樂島就自動拿到一顆；跟買方案送的「黃金扭蛋」分開，不要混。
+   這頁只管獎品和機率；扭蛋拿到後一個月內要轉，抽到的票券一個月內領（伺服器算）。 */
+var gcsData = null, gcsDraft = null;
+var GCS_TYPE = { gift:'走格子禮物', orn:'聖誕吊飾', bonus:'紅利點數', ticket:'票券／贈品', none:'銘謝惠顧' };
+async function gcsLoad(){
+  gcsData = await staffApi('/staff/gacha/silver', {});
+  gcsDraft = JSON.parse(JSON.stringify(gcsData.silver));
+}
+function gcsSet(i, k, v){ gcsDraft.prizes[i][k] = v; }
+function gcsAdd(){ gcsDraft.prizes.push({ id:'s' + Date.now().toString(36).slice(-5), ic:'🎁', nm:'', type:'gift', n:1, w:0 }); renderGacha() }
+function gcsDel(i){ gcsDraft.prizes.splice(i, 1); renderGacha() }
+function gcsHtml(){
+  var g = gcsDraft, tot = g.prizes.reduce(function(a, p){ return a + (+p.w || 0) }, 0);
+  var inp = function(i, k, v, w, type){ return '<input' + (type ? ' type="' + type + '"' : '') + ' value="' + gcEsc(v == null ? '' : v) + '" style="width:' + w + 'px;padding:6px 7px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="gcsSet(' + i + ',\'' + k + '\',this.value)">' };
+  var h = '<div class="card"><div class="card-title">🥈 銀色扭蛋</div>' +
+    '<div style="font-size:var(--fs-sm);color:var(--text2);line-height:1.8;margin-bottom:10px">11 月每上一堂課（老師報到或核銷之後），家長下次打開遊樂島就會拿到一顆銀色扭蛋；12 月上課改送聖誕吊飾。拿到後一個月內要轉，抽到的票券一個月內來店領，過期自動失效。' +
+    (gcsData.isDefault ? '<br><b>目前是程式內建的範例獎品，改好按「儲存」才會以這裡為準。</b>' : '') + '</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-sm)"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcsDraft.enabled=this.checked"> 開放銀色扭蛋（關掉時照常發，但客人轉不了）</label></div>';
+  h += '<div class="card"><div class="card-title">獎品與機率　<span style="font-size:var(--fs-sm);color:var(--text2);font-weight:400">機率是「權重」，照比例抽；目前加起來 ' + tot + '</span></div>' +
+    '<div style="overflow-x:auto"><table style="width:100%;font-size:var(--fs-sm);border-collapse:collapse"><tr style="color:var(--text2);text-align:left"><th>圖示</th><th>名稱</th><th>種類</th><th>數量／點數</th><th>權重</th><th>約</th><th>限量</th><th>已送出</th><th></th></tr>';
+  g.prizes.forEach(function(p, i){
+    var sel = '<select style="padding:6px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)" onchange="gcsSet(' + i + ',\'type\',this.value);renderGacha()">' +
+      Object.keys(GCS_TYPE).map(function(k){ return '<option value="' + k + '"' + (p.type === k ? ' selected' : '') + '>' + GCS_TYPE[k] + '</option>' }).join('') + '</select>';
+    var amt = p.type === 'gift' ? inp(i, 'n', p.n, 56, 'number') + ' 個' : p.type === 'bonus' ? inp(i, 'v', p.v, 56, 'number') + ' 點' : p.type === 'ticket' ? '<span class="muted">一個月內領</span>' : '—';
+    h += '<tr style="border-top:1px solid var(--border)"><td>' + inp(i, 'ic', p.ic, 40) + '</td><td>' + inp(i, 'nm', p.nm, 140) + '</td><td>' + sel + '</td><td style="white-space:nowrap">' + amt + '</td>' +
+      '<td>' + inp(i, 'w', p.w, 60, 'number') + '</td><td class="muted">' + (tot ? Math.round((+p.w || 0) / tot * 1000) / 10 + '%' : '—') + '</td>' +
+      '<td>' + inp(i, 'qty', p.qty == null ? '' : p.qty, 56, 'number') + '</td><td class="muted">' + ((gcsData.stock || {})[p.id] || 0) + '</td>' +
+      '<td><a style="color:var(--red);cursor:pointer;font-size:var(--fs-xs)" onclick="gcsDel(' + i + ')">刪除</a></td></tr>';
+  });
+  h += '</table></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="gcsAdd()">＋ 加一個獎品</button>' +
+    '<button class="btn" style="margin-left:auto" onclick="gcsSave()">儲存</button></div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-top:8px">限量空白＝不限。紅利點數是真成本，跟走格子的紅利上限分開算。</div></div>';
+  var coins = (gcsData.coins || []).slice().sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
+  var unused = coins.filter(function(c){ return !c.used && !(c.exp && c.exp < gcsData.today) }).length;
+  h += '<div class="card"><div class="card-title">發出去的銀色扭蛋　<span style="font-size:var(--fs-sm);color:var(--text2);font-weight:400">共 ' + coins.length + ' 顆・還沒轉 ' + unused + ' 顆</span></div>';
+  h += coins.length ? coins.slice(0, 200).map(function(c){
+    var st = c.used ? '已轉：' + gcEsc(c.prizeNm || '') : c.exp && c.exp < gcsData.today ? '已過期' : '未轉・' + gcEsc(String(c.exp || '').slice(5).replace('-', '/')) + ' 到期';
+    return '<div style="display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:var(--fs-sm);flex-wrap:wrap"><span style="width:90px;color:var(--text3)">' + gcEsc(c.date || String(c.at).slice(0, 10)) + '</span>' +
+      '<span style="flex:1 1 160px"><b>' + gcEsc(c.name || '（未填姓名）') + '</b> <span class="muted">' + gcEsc(c.phone || '') + '</span></span><span style="flex:1 1 160px;color:' + (c.used ? 'var(--text3)' : 'var(--green2)') + '">' + st + '</span></div>';
+  }).join('') : '<div class="empty">還沒有人拿到銀色扭蛋（11 月上課核銷後才會發）</div>';
+  return h + '</div>';
+}
+async function gcsSave(){
+  try {
+    await staffApi('/staff/gacha/silver/save', { silver: gcsDraft });
+    gcsData = null; await renderGacha(); alert('已儲存');
+  } catch(e){ alert('儲存失敗：' + e.message) }
 }
