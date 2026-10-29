@@ -248,6 +248,8 @@ function authApplyTabs(){
   if (!st && AUTH_BOOTSTRAP) return;      /* 系統剛裝好，全開讓人設定管理員 */
   var allowed = (st && Array.isArray(st.tabs)) ? st.tabs : [];
   if (st && st.role === "owner") return;   /* 管理員看全部 */
+  /* 2026-10-29 包班分頁是後來加的，行政帳號以前存的權限沒有它，行政一律看得到；老師要在員工帳號另外勾 */
+  if (st && st.role === "admin" && allowed.indexOf("baoban") < 0) allowed = allowed.concat(["baoban"]);
   var first = null;
   document.querySelectorAll(".tabs .tab").forEach(function(el){
     var k = el.dataset.tab;

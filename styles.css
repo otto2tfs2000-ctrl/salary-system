@@ -378,3 +378,15 @@ label.chk.top input{margin-top:3px}
 .fg textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 12px;
   border-radius:8px;font-size:16px;font-family:inherit;outline:none;resize:vertical}
 .fg textarea:focus{border-color:var(--gold)}
+
+/* ── ⚙️ 整理選單（menu.js，2026-10-29）── */
+.tabs .tab.mn-hide{display:none!important}
+.mn-open{padding:12px 20px;font-size:13.5px;color:var(--side-text);cursor:pointer;opacity:.75;margin-top:8px;border-top:1px solid rgba(255,255,255,.08)}
+.mn-open:hover{opacity:1;background:var(--side2)}
+.mn-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;display:none;align-items:flex-end;justify-content:center}
+.mn-mask.on{display:flex}
+.mn-sheet{background:#fff;width:100%;max-width:480px;max-height:90vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 18px 22px}
+@media (min-width:700px){ .mn-mask{align-items:center} .mn-sheet{border-radius:16px} }
+.mn-row{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)}
+.mn-chk{flex:1;display:flex;align-items:center;gap:8px;font-size:var(--fs-md);cursor:pointer}
+.mn-chk input{width:18px;height:18px}

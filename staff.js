@@ -41,6 +41,7 @@ var STAFF_TABS = [
   { k:"inventory",   n:"庫存盤點" },
   { k:"catalog",     n:"課程管理" },
   { k:"recipe",      n:"課程用料" },
+  { k:"baoban",      n:"包班" },
   { k:"quote",       n:"報價" },
   { k:"salary",      n:"本月薪資" },
   { k:"settings",    n:"老師設定" }
@@ -57,7 +58,7 @@ var STAFF_ACTS = [
 var STAFF_ROLES = {
   teacher: { n:"老師",   tabs:["today","monthly","recipe"], acts:[] },
   admin:   { n:"行政／業務",
-             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe"],
+             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe","baoban"],
              acts:["checkout","void","sellPlan"] },
   owner:   { n:"管理員", tabs:STAFF_TABS.map(function(t){ return t.k }),
              acts:STAFF_ACTS.map(function(a){ return a.k }) }

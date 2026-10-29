@@ -788,6 +788,7 @@ function doSwitchTab(tab) {
   if (tab==='baoban' && window.renderBaoban) renderBaoban();
   if (tab==='member') renderMember();
   if (window.funNav) funNav(tab);
+  if (window.mnApply) mnApply();   /* 剛離開的那頁如果是自己藏起來的，收回去 */
   if (tab==='fun' && window.renderFun) renderFun();
   if (tab==='events' && window.renderEvents) renderEvents();
   if (tab==='gacha' && window.renderGacha) renderGacha();

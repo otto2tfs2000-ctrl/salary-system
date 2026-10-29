@@ -715,6 +715,8 @@ async function bkToggleClosed(dsNow,sl){
 /* ══ 包班擋名額（2026-10-29，baoban.js 用）══
    內場包班＝那個時段整個關閉線上預約，跟上面「關閉預約」同一套（手動上限設 0），
    客人頁、AI 客服、後台不用另外改。包班取消／改日期時才由 baoban.js 叫 reopen 還原。 */
+/* 這個人有沒有權限看某個分頁（auth.js 沒權限的會設 display:none；自己在「整理選單」藏起來的不算） */
+function bkTabAllowed(k){ var t=document.querySelector('.tabs .tab[data-tab="'+k+'"]'); return !!t&&t.style.display!=="none" }
 window.bkBbApi={
   slotsOn:async function(dateStr){ await bkLoadSched(); return bkSlotsOn(dateStr) },
   isClosed:function(dateStr,sl){ return bkIsClosed(dateStr,sl) },
@@ -2282,7 +2284,7 @@ async function bkRender(noReload){
    '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
      '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button>'+
      '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送</button>'+
-     (window.bbNew?'<button class="bk-add bk-add-top bk-add-bb" id="bkAddBb">🏫 包班</button>':'')+'</div>'+
+     (window.bbNew&&bkTabAllowed("baoban")?'<button class="bk-add bk-add-top bk-add-bb" id="bkAddBb">🏫 包班</button>':'')+'</div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
