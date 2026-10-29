@@ -2281,7 +2281,8 @@ async function bkRender(noReload){
      ' 超過表定上限，請確認人手。</div>':"")+
    '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
      '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button>'+
-     '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送</button></div>'+
+     '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送</button>'+
+     (window.bbNew?'<button class="bk-add bk-add-top bk-add-bb" id="bkAddBb">🏫 包班</button>':'')+'</div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
        所以這裡用「當天時段 ∪ 實際有預約的時段」，不會有預約被藏起來。 */
@@ -2374,6 +2375,8 @@ async function bkRender(noReload){
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
   document.getElementById("bkAddHold").onclick=function(){ bkHoldSheet() };
+  /* 包班在自己的分頁填，日期先帶這一天 */
+  var bbBtn=document.getElementById("bkAddBb"); if(bbBtn)bbBtn.onclick=function(){ bbNew(dsNow.replace(/\//g,"-")) };
   root.querySelectorAll("[data-hded]").forEach(function(el){ el.onclick=function(){ bkHoldSheet(el.dataset.hded) } });
   root.querySelectorAll("[data-hdgo]").forEach(function(el){ el.onclick=function(){ bkManual(null,null,el.dataset.hdgo) } });
   bkShipBind(root);
@@ -4941,6 +4944,8 @@ css.textContent=
 ".bk-add.bk-add-hold{background:#fff;border-color:rgba(201,168,76,.6);color:#8a6a1f}"+
 ".bk-add.bk-add-hold:hover{background:#fbf6e8;border-color:#c9a84c;color:#8a6a1f}"+
 ".bk-add.bk-add-ship{background:#fff;border-color:#9CC9C1;color:#2F6B63}"+
+".bk-add.bk-add-bb{background:#fff;border-color:#D9C48A;color:#7A5A12}"+
+".bk-add.bk-add-bb:hover{background:#F4EEDD;border-color:#c9a84c;color:#7A5A12}"+
 ".bk-add.bk-add-ship:hover{background:#F4FAF9;border-color:#3E7C74;color:#2F6B63}"+
 /* 寄送清單＋寄送彈窗。彈窗不在 #bkRoot 底下，顏色一律寫死，不用 var(--bk…) */
 ".bk-shbar{position:relative;background:#EAF4F2;border:1.5px solid #9CC9C1;border-radius:12px;padding:12px 15px;"+

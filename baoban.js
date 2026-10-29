@@ -159,7 +159,12 @@ function bbNewRec(o){
     prepMat:false, prepPack:false, prepCar:false, links:'',
     photoDone:false, feedback:'', revisit:'', note:'', blockSlots:[], locked:[] }, o || {});
 }
-function bbNew(){ bbEdit = bbNewRec(); renderBaoban() }
+/* 今日排課的「🏫 包班」按鈕會帶當天日期過來 */
+function bbNew(date){
+  bbEdit = bbNewRec(date ? { date:date } : null);
+  if (!document.getElementById('tab-baoban').classList.contains('active')) doSwitchTab('baoban'); else renderBaoban();
+  window.scrollTo(0, 0);
+}
 function bbOpen(id){
   if (!bbData || !bbData[id]) return;
   bbEdit = bbNewRec(JSON.parse(JSON.stringify(bbData[id]))); delete bbEdit._new;
