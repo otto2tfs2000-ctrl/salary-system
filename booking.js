@@ -650,10 +650,12 @@ async function bkSetEve(dateStr,ev){
 async function bkSchedWrite(dateStr,val){
   var path=bkf("/schedule/"+dateStr.replace(/\//g,"-")+".json");
   try{
-    if(val===null)await fetch(path,{method:"DELETE"});
-    else await fetch(path,{method:"PUT",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(val)});
-  }catch(e){ alert("班表儲存失敗，請檢查網路連線") }
+    var r=(val===null)?await fetch(path,{method:"DELETE"})
+      :await fetch(path,{method:"PUT",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(val)});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return true;
+  }catch(e){ alert("班表儲存失敗，請檢查網路連線"); return false }
 }
 /* 這個時段（10:00-12:00／14:00-16:00／16:00-18:00／晚上）對到 bkSchedVal
    裡哪一個手動上限欄位。14:00-16:00 跟 16:00-18:00 以前共用 capPM，
@@ -686,11 +688,10 @@ async function bkSetCap(dateStr,slot,val,closing){
   var packed=bkSchedPack(cur.t,cur.tPM,cur.ev,capAM,capPM,capEve,capPM2,capPrev);
   if(typeof packed==="number"&&packed===bkBaseOn(dateStr)&&bkSchedVal(dateStr)){
     delete bkSched[dateStr];
-    await bkSchedWrite(dateStr,null);
-    return;
+    return await bkSchedWrite(dateStr,null);
   }
   bkSched[dateStr]=packed;
-  await bkSchedWrite(dateStr,packed);
+  return await bkSchedWrite(dateStr,packed);
 }
 /* ══ 時段關閉／重新開放預約（2026-09-23）══
    關閉＝把這個時段的手動上限設成 0。容量公式本來就是「老師排班 vs 手動上限取小」，
@@ -701,6 +702,8 @@ function bkIsClosed(d,sl){ var v=bkSchedVal(d); return !!(v&&v[bkCapKind(sl)]===
 async function bkToggleClosed(dsNow,sl){
   if(!(await bkSchedFreshOrStop(dsNow)))return;
   if(bkIsClosed(dsNow,sl)){
+    var own=window.bbSlotOwner&&bbSlotOwner(dsNow,sl);
+    if(own&&!confirm("這個時段是「"+own.org+"」包班擋掉的。\n\n確定要重新開放給客人線上預約嗎？"))return;
     var v=bkSchedVal(dsNow), prev=v&&v.capPrev?v.capPrev[bkCapKind(sl)]:null;
     await bkSetCap(dsNow,sl,(prev==null||prev<0)?null:prev);
   }else{
@@ -709,6 +712,35 @@ async function bkToggleClosed(dsNow,sl){
   }
   bkRender();
 }
+/* ══ 包班擋名額（2026-10-29，baoban.js 用）══
+   內場包班＝那個時段整個關閉線上預約，跟上面「關閉預約」同一套（手動上限設 0），
+   客人頁、AI 客服、後台不用另外改。包班取消／改日期時才由 baoban.js 叫 reopen 還原。 */
+window.bkBbApi={
+  slotsOn:async function(dateStr){ await bkLoadSched(); return bkSlotsOn(dateStr) },
+  isClosed:function(dateStr,sl){ return bkIsClosed(dateStr,sl) },
+  /* 回傳 "closed"＝這次關的；"already"＝本來就關著（不是包班關的，之後不要替別人打開）；false＝失敗 */
+  close:async function(dateStr,sl){
+    if(!(await bkSchedFreshOrStop(dateStr)))return false;
+    if(bkIsClosed(dateStr,sl))return "already";
+    return (await bkSetCap(dateStr,sl,0,true))?"closed":false;
+  },
+  reopen:async function(dateStr,sl){
+    if(!(await bkSchedFreshOrStop(dateStr)))return false;
+    if(!bkIsClosed(dateStr,sl))return true;
+    var v=bkSchedVal(dateStr), prev=v&&v.capPrev?v.capPrev[bkCapKind(sl)]:null;
+    return !!(await bkSetCap(dateStr,sl,(prev==null||prev<0)?null:prev));
+  },
+  /* 這個時段已經約了哪些客人（擋之前先提醒，已約的人不會被取消） */
+  booked:async function(dateStr,sl){
+    var all=await bkFetchAll()||{};
+    return Object.keys(all).map(function(k){ return all[k] }).filter(function(b){
+      return b&&b.date===dateStr&&b.status!=="cancelled"&&b.status!=="expired"&&bkHitsSlot(b,sl) })
+      .map(function(b){ return {name:(b.customer&&b.customer.name)||"—",people:+b.people||0} });
+  },
+  /* 今日排課已經畫出來過才重畫（還沒登入／還沒開過就不要搶先去抓預約） */
+  render:function(){ var r=document.getElementById("bkRoot");
+    if(r&&r.children.length&&document.getElementById("tab-today").classList.contains("active"))bkRender(true) }
+};
 function bkCapOpen(dsNow,sl){
   var kind=bkCapKind(sl);
   var cur=bkSchedVal(dsNow);
@@ -2217,6 +2249,7 @@ async function bkRender(noReload){
    bkNotifBannerHtml()+
    bkCancelBannerHtml()+
    bkHoldBannerHtml()+
+   (window.bbDayHtml?bbDayHtml(dsNow,today):"")+
    bkShipBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
@@ -2292,7 +2325,7 @@ async function bkRender(noReload){
         (closed
           ?n+' 位'+akText
           :n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":""))+'</span>'+
-        (closed?'<span class="bk-tag bk-closedtag">已關閉預約</span>':'')+
+        (closed?'<span class="bk-tag bk-closedtag">'+(window.bbSlotOwner&&bbSlotOwner(dsNow,sl)?'🏫 包班・已關閉預約':'已關閉預約')+'</span>':'')+
         (sl!=="其他"?'<span class="bk-closebtn'+(closed?' on':'')+'" data-closebtn="'+esc(slKey)+'">'+
           (closed?"重新開放":"關閉預約")+'</span>':'')+
         (sl!=="其他"&&!closed?'<span class="bk-capbtn" data-capbtn="'+esc(slKey)+'">'+(capIsSet?"改上限":"設上限")+'</span>':'')+

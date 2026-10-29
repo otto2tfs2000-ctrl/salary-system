@@ -785,6 +785,7 @@ function doSwitchTab(tab) {
   if (tab==='today' && window.bkRender) bkRender();
   if (tab==='sched' && window.bkSchedRender) bkSchedRender();
   if (tab==='quote' && window.renderQuote) renderQuote();
+  if (tab==='baoban' && window.renderBaoban) renderBaoban();
   if (tab==='member') renderMember();
   if (window.funNav) funNav(tab);
   if (tab==='fun' && window.renderFun) renderFun();

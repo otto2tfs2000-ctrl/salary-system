@@ -814,6 +814,7 @@ function qgSkeleton(){
 
   h += '<div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap">';
   h +=   '<button class="btn btn-gold" id="qg-copy">複製報價文字</button>';
+  h +=   '<button class="btn btn-outline" id="qg-toBb">🏫 成交了，轉成包班</button>';
   h +=   '<button class="btn btn-outline" id="qg-reset">回到預設條件</button>';
   h += '</div></div>';
 
@@ -1079,6 +1080,12 @@ function qgBindEvents(){
   });
 
   document.getElementById('qg-copy').addEventListener('click', qgCopyText);
+  /* 2026-10-29：報價成交 → 帶人數、課程、每人價、總額去包班頁 */
+  document.getElementById('qg-toBb').addEventListener('click', function(){
+    if (!window.bbFromQuote) return;
+    var r = qgCompute(qgCase, qgParams());
+    bbFromQuote({ venue:qgCase.venue, n:qgCase.n, course:qgCase.course, per:r.perTax, total:r.revTax });
+  });
   document.getElementById('qg-reset').addEventListener('click', function(){
     qgCase = qgNewCase(qgCase.venue);
     renderQuote();
