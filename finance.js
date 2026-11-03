@@ -34,6 +34,7 @@ var FN_WAYS = [
   {k:"transfer",n:"匯款"}
 ];
 var FN_CULTURE = "culture";   /* 文化幣 */
+var FN_PLANPAY = {"現金":"cash","刷卡":"card","信用卡":"card","LINE Pay":"linepay","匯款":"transfer","文化幣":"culture"};
 /* 這幾種是扣既有餘額，不是收錢，現金流完全不算 */
 var FN_NONCASH = ["points","sessions","voucher"];
 
@@ -208,7 +209,8 @@ function fnCash(){
     (ps[d]||[]).forEach(function(x){
       /* 抵訂金的方案：訂金那段收款當天已經算過，這裡只算這次實收 */
       var amt=(x.paid!=null?+x.paid:+x.price)||0; if(!amt)return;
-      var k=x.pay||"";
+      /* 賣方案視窗存的是中文（現金、刷卡…），這邊要換成代碼才對得上 */
+      var k=FN_PLANPAY[x.pay]||x.pay||"";
       if(k===FN_CULTURE){ cult.checkout+=amt; return }
       if(o[k])o[k].checkout+=amt;
       else note.push("賣方案的付款方式對不上（"+(x.plan||"")+" "+fnMoney(amt)+"），先沒算進現金流");
