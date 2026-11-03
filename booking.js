@@ -105,6 +105,8 @@ function bkDepState(b){
   var d=b&&b.deposit;
   if(!d)return {s:"none"};
   var w=bkDepWay(d.method||d.name);
+  /* 這筆訂金已經拿去抵方案了（member.js mbDepMarkUsed），核銷不能再扣一次 */
+  if(d.usedPlan)return {s:"plan",way:bkDepWay(d.paidWay)||w,amt:+d.amount||0,plan:d.usedPlan.plan||""};
   /* 現場登記寫的是 method:"other"、amount:0，那種不用收訂金 */
   if(!w&&!(+d.amount>0)&&d.status!=="paid")return {s:"none"};
   if(w==="points")return {s:"points"};
@@ -1983,6 +1985,16 @@ async function bkShowBalance(phone,name,b){
   var sellBtn=document.getElementById("bkBalSell");
   if(sellBtn)sellBtn.onclick=async function(){ await bkSellPlanFor(phone) };
 }
+/* 賣方案抵了訂金：member.js 通知這邊。不能只等下次重抓——手上這份 bkList 沒更新的話，
+   馬上按核銷還是會看到訂金可以扣，同一筆就抵兩次了。 */
+window.bkDepositMoved=function(list,info){
+  bkMir.force=true;
+  list.forEach(function(o){
+    bkList.forEach(function(b){
+      if(b.id===o.bookingId&&b.deposit)b.deposit.usedPlan=info });
+  });
+  bkLoadHolds().then(function(){ window.bkBbApi.render() });
+};
 /* 銷課旁邊的「賣方案」快捷鈕，直接借用會員分頁那套介面，
    member.js 沒有另外包 IIFE，這裡可以直接呼叫 mbSell。
    注意：mbSell 只認 mbList 裡已經存在的會員，找不到就直接 return、完全沒反應——
@@ -2720,6 +2732,8 @@ function bkCard(b){
       (dp.date?'　'+esc(dp.date.slice(5)):'')+'</span>';
   else if(dp.s==="points")
     depTag='<span class="bk-tag s">訂金・儲值金預扣</span>';
+  else if(dp.s==="plan")
+    depTag='<span class="bk-tag d">訂金 $'+dp.amt.toLocaleString()+' 已抵方案'+(dp.plan?'・'+esc(dp.plan):'')+'</span>';
   var doneHtml="";
   if(c){
     var lines='<div class="bk-dline"><span>課程</span><b>$'+(+c.courseAmt||0).toLocaleString()+'</b></div>';
@@ -3194,6 +3208,8 @@ async function bkCheckout(id){
    '<h3>'+(old?"修正核銷":"核銷")+'</h3>'+
    '<div class="bk-sh2">'+b.date+'　'+esc(b.actualTime||b.slot)+'　'+esc(b.customer&&b.customer.name||"")+'　'+(b.people||1)+' 位</div>'+
    (old?'<div class="bk-warn">這筆已核銷過。按確認會先沖銷原本那筆，再寫入新的，原始紀錄不會消失。</div>':'')+
+   (!old&&bkDepState(b).s==="plan"?'<div class="bk-info">訂金 $'+bkDepState(b).amt.toLocaleString()+
+     ' 已經抵方案了，這筆課不會再扣訂金，課程費用請照實收或扣點。</div>':'')+
    '<div id="ckWho"></div>'+
    '<div class="bk-f2"><div class="bk-f"><label>大人</label>'+
        '<input id="ckAdult" inputmode="numeric" value="'+nAdult+'"></div>'+

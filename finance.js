@@ -206,7 +206,8 @@ function fnCash(){
   Object.keys(ps||{}).forEach(function(d){
     if(!fnInRange(d))return;
     (ps[d]||[]).forEach(function(x){
-      var amt=+x.price||0; if(!amt)return;
+      /* 抵訂金的方案：訂金那段收款當天已經算過，這裡只算這次實收 */
+      var amt=(x.paid!=null?+x.paid:+x.price)||0; if(!amt)return;
       var k=x.pay||"";
       if(k===FN_CULTURE){ cult.checkout+=amt; return }
       if(o[k])o[k].checkout+=amt;
@@ -510,6 +511,11 @@ function fnDetailHtml(x){
     if(+p.sessions)h+='<div class="fn-dl"><span>給堂數</span><b>'+(+p.sessions)+' 堂</b></div>';
     if(+p.voucher) h+='<div class="fn-dl"><span>表框折價金</span><b>'+fnMoney(p.voucher)+'</b></div>';
     h+='<div class="fn-dl"><span>付款方式</span><b>'+fnEsc(fnWayName(x.pay))+'</b></div>';
+    if(+p.depositUsed){
+      h+='<div class="fn-dl"><span>方案售價</span><b>'+fnMoney(x.amt)+'</b></div>';
+      h+='<div class="fn-dl"><span>訂金抵扣</span><b>−'+fnMoney(p.depositUsed)+'</b></div>';
+      h+='<div class="fn-dl tot"><span>當天實收</span><b>'+fnMoney(p.paid)+'</b></div>';
+    }else
     h+='<div class="fn-dl tot"><span>實收金額</span><b>'+fnMoney(x.amt)+'</b></div>';
   }else{
     var m2=x.raw;

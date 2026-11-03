@@ -11,6 +11,8 @@ var MB_NOTIFY = 'https://otto2-notify-production.up.railway.app';
 var mbList = null, mbLoading = false, mbQuery = '', mbOpenPhone = null, mbTab = 'members';
 
 var mbf = function(p){ return MB_URL.replace(/\/$/, '') + p };
+/* 訂金帳在另一個資料庫（otto2-2026/deposits），賣方案抵訂金要讀寫它 */
+var mbSalf = function(p){ return 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app' + p };
 function mbEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
 function mbNorm(p){
@@ -794,6 +796,7 @@ function mbSell(phone){
        '</div>' +
        '<div class="fg" style="margin-bottom:0"><label>到期日（不填＝不設效期）</label><input id="mb-s-bf-exp" type="date" oninput="mbSellPreview(\'' + phone + '\')"></div>' +
        '</div>';
+  h += '<div id="mb-s-dep"></div>';
   h += '<div id="mb-s-normal">';
   var rnDef = mbIsRenewal(m), rnWhy = mbRenewWhy(m);
   h += '<div class="fg"><label>會員身分（決定回饋點數）</label>' +
@@ -844,7 +847,9 @@ function mbSell(phone){
        '<button class="btn btn-gold" style="flex:2" id="mb-s-ok" onclick="mbSellSave(\'' + phone + '\')">確認售出</button></div>';
   mbModal(h);
   mbSplitEven();
+  mbSellDeps = [];
   mbSellPreview(phone);
+  mbSellDepLoad(phone);
   /* 會員檔案沒寫 LINE，不代表客人沒用 LINE 開過預約頁——新客開頁時還沒建檔，
      LINE 只記在別處。問伺服器找回來，找到就換成可勾的通知（2026-10-04）。 */
   if (!m.lineUserId) staffMemberLine(phone).then(function(uid){
@@ -864,7 +869,7 @@ function mbSell(phone){
 function mbSellIsBf(){ var c = document.getElementById('mb-s-bf'); return !!(c && c.checked) }
 function mbSellBfToggle(phone){
   var on = mbSellIsBf();
-  ['mb-s-normal', 'mb-s-notify-wrap'].forEach(function(id){
+  ['mb-s-normal', 'mb-s-notify-wrap', 'mb-s-dep'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = on ? 'none' : '';
   });
   var bw = document.getElementById('mb-s-bf-wrap'); if (bw) bw.style.display = on ? '' : 'none';
@@ -887,6 +892,119 @@ function mbSellBfVals(){
   var n = function(id){ var v = +((document.getElementById(id) || {}).value); return isNaN(v) ? 0 : v };
   return { pts: n('mb-s-bf-pts'), ses: n('mb-s-bf-ses'), vou: n('mb-s-bf-vou'),
            exp: ((document.getElementById('mb-s-bf-exp') || {}).value || '').trim() };
+}
+
+/* ══ 已收訂金抵方案（2026-11-03）══════════════════════
+   客人付了訂金來上課，上完當場買方案，訂金要從方案價扣掉，只收差額。
+
+   錢的算法：訂金當初已經在收款那天進了現金流（deposits），所以這邊方案
+   業績仍記全額，現金流只記這次實收（planSales 的 paid），兩天加起來剛好是
+   方案價，不會重複。
+
+   訂金標上 usedPlan 之後，核銷那筆課就不再扣它（bkDepState 回 "plan"），
+   不然同一筆訂金會抵兩次。待排課的訂金另外把 bookingId 填成 plan_xxx，
+   後台黃色清單和客人端 /liff/hold 都是看 bookingId 空白，不用改後端就會消失。 */
+var mbSellDeps = [], mbSellDepTk = 0;
+async function mbDepFind(phone){
+  var r = await fetch(mbSalf('/deposits.json'));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  var all = await r.json() || {};
+  var mine = Object.keys(all).map(function(k){
+    return all[k] && typeof all[k] === 'object' ? Object.assign({}, all[k], { id: k }) : null;
+  }).filter(function(o){
+    return o && !o.voided && !o.usedPlan && +o.amount > 0 && mbNorm(o.phone) === phone;
+  });
+  var free = [], spent = [], now = Date.now();
+  await Promise.all(mine.map(async function(o){
+    if (!o.bookingId) { free.push(o); return; }
+    var rb = await fetch(mbf('/bookings/' + o.bookingId + '.json'));
+    if (!rb.ok) throw new Error('HTTP ' + rb.status);
+    var b = await rb.json();
+    if (b && b.checkout) {
+      /* 已經核銷扣抵過課程。只提醒最近的，老會員的陳年訂金不用每次都跳出來 */
+      if (+b.checkout.depositAmt && now - new Date(b.checkout.at).getTime() < 3 * 864e5) spent.push(o);
+      return;
+    }
+    if (b && b.deposit && b.deposit.usedPlan) return;
+    o.bkExists = !!b;
+    if (b) o.classDate = b.date || o.classDate;
+    o.bkGone = !b ? '預約已不在' : (b.status === 'cancelled' ? '預約已取消' : (b.status === 'expired' ? '預約已過期' : ''));
+    free.push(o);
+  }));
+  var byDate = function(a, c){ return String(a.date || '').localeCompare(String(c.date || '')) };
+  return { free: free.sort(byDate), spent: spent.sort(byDate) };
+}
+function mbDepLabel(o){
+  var way = o.wayName || { cash:'現金', linepay:'LINE Pay', card:'刷卡', transfer:'匯款' }[o.way] || o.way || '';
+  return '$' + (+o.amount).toLocaleString() + (way ? '・' + mbEsc(way) : '') +
+    (o.date ? '・' + mbEsc(String(o.date).slice(5)) + ' 收' : '') +
+    (o.classDate ? '・上課日 ' + mbEsc(String(o.classDate).slice(5)) : '・還沒排課') +
+    (o.bkGone ? '・<span style="color:var(--red)">' + o.bkGone + '</span>' : '');
+}
+async function mbSellDepLoad(phone){
+  var box = document.getElementById('mb-s-dep');
+  if (!box) return;
+  var tk = ++mbSellDepTk;
+  var found;
+  try { found = await mbDepFind(phone); }
+  catch(e) {
+    if (tk !== mbSellDepTk) return;
+    box.innerHTML = '<div class="info-box" style="border-color:var(--red);margin-bottom:12px">查訂金失敗（' + mbEsc(e.message) +
+      '）。這位客人如果有付訂金，請關掉重開這個視窗再賣，不要先收全額。</div>';
+    return;
+  }
+  /* 查詢途中視窗可能已經換人開了 */
+  if (tk !== mbSellDepTk) return;
+  mbSellDeps = found.free;
+  var h = '';
+  if (found.free.length) {
+    h += '<div class="card" style="margin-bottom:12px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">這位客人有已收的訂金，要抵方案就打勾</div>';
+    found.free.forEach(function(o, i){
+      h += '<label style="display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);cursor:pointer;padding:3px 0">' +
+        '<input type="checkbox" class="mb-s-dep-cb" data-i="' + i + '" style="width:16px;height:16px;flex-shrink:0" onchange="mbSellPreview(\'' + phone + '\')"> ' +
+        '<span>扣除訂金 ' + mbDepLabel(o) + '</span></label>';
+    });
+    h += '<div id="mb-s-dep-due" style="margin-top:6px"></div></div>';
+  }
+  if (found.spent.length) {
+    h += '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:12px;line-height:1.7">訂金 ' +
+      found.spent.map(function(o){ return '$' + (+o.amount).toLocaleString() }).join('、') +
+      ' 已經在核銷時扣抵課程了。要改抵方案，請先把那筆核銷按「作廢」，再回來賣方案。</div>';
+  }
+  box.innerHTML = h;
+  mbSellPreview(phone);
+}
+function mbSellDepSel(){
+  if (mbSellIsBf()) return [];
+  var out = [];
+  document.querySelectorAll('.mb-s-dep-cb').forEach(function(c){
+    if (c.checked && mbSellDeps[+c.dataset.i]) out.push(mbSellDeps[+c.dataset.i]);
+  });
+  return out;
+}
+function mbSellDepSum(list){
+  return list.reduce(function(s, o){ return s + (+o.amount || 0) }, 0);
+}
+/* 把訂金標成已抵方案。方案那邊已經入帳了，所以這裡任何一筆失敗都要讓行政知道，
+   沒標到的話那筆訂金之後核銷時還會再扣一次。 */
+async function mbDepMarkUsed(list, info){
+  var fails = [];
+  await Promise.all(list.map(async function(o){
+    try {
+      var body = { usedPlan: info };
+      if (!o.bookingId) body.bookingId = 'plan_' + info.saleKey;
+      var r1 = await fetch(mbSalf('/deposits/' + o.id + '.json'), { method:'PATCH',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if (!r1.ok) throw new Error('HTTP ' + r1.status);
+      /* 預約被刪掉的不能寫：PATCH 會憑空生出一筆沒有日期的預約 */
+      if (o.bookingId && o.bkExists) {
+        var r2 = await fetch(mbf('/bookings/' + o.bookingId + '/deposit.json'), { method:'PATCH',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify({ usedPlan: info }) });
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+      }
+    } catch(e) { fails.push('$' + (+o.amount).toLocaleString() + '（' + e.message + '）') }
+  }));
+  return fails;
 }
 
 function mbSellPreview(phone){
@@ -922,6 +1040,12 @@ function mbSellPreview(phone){
   }
   var i = document.getElementById('mb-s-plan').value;
   var box = document.getElementById('mb-s-prev');
+  var depList = mbSellDepSel(), depSum = mbSellDepSum(depList);
+  var dueBox = document.getElementById('mb-s-dep-due');
+  if (dueBox) dueBox.innerHTML = !depSum ? '' : (i === ''
+    ? '<div class="muted" style="font-size:var(--fs-sm)">選了方案會算出這次要收多少</div>'
+    : '<div style="font-size:var(--fs-md)">這次要收 <strong style="color:var(--gold2);font-size:var(--fs-lg)">$' +
+      Math.max(0, (+mbActivePlans()[+i].price || 0) - depSum).toLocaleString() + '</strong></div>');
   if (i === '' || !m) { box.innerHTML = '<div class="muted" style="font-size:var(--fs-sm)">選了方案會顯示明細</div>'; return; }
   var p = mbActivePlans()[+i];
   var renew = mbSellRenew(m);
@@ -948,6 +1072,11 @@ function mbSellPreview(phone){
   h += '<span style="background:' + (renew ? 'var(--bg3)' : 'var(--gold)') + ';color:' + (renew ? 'var(--text2)' : '#000') +
        ';padding:2px 10px;border-radius:99px;font-size:var(--fs-xs);font-weight:700">' + (renew ? '續約會員' : '新客首購') + '</span>';
   h += '<br>售價 <strong>$' + (+p.price || 0).toLocaleString() + '</strong>';
+  if (depSum) {
+    h += '<br>訂金抵扣 −$' + depSum.toLocaleString();
+    h += '<br>這次要收 <strong style="color:var(--gold2)">$' + Math.max(0, (+p.price || 0) - depSum).toLocaleString() + '</strong>';
+    if (depSum > (+p.price || 0)) h += '<br><span style="color:var(--red)">訂金比方案價還多，請確認有沒有勾錯</span>';
+  }
   if (+p.points) h += '<br>基本點數 +' + (+p.points).toLocaleString();
   if (+p.bonusPoints) h += '<br>創作回饋 +' + (+p.bonusPoints).toLocaleString();
   if (giftPts) h += '<br>' + (renew ? '續約回饋' : ('首次入會回饋（' + (timing === 'today' ? '體驗當天' : '本月內') + '）')) + ' <span style="color:var(--gold2)">+' + giftPts.toLocaleString() + '</span>';
@@ -1007,7 +1136,24 @@ async function mbSellSave(phone){
     primaryPts = alloc.buyer;
   }
 
+  var depList = mbSellDepSel(), depSum = mbSellDepSum(depList);
+  var depPaid = (+p.price || 0) - depSum;
+  if (depPaid < 0) { alert('勾選的訂金比方案價還多，請確認有沒有勾錯'); return; }
+  if (depList.length) {
+    /* 視窗開著的這段時間，訂金可能已經被別台電腦用掉，存檔前再查一次 */
+    var depNow;
+    try { depNow = await mbDepFind(phone); }
+    catch(e) { alert('確認訂金失敗：' + e.message + '\n還沒有入帳，請再按一次。'); return; }
+    var stillFree = depNow.free.map(function(o){ return o.id });
+    if (depList.some(function(o){ return stillFree.indexOf(o.id) < 0 })) {
+      alert('勾選的訂金剛剛已經被用掉或改過了，請重新確認。');
+      mbSellDepLoad(phone);
+      return;
+    }
+  }
+
   if (!confirm('確認售出？\n\n' + p.name + '　$' + (+p.price || 0).toLocaleString() + '（' + pay + '）\n' +
+      (depSum ? '訂金抵扣 −$' + depSum.toLocaleString() + '\n這次要收 $' + depPaid.toLocaleString() + '\n' : '') +
       (renew ? '身分：續約會員' : '身分：新客首購（' + (timing === 'today' ? '體驗當天' : '本月內') + '）') +
       (renew !== rnAuto ? '（人工改的，系統原本判斷是' + (rnAuto ? '續約' : '新客') + '）' : '') + '\n' +
       (split.on
@@ -1028,8 +1174,11 @@ async function mbSellSave(phone){
   var now = mbNow();
   var stamp = now.replace(/[-:.TZ]/g, '').slice(0, 14);
   var by = (typeof CURRENT_USER !== 'undefined' && CURRENT_USER) ? CURRENT_USER : 'admin';
-  var reason = p.name + '（' + pay + '）' + (note ? '・' + note : '');
+  var reason = p.name + '（' + pay + '）' +
+    (depSum ? '・訂金抵 $' + depSum.toLocaleString() + '，實收 $' + depPaid.toLocaleString() : '') +
+    (note ? '・' + note : '');
   var base = { at: now, by: by, planName: p.name, pay: pay, renew: renew };
+  if (depSum) { base.depositUsed = depSum; base.paid = depPaid; }
   /* 身分是人工改的就記一筆，之後對帳看得出來為什麼回饋是這個數 */
   if (renew !== rnAuto) base.renewManual = true;
   if (!renew) base.timing = timing;
@@ -1132,6 +1281,12 @@ async function mbSellSave(phone){
     }
   }
 
+  var depFails = [];
+  if (depList.length) {
+    depFails = await mbDepMarkUsed(depList, { plan: p.name, saleKey: stamp, amount: depSum, at: now, by: by, phone: phone });
+    if (window.bkDepositMoved) try { window.bkDepositMoved(depList, { plan: p.name, saleKey: stamp, at: now, by: by }) } catch(e) {}
+  }
+
   /* 黃金扭蛋金幣：方案金額一模一樣落在「扭蛋活動→黃金扭蛋」某一級，就送那一級的金幣。
      發幣失敗不擋流程（方案已經入好了），跳提醒請行政去手動補發 */
   var goldN = 0, goldTier = '', goldErr = '', goldOpen = false;
@@ -1141,7 +1296,7 @@ async function mbSellSave(phone){
   } catch(e) { goldErr = e.message || '連線失敗' }
 
   /* 方案收入記進當天業績，月報看得到 */
-  mbLogSale(p, pay, m);
+  mbLogSale(p, pay, m, depSum);
 
   /* 推播。餘額用剛剛算出來的 sum，跟寫進明細的是同一批數字，
      不會出現「卡片說 31,260、系統裡是別的數」這種事。
@@ -1172,7 +1327,10 @@ async function mbSellSave(phone){
 
   mbClose();
   renderMember();
-  alert('已售出：' + p.name + '\n' + (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
+  alert('已售出：' + p.name + '\n' +
+        (depSum ? '訂金抵扣 −$' + depSum.toLocaleString() + '，這次要收 $' + depPaid.toLocaleString() + '\n' : '') +
+        (depFails.length ? '⚠ 這些訂金沒標成「已抵方案」：' + depFails.join('、') + '\n之後核銷這筆課時訂金還會再扣一次，請截圖告知。\n' : '') +
+        (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
         (split.on && peerBodies.length ? split.peers.map(function(x, j){ return '\n' + x.name + '（' + x.phone + '）另外分到 ' + alloc.peers[j].toLocaleString() + ' 點' }).join('') : '') +
         (goldN ? '\n\n🪙 已送黃金扭蛋金幣 ' + goldN + ' 枚（' + goldTier + '）' + (goldOpen ? '' : '\n（黃金扭蛋還沒「開放」，客人暫時看不到金幣，LINE 卡片也沒寫金幣）') : '') +
         (goldErr ? '\n\n⚠ 黃金扭蛋金幣沒發成功（' + goldErr + '）。方案已經入好了，請到「扭蛋活動→黃金扭蛋→手動補發金幣」補發。' : '') +
@@ -1235,7 +1393,7 @@ async function mbSellBfSave(phone){
 }
 
 /* 把方案收入寫進 salesData，月報與當日營收讀得到 */
-function mbLogSale(p, pay, m){
+function mbLogSale(p, pay, m, depSum){
   try {
     if (!S.planSales) S.planSales = {};
     var d = mbToday();
@@ -1244,6 +1402,12 @@ function mbLogSale(p, pay, m){
       plan: p.name, price: +p.price || 0, pay: pay,
       points: (+p.points || 0) + (+p.bonusPoints || 0), sessions: +p.sessions || 0,
       voucher: +p.voucher || 0, months: +p.months || 0 });
+    /* 有抵訂金才多記：price 是業績（全額），paid 是這次真的收到的（現金流讀這個） */
+    if (depSum) {
+      var last = S.planSales[d][S.planSales[d].length - 1];
+      last.depositUsed = depSum;
+      last.paid = (+p.price || 0) - depSum;
+    }
     save();
   } catch(e) {}
 }
