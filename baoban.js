@@ -55,6 +55,43 @@ function bbOverlap(slots, start, end){
   var a = bbHm(start), b = bbHm(end); if (a == null || b == null || b <= a) return [];
   return slots.filter(function(sl){ var p = sl.split('-'); return a < bbHm(p[1]) && b > bbHm(p[0]) });
 }
+/* 沒填結束時間先當上兩小時，不然只填開始就什麼都不會勾 */
+function bbEndOf(start, end){
+  if (bbHm(end) != null) return end;
+  var a = bbHm(start); if (a == null) return '';
+  var b = a + 120; return (b < 600 ? '0' : '') + Math.floor(b / 60) + ':' + ('0' + (b % 60)).slice(-2);
+}
+/* 2026-11-04 大熊要求：下午的包班一定會拖到時間，整個下午都關，不管上課時間只碰到哪一格。
+   12:00～18:00 之間開始、或上課時間碰到下午時段，就算下午。早上、晚上的只關碰到的那格。 */
+var BB_PM = ['14:00-16:00', '16:00-18:00'];
+function bbAutoSlots(slots, start, end){
+  var a = bbHm(start), e2 = bbEndOf(start, end), hit = bbOverlap(slots, start, e2);
+  if (a == null || !e2 || bbHm(e2) <= a) return hit;
+  var pm = (a >= 720 && a < 1080) || hit.some(function(s){ return BB_PM.indexOf(s) >= 0 });
+  return slots.filter(function(s){ return hit.indexOf(s) >= 0 || (pm && BB_PM.indexOf(s) >= 0) });
+}
+/* 已確認的內場包班才佔教室（外派不在教室，洽談中還沒成） */
+function bbSeatedOn(dateStr){
+  var d = String(dateStr).replace(/\//g, '-');
+  return bbList().filter(function(r){ return r.date === d && r.venue === 'in' && (r.status === 'ok' || r.status === 'done') });
+}
+/* 今日排課：實際在上課的是哪幾筆（只算上課時間，拖時間多關的那格不算人數） */
+function bbRowsAt(dateStr, sl, slots){
+  return bbSeatedOn(dateStr).filter(function(r){
+    var hit = bbOverlap(slots, r.start, bbEndOf(r.start, r.end));
+    if (!hit.length) hit = bbAutoSlots(slots, r.start, r.end).slice(0, 1);
+    if (!hit.length) hit = bbArr(r.blockSlots).slice(0, 1);
+    return hit.indexOf(sl) >= 0;
+  });
+}
+function bbSlotTag(dateStr, sl, slots){
+  return bbRowsAt(dateStr, sl, slots).map(function(r){ return '🏫 ' + r.org + ' ' + bbPpl(r) + ' 位' }).join('、');
+}
+/* 月曆：這天包班幾組幾位，跟一般預約加在一起 */
+function bbDayStat(dateStr){
+  var on = bbSeatedOn(dateStr);
+  return { groups:on.length, people:on.reduce(function(s, r){ return s + bbPpl(r) }, 0) };
+}
 /* 照這筆現在的設定，把該關的關、該開的開。回傳要給人看的訊息 */
 async function bbSyncLock(rec){
   var api = window.bkBbApi; if (!api) return [];
@@ -137,7 +174,7 @@ function bbListHtml(){
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="bbData=null;renderBaoban()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="bbNew()">＋ 新增包班</button></div>' +
     '<div class="hint" style="margin-bottom:12px">接到包班就先建一筆，日期、單位、人數、地點填了就能存，其他之後再補。' +
-    '內場包班改成「已確認」後，勾選的時段會自動關閉客人線上預約。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
+    '內場包班改成「已確認」後，勾選的時段會自動關閉客人線上預約，下午的包班會關整個下午。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
   h += '<div class="sec-label">接下來的包班（' + up.length + '）</div>';
   h += up.length ? up.map(bbCardHtml).join('') : '<div class="empty" style="padding:24px">目前沒有排定的包班</div>';
   if (todo.length) h += '<div class="sec-label" style="margin-top:18px;color:var(--red2)">上完了還有事沒做完（' + todo.length + '）</div>' + todo.map(bbCardHtml).join('');
@@ -243,15 +280,15 @@ async function bbDrawSlots(){
   var d = bbSlash(e.date), slots = await window.bkBbApi.slotsOn(d);
   if (!bbEdit || bbEdit !== e) return;
   var sel = bbArr(e.blockSlots);
-  if (!bbSlotsTouched && !sel.length) sel = bbOverlap(slots, e.start, e.end);
+  if (!bbSlotsTouched && !sel.length) sel = bbAutoSlots(slots, e.start, e.end);
   box.innerHTML = '<div class="bb-slotbox"><div class="sec-label" style="margin-bottom:6px">要擋掉哪些時段的線上預約</div>' +
     slots.map(function(sl){ return '<label class="bb-chk"><input type="checkbox" data-sl="' + bbEsc(sl) + '"' + (sel.indexOf(sl) >= 0 ? ' checked' : '') + '> ' + bbEsc(sl) + '</label>' }).join(' ') +
-    '<div class="hint">' + (e.status === 'ok' || e.status === 'done' ? '存檔後這些時段客人就約不到了（已經約好的人不受影響）。'
+    '<div class="hint">下午的包班會自動勾整個下午，不用的話可以自己取消勾選。' + (e.status === 'ok' || e.status === 'done' ? '存檔後這些時段客人就約不到了（已經約好的人不受影響）。'
       : '現在是「' + (BB_STATUS[e.status] || '') + '」，' + (e.status === 'cancel' ? '不會擋，之前擋的會還原。' : '改成「已確認」存檔後才會真的擋。')) + '</div></div>';
   box.querySelectorAll('input[data-sl]').forEach(function(x){ x.onchange = function(){ bbSlotsTouched = true } });
 }
 function bbBindForm(){
-  bbSlotsTouched = bbArr(bbEdit.blockSlots).length > 0;
+  bbSlotsTouched = false;   // 只有這次真的點過勾選框才算手動，改時間時才會重新帶整個下午
   function tabs(id, attr, key){
     document.getElementById(id).onclick = function(ev){
       var b = ev.target.closest('button'); if (!b) return;
@@ -295,6 +332,7 @@ async function bbSave(){
   bbBusy = true; var btn = document.getElementById('bb-save'); btn.disabled = true; btn.textContent = '儲存中…';
   try {
     var now = new Date(Date.now() + 288e5).toISOString().slice(0, 16);
+    e.pmRule = 1;
     if (e._new){ e.by = bbBy(); e.createdAt = now } else { e.updatedBy = bbBy(); e.updatedAt = now }
     /* locked 以雲端為準，別的分頁可能剛改過 */
     try { var fr = await (await fetch(BB_URL + '/groupClasses/' + e.id + '/locked.json')).json(); e.locked = bbArr(fr) } catch (x) {}
@@ -303,6 +341,7 @@ async function bbSave(){
     await bbPut(e);
     bbEdit = null; renderBaoban();
     if (window.bkBbApi) window.bkBbApi.render();
+    if (e.venue === 'in' && e.status === 'talk' && e.date) msgs.push('現在是「洽談中」，時段還沒關。談定後改成「已確認」存檔才會關閉線上預約。');
     if (msgs.length) alert('已儲存。\n\n' + msgs.join('\n'));
   } catch (x) {
     alert('儲存失敗：' + x.message + '\n請檢查網路後再按一次。');
@@ -350,5 +389,24 @@ function bbDayHtml(dateStr, isToday){
 async function bbBoot(){
   try { await bbLoad(); if (window.bkBbApi) window.bkBbApi.render() } catch (e) {}
 }
+/* 11/4 之前存的包班只關了碰到的那格，補關整個下午。每筆只補一次（pmRule），之後手動取消勾選不會被改回來 */
+var bbPmBusy = false;
+async function bbPmUpgrade(){
+  if (bbPmBusy || bbEdit || !window.bkBbApi) return;
+  bbPmBusy = true;
+  try {
+    await bbLoad();
+    var todo = bbList().filter(function(r){ return !r.pmRule && bbWants(r) }), changed = false;
+    for (var i = 0; i < todo.length; i++){
+      var r = todo[i], auto = bbAutoSlots(await window.bkBbApi.slotsOn(bbSlash(r.date)), r.start, r.end);
+      r.blockSlots = bbArr(r.blockSlots).concat(auto.filter(function(s){ return bbArr(r.blockSlots).indexOf(s) < 0 }));
+      var msgs = await bbSyncLock(r);
+      if (!msgs.some(function(m){ return m.indexOf('⚠️') === 0 })) r.pmRule = 1;
+      await bbPut(r); changed = true;
+    }
+    if (changed) window.bkBbApi.render();
+  } catch (e) {} finally { bbPmBusy = false }
+}
 bbBoot();
+var bbPmWait = setInterval(function(){ if (window.ME && window.ME.staff){ clearInterval(bbPmWait); bbPmUpgrade() } }, 3000);
 setInterval(function(){ if (!bbEdit) bbBoot() }, 5 * 60000);

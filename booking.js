@@ -1762,6 +1762,12 @@ function bkNotifyCancelDesktop(name,when){
   }catch(e){}
 }
 var bkByDate={};
+/* 月曆每格的「幾組幾位」：一般預約＋已確認的內場包班（2026-11-04） */
+function bkDayStat(k){
+  var st=bkByDate[k], bb=window.bbDayStat?bbDayStat(k):null;
+  if(!bb||!bb.groups)return st;
+  return {groups:(st?st.groups:0)+bb.groups,people:(st?st.people:0)+bb.people,done:st?st.done:0};
+}
 
 /* ══ 日期月曆（2026-08-10）══════════════════════════════
    原本只能一天一天按 ‹ ›，要看月底得按二十幾次。
@@ -1787,7 +1793,7 @@ function bkDatePick(){
     for(var i=0;i<pad;i++)h+='<div class="bk-mday void"></div>';
     for(var i2=1;i2<=days;i2++){
       var k=y+"/"+String(m+1).padStart(2,"0")+"/"+String(i2).padStart(2,"0");
-      var st=bkByDate[k];
+      var st=bkDayStat(k);
       var cls="bk-mday"+(k===todayK?" now":"")+(k===selK?" set":"")+(st?"":" off");
       h+='<button class="'+cls+'" data-d="'+k+'">'+
          '<span class="d">'+i2+'</span>'+
@@ -1795,7 +1801,7 @@ function bkDatePick(){
             :'<span class="n">·</span><span class="c">—</span>')+
          '</button>';
     }
-    h+='</div><div class="bk-cfoot">數字是「幾組・幾位」。點任一天直接跳過去。</div>';
+    h+='</div><div class="bk-cfoot">數字是「幾組・幾位」，包班也算在內。點任一天直接跳過去。</div>';
     bkSheet(h);
     document.getElementById("dpX").onclick=bkClose;
     document.getElementById("dpPrev").onclick=function(){ cur.setMonth(cur.getMonth()-1); draw() };
@@ -1835,7 +1841,7 @@ function bkDayPop(anchor,iso,onPick){
     for(var i=0;i<pad;i++)h+='<div class="bk-mday void"></div>';
     for(var i2=1;i2<=days;i2++){
       var k=y+"/"+String(m+1).padStart(2,"0")+"/"+String(i2).padStart(2,"0");
-      var st=bkByDate[k];
+      var st=bkDayStat(k);
       var cls="bk-mday"+(k===todayK?" now":"")+(k===selK?" set":"")+(st?"":" off");
       h+='<button type="button" class="'+cls+'" data-d="'+k+'">'+
          '<span class="d">'+i2+'</span>'+
@@ -2340,6 +2346,7 @@ async function bkRender(noReload){
         (closed
           ?n+' 位'+akText
           :n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":""))+'</span>'+
+        (sl!=="其他"&&window.bbSlotTag&&bbSlotTag(dsNow,sl,slotsNow)?'<span class="bk-tag bk-closedtag">'+esc(bbSlotTag(dsNow,sl,slotsNow))+'</span>':'')+
         (closed?'<span class="bk-tag bk-closedtag">'+(window.bbSlotOwner&&bbSlotOwner(dsNow,sl)?'🏫 包班・已關閉預約':'已關閉預約')+'</span>':'')+
         (sl!=="其他"?'<span class="bk-closebtn'+(closed?' on':'')+'" data-closebtn="'+esc(slKey)+'">'+
           (closed?"重新開放":"關閉預約")+'</span>':'')+
