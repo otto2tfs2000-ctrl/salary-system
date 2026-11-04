@@ -707,10 +707,16 @@ async function bkToggleClosed(dsNow,sl){
     var own=window.bbSlotOwner&&bbSlotOwner(dsNow,sl);
     if(own&&!confirm("這個時段是「"+own.org+"」包班擋掉的。\n\n確定要重新開放給客人線上預約嗎？"))return;
     var v=bkSchedVal(dsNow), prev=v&&v.capPrev?v.capPrev[bkCapKind(sl)]:null;
-    await bkSetCap(dsNow,sl,(prev==null||prev<0)?null:prev);
+    /* 包班那筆也要跟著改，兩邊才對得起來 */
+    if((await bkSetCap(dsNow,sl,(prev==null||prev<0)?null:prev))&&own){
+      try{ await bbOnSlotReopened(dsNow,sl) }catch(e){ alert("時段已重新開放，但包班資料沒更新到，請到包班頁確認。") }
+    }
   }else{
-    if(!confirm(dsNow+" "+sl+" 要關閉線上預約嗎？\n\n客人和 AI 客服都會看到這個時段額滿，已經約好的人不受影響。"))return;
-    await bkSetCap(dsNow,sl,0,true);
+    var bbr=window.bbSlotPair?bbSlotPair(dsNow,sl,bkSlotsOn(dsNow)):null;
+    if(!confirm(dsNow+" "+sl+(bbr?" 有「"+bbr.org+"」包班，":" ")+"要關閉線上預約嗎？\n\n客人和 AI 客服都會看到這個時段額滿，已經約好的人不受影響。"))return;
+    if((await bkSetCap(dsNow,sl,0,true))&&bbr){
+      try{ await bbOnSlotClosed(dsNow,sl) }catch(e){ alert("時段已關閉，但包班資料沒更新到，請到包班頁確認。") }
+    }
   }
   bkRender();
 }
@@ -722,6 +728,7 @@ function bkTabAllowed(k){ var t=document.querySelector('.tabs .tab[data-tab="'+k
 window.bkBbApi={
   slotsOn:async function(dateStr){ await bkLoadSched(); return bkSlotsOn(dateStr) },
   isClosed:function(dateStr,sl){ return bkIsClosed(dateStr,sl) },
+  slotsNow:function(dateStr){ return bkSlotsOn(dateStr) },
   /* 回傳 "closed"＝這次關的；"already"＝本來就關著（不是包班關的，之後不要替別人打開）；false＝失敗 */
   close:async function(dateStr,sl){
     if(!(await bkSchedFreshOrStop(dateStr)))return false;
@@ -2346,7 +2353,7 @@ async function bkRender(noReload){
         (closed
           ?n+' 位'+akText
           :n+(sl==="其他"?"":" / "+capS)+' 位'+(capIsSet?'🔒':'')+akText+(full?"・超載":""))+'</span>'+
-        (sl!=="其他"&&window.bbSlotTag&&bbSlotTag(dsNow,sl,slotsNow)?'<span class="bk-tag bk-closedtag">'+esc(bbSlotTag(dsNow,sl,slotsNow))+'</span>':'')+
+        (sl!=="其他"&&window.bbSlotTag&&bbSlotTag(dsNow,sl,slotsNow,closed)?'<span class="bk-tag bk-closedtag">'+esc(bbSlotTag(dsNow,sl,slotsNow,closed))+'</span>':'')+
         (closed?'<span class="bk-tag bk-closedtag">'+(window.bbSlotOwner&&bbSlotOwner(dsNow,sl)?'🏫 包班・已關閉預約':'已關閉預約')+'</span>':'')+
         (sl!=="其他"?'<span class="bk-closebtn'+(closed?' on':'')+'" data-closebtn="'+esc(slKey)+'">'+
           (closed?"重新開放":"關閉預約")+'</span>':'')+

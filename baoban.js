@@ -3,7 +3,8 @@
    接了學校、公司、社團的包班，日期、地點、對接人、金額、發票都記在這裡，不然常常忘記。
    資料在 otto2-2026 的 groupClasses/{id}，一筆一筆存（不放進 S 整包，避免舊分頁整包蓋掉）。
    會出現在：這一頁、今日排課當天最上面（booking.js 呼叫 bbDayHtml）、早安簡報（ai-post-loop 讀同一包）。
-   內場包班「已確認」後，勾的時段會自動關閉線上預約（booking.js 的 bkBbApi，跟「關閉預約」同一套）；
+   2026-11-04 改成問了才關：包班表單有「同步關閉／先不關」（closeAsk），今日排課該時段也會問，兩邊共用同一筆資料。
+   內場包班「已確認」且選了關閉，勾的時段才會關閉線上預約（booking.js 的 bkBbApi，跟「關閉預約」同一套）；
    取消、改日期、改外派、取消勾選時，包班自己關的時段會還原。本來就關著的時段不算包班關的，不會替別人打開。
    locked 記「這筆包班實際關掉的」日期|時段，例如 "2026/11/05|10:00-12:00"。
    ══════════════════════════════════════════════════════════ */
@@ -43,7 +44,9 @@ async function bbPut(rec){
 
 /* ── 擋名額 ── */
 function bbWants(r){ return r && r.venue === 'in' && (r.status === 'ok' || r.status === 'done') && r.date && r.date >= bbToday() }
-function bbWantKeys(r){ return bbWants(r) ? bbArr(r.blockSlots).map(function(sl){ return bbSlash(r.date) + '|' + sl }) : [] }
+/* closeAsk：yes＝要關、no＝先不關、沒填＝還沒決定。舊資料已經有關掉的時段就當 yes */
+function bbCloseAsk(r){ return r.closeAsk || (bbArr(r.locked).length ? 'yes' : '') }
+function bbWantKeys(r){ return bbWants(r) && bbCloseAsk(r) === 'yes' ? bbArr(r.blockSlots).map(function(sl){ return bbSlash(r.date) + '|' + sl }) : [] }
 /* 今日排課用：這個時段是不是哪一筆包班擋的 */
 function bbSlotOwner(dateStr, sl){
   var key = dateStr + '|' + sl;
@@ -84,8 +87,42 @@ function bbRowsAt(dateStr, sl, slots){
     return hit.indexOf(sl) >= 0;
   });
 }
-function bbSlotTag(dateStr, sl, slots){
-  return bbRowsAt(dateStr, sl, slots).map(function(r){ return '🏫 ' + r.org + ' ' + bbPpl(r) + ' 位' }).join('、');
+function bbSlotsOf(r, slots){ var a = bbAutoSlots(slots, r.start, r.end); return a.length ? a : bbArr(r.blockSlots) }
+/* 這個時段是哪一筆已確認的包班會用到（含拖時間多算的那格） */
+function bbSlotPair(dateStr, sl, slots){
+  return bbSeatedOn(dateStr).filter(function(r){ return bbSlotsOf(r, slots).indexOf(sl) >= 0 })[0] || null;
+}
+function bbSlotTag(dateStr, sl, slots, closed){
+  var d = String(dateStr).replace(/\//g, '-'), seated = bbRowsAt(dateStr, sl, slots), out = [];
+  bbSeatedOn(dateStr).forEach(function(r){
+    if (bbSlotsOf(r, slots).indexOf(sl) < 0) return;
+    var who = seated.indexOf(r) >= 0 ? r.org + ' ' + bbPpl(r) + ' 位' : r.org + ' ' + (r.start || '') + (r.end ? '–' + r.end : '') + ' 會拖到這格';
+    out.push('🏫 ' + who + (closed ? '' : bbCloseAsk(r) === 'no' ? '・先不關' : '・要關閉嗎？'));
+  });
+  bbList().forEach(function(r){
+    if (r.date === d && r.venue === 'in' && r.status === 'talk' && bbSlotsOf(r, slots).indexOf(sl) >= 0) out.push('🏫 洽談中：' + r.org);
+  });
+  return out.join('、');
+}
+/* 今日排課按「關閉預約」→ 寫回包班那筆 */
+async function bbOnSlotClosed(dateStr, sl){
+  var r = bbSlotPair(dateStr, sl, await window.bkBbApi.slotsOn(dateStr)); if (!r) return;
+  var k = dateStr + '|' + sl;
+  r.closeAsk = 'yes';
+  if (bbArr(r.blockSlots).indexOf(sl) < 0) r.blockSlots = bbArr(r.blockSlots).concat([sl]);
+  if (bbArr(r.locked).indexOf(k) < 0) r.locked = bbArr(r.locked).concat([k]);
+  await bbPut(r);
+}
+/* 今日排課按「重新開放」→ 包班那筆也改成沒關，不然下次存檔又被關回去 */
+async function bbOnSlotReopened(dateStr, sl){
+  var k = dateStr + '|' + sl, own = bbList().filter(function(r){ return bbArr(r.locked).indexOf(k) >= 0 });
+  for (var i = 0; i < own.length; i++){
+    var r = own[i];
+    r.locked = bbArr(r.locked).filter(function(x){ return x !== k });
+    r.blockSlots = bbArr(r.blockSlots).filter(function(x){ return x !== sl });
+    if (!r.locked.length) r.closeAsk = 'no';
+    await bbPut(r);
+  }
 }
 /* 月曆：這天包班幾組幾位，跟一般預約加在一起 */
 function bbDayStat(dateStr){
@@ -160,7 +197,8 @@ function bbCardHtml(r){
       (r.sessionTotal > 1 ? ' <span class="badge b-gray">第 ' + bbEsc(r.sessionNo || 1) + '／' + bbEsc(r.sessionTotal) + ' 堂</span>' : '') + '</div>' +
     '<div class="bb-sub">' + [bbPpl(r) ? bbPpl(r) + ' 人' : '', r.course, r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? r.place : '', bbNum(r.total) ? bbMoney(r.total) : '']
       .filter(Boolean).map(bbEsc).join('・') + '</div>' +
-    (locked.length ? '<div class="bb-sub">🔒 已擋線上預約：' + bbEsc(locked.join('、')) + '</div>' : '') +
+    (locked.length ? '<div class="bb-sub">🔒 已擋線上預約：' + bbEsc(locked.join('、')) + '</div>'
+      : bbWants(r) ? '<div class="bb-sub">🔓 線上預約還開著' + (bbCloseAsk(r) === 'no' ? '（選了先不關）' : '（還沒決定要不要關）') + '</div>' : '') +
     (bbFlags(r).length ? '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">' + bbFlags(r).map(function(f){ return '<span class="badge ' + f[0] + '">' + bbEsc(f[1]) + '</span>' }).join('') + '</div>' : '') +
     '</div>';
 }
@@ -174,7 +212,7 @@ function bbListHtml(){
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="bbData=null;renderBaoban()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="bbNew()">＋ 新增包班</button></div>' +
     '<div class="hint" style="margin-bottom:12px">接到包班就先建一筆，日期、單位、人數、地點填了就能存，其他之後再補。' +
-    '內場包班改成「已確認」後，勾選的時段會自動關閉客人線上預約，下午的包班會關整個下午。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
+    '內場包班可以選要不要同步關閉線上預約，已確認才會真的關；今日排課那個時段也看得到、也能關，兩邊同步。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
   h += '<div class="sec-label">接下來的包班（' + up.length + '）</div>';
   h += up.length ? up.map(bbCardHtml).join('') : '<div class="empty" style="padding:24px">目前沒有排定的包班</div>';
   if (todo.length) h += '<div class="sec-label" style="margin-top:18px;color:var(--red2)">上完了還有事沒做完（' + todo.length + '）</div>' + todo.map(bbCardHtml).join('');
@@ -194,7 +232,7 @@ function bbNewRec(o){
     pricePer:'', total:'', taxIncl:true, paid:'', payWay:'', payDue:'', payNote:'',
     invNeed:true, invDone:false, invTitle:'', taxId:'', invNo:'', invDate:'', invEmail:'', receiptNote:'',
     prepMat:false, prepPack:false, prepCar:false, links:'',
-    photoDone:false, feedback:'', revisit:'', note:'', blockSlots:[], locked:[] }, o || {});
+    photoDone:false, feedback:'', revisit:'', note:'', closeAsk:'', blockSlots:[], locked:[] }, o || {});
 }
 /* 今日排課的「🏫 包班」按鈕會帶當天日期過來 */
 function bbNew(date){
@@ -269,7 +307,8 @@ var BB_CHK = ['finalDone','taxIncl','invNeed','invDone','prepMat','prepPack','pr
 function bbReadForm(){
   BB_TEXT.forEach(function(k){ var x = document.getElementById('bb-' + k); if (x) bbEdit[k] = x.value.trim() });
   BB_CHK.forEach(function(k){ var x = document.getElementById('bb-' + k); if (x) bbEdit[k] = x.checked });
-  bbEdit.blockSlots = [].map.call(document.querySelectorAll('#bb-slots input[data-sl]:checked'), function(x){ return x.dataset.sl });
+  /* 選「先不關」時勾選框不在畫面上，不要把原本的時段洗掉 */
+  if (document.querySelector('#bb-slots input[data-sl]')) bbEdit.blockSlots = [].map.call(document.querySelectorAll('#bb-slots input[data-sl]:checked'), function(x){ return x.dataset.sl });
 }
 /* 內場：列出那天的時段給人勾，預設勾跟上課時間重疊的 */
 var bbSlotsTouched = false;
@@ -279,13 +318,21 @@ async function bbDrawSlots(){
   if (e.venue !== 'in' || !e.date || !window.bkBbApi){ box.innerHTML = ''; return }
   var d = bbSlash(e.date), slots = await window.bkBbApi.slotsOn(d);
   if (!bbEdit || bbEdit !== e) return;
-  var sel = bbArr(e.blockSlots);
-  if (!bbSlotsTouched && !sel.length) sel = bbAutoSlots(slots, e.start, e.end);
-  box.innerHTML = '<div class="bb-slotbox"><div class="sec-label" style="margin-bottom:6px">要擋掉哪些時段的線上預約</div>' +
-    slots.map(function(sl){ return '<label class="bb-chk"><input type="checkbox" data-sl="' + bbEsc(sl) + '"' + (sel.indexOf(sl) >= 0 ? ' checked' : '') + '> ' + bbEsc(sl) + '</label>' }).join(' ') +
-    '<div class="hint">下午的包班會自動勾整個下午，不用的話可以自己取消勾選。' + (e.status === 'ok' || e.status === 'done' ? '存檔後這些時段客人就約不到了（已經約好的人不受影響）。'
-      : '現在是「' + (BB_STATUS[e.status] || '') + '」，' + (e.status === 'cancel' ? '不會擋，之前擋的會還原。' : '改成「已確認」存檔後才會真的擋。')) + '</div></div>';
+  var sel = bbArr(e.blockSlots), auto = bbAutoSlots(slots, e.start, e.end), ask = bbCloseAsk(e);
+  if (!bbSlotsTouched && !sel.length) sel = auto;
+  var hint = e.status === 'cancel' ? '已取消，不會關，之前關的會還原。'
+    : (e.status !== 'ok' && e.status !== 'done') ? '現在是「' + (BB_STATUS[e.status] || '') + '」，選了也要改成「已確認」存檔才會真的關。'
+    : ask === 'yes' ? '存檔後這些時段客人就約不到了（已經約好的人不受影響）。'
+    : ask === 'no' ? '存檔後不會關，之前關的會還原。之後也可以在今日排課關。'
+    : '還沒選的話，存檔時會再問你一次。';
+  box.innerHTML = '<div class="bb-slotbox"><div class="sec-label" style="margin-bottom:6px">要不要同步關閉這個時間的線上預約？' +
+      (auto.length ? '（' + bbEsc(auto.join('、')) + '）' : '') + '</div>' +
+    '<div class="store-tabs" style="margin-bottom:8px">' + [['yes', '🔒 同步關閉'], ['no', '先不關']].map(function(x){
+      return '<button type="button" class="store-btn' + (ask === x[0] ? ' active' : '') + '" data-ask="' + x[0] + '">' + x[1] + '</button>' }).join('') + '</div>' +
+    (ask === 'yes' ? '<div>' + slots.map(function(sl){ return '<label class="bb-chk"><input type="checkbox" data-sl="' + bbEsc(sl) + '"' + (sel.indexOf(sl) >= 0 ? ' checked' : '') + '> ' + bbEsc(sl) + '</label>' }).join(' ') + '</div>' : '') +
+    '<div class="hint">' + hint + '</div></div>';
   box.querySelectorAll('input[data-sl]').forEach(function(x){ x.onchange = function(){ bbSlotsTouched = true } });
+  box.querySelectorAll('[data-ask]').forEach(function(x){ x.onclick = function(){ bbReadForm(); bbEdit.closeAsk = x.dataset.ask; bbDrawSlots() } });
 }
 function bbBindForm(){
   bbSlotsTouched = false;   // 只有這次真的點過勾選框才算手動，改時間時才會重新帶整個下午
@@ -317,10 +364,17 @@ async function bbSave(){
   var e = bbEdit;
   if (!e.date && e.status !== 'talk') return alert('請填日期');
   if (!e.org) return alert('請填對接單位');
-  if (e.venue === 'in' && (e.status === 'ok' || e.status === 'done') && e.date >= bbToday() && !bbArr(e.blockSlots).length && window.bkBbApi &&
-      !confirm('內場包班沒有勾要擋的時段，客人還是可以線上約這天。確定這樣存？')) return;
+  /* 已確認還沒決定要不要關 → 問一次，不替他決定 */
+  if (window.bkBbApi && bbWants(e) && !bbCloseAsk(e)){
+    var autoNow = bbAutoSlots(await window.bkBbApi.slotsOn(bbSlash(e.date)), e.start, e.end);
+    if (autoNow.length && confirm(bbSlash(e.date) + ' ' + autoNow.join('、') + ' 有包班，要同步關閉這個時間的線上預約嗎？\n\n按「確定」關閉，按「取消」先不關（之後在這裡或今日排課都能再關）。')){
+      e.closeAsk = 'yes'; e.blockSlots = autoNow;
+    } else e.closeAsk = 'no';
+  }
+  if (window.bkBbApi && bbWants(e) && bbCloseAsk(e) === 'yes' && !bbArr(e.blockSlots).length &&
+      !confirm('選了同步關閉，但沒有勾時段，客人還是可以線上約這天。確定這樣存？')) return;
   /* 新擋的時段如果已經有客人約了，先提醒 */
-  if (window.bkBbApi && bbWants(e)){
+  if (window.bkBbApi && bbWantKeys(e).length){
     var had = bbArr((bbData[e.id] || {}).locked), warn = [];
     for (var i = 0; i < e.blockSlots.length; i++){
       var sl = e.blockSlots[i]; if (had.indexOf(bbSlash(e.date) + '|' + sl) >= 0) continue;
@@ -332,7 +386,6 @@ async function bbSave(){
   bbBusy = true; var btn = document.getElementById('bb-save'); btn.disabled = true; btn.textContent = '儲存中…';
   try {
     var now = new Date(Date.now() + 288e5).toISOString().slice(0, 16);
-    e.pmRule = 1;
     if (e._new){ e.by = bbBy(); e.createdAt = now } else { e.updatedBy = bbBy(); e.updatedAt = now }
     /* locked 以雲端為準，別的分頁可能剛改過 */
     try { var fr = await (await fetch(BB_URL + '/groupClasses/' + e.id + '/locked.json')).json(); e.locked = bbArr(fr) } catch (x) {}
@@ -341,7 +394,7 @@ async function bbSave(){
     await bbPut(e);
     bbEdit = null; renderBaoban();
     if (window.bkBbApi) window.bkBbApi.render();
-    if (e.venue === 'in' && e.status === 'talk' && e.date) msgs.push('現在是「洽談中」，時段還沒關。談定後改成「已確認」存檔才會關閉線上預約。');
+    if (e.venue === 'in' && e.status === 'talk' && e.date) msgs.push('現在是「洽談中」，時段還沒關。談定後改成「已確認」存檔才能關閉線上預約。');
     if (msgs.length) alert('已儲存。\n\n' + msgs.join('\n'));
   } catch (x) {
     alert('儲存失敗：' + x.message + '\n請檢查網路後再按一次。');
@@ -362,6 +415,16 @@ async function bbDelete(){
   } catch (x) { alert('刪除失敗：' + x.message) } finally { bbBusy = false }
 }
 
+/* 當天橫幅：這筆包班的線上預約現在到底關了沒 */
+function bbDayLockLine(r, dateStr){
+  var api = window.bkBbApi;
+  if (!api || r.venue !== 'in' || (r.status !== 'ok' && r.status !== 'done')) return '';
+  var use = bbSlotsOf(r, api.slotsNow(dateStr)); if (!use.length) return '';
+  var shut = use.filter(function(s){ return api.isClosed(dateStr, s) }), open = use.filter(function(s){ return shut.indexOf(s) < 0 });
+  return '<div style="font-size:13px;font-weight:700;color:' + (open.length ? '#B23A30' : '#1F7A4D') + '">' +
+    (shut.length ? '🔒 已關閉預約：' + bbEsc(shut.join('、')) + (open.length ? '　' : '') : '') +
+    (open.length ? '🔓 線上預約還開著：' + bbEsc(open.join('、')) + '，要關的話按下面該時段的「關閉預約」' : '') + '</div>';
+}
 /* ── 今日排課最上面：這一天的包班；看今天的話順便列接下來 7 天 ── */
 function bbDayHtml(dateStr, isToday){
   if (!bbData) return '';
@@ -378,7 +441,7 @@ function bbDayHtml(dateStr, isToday){
         '<b>' + bbEsc((r.start || '') + (r.end ? '–' + r.end : '')) + ' ' + bbEsc(r.org) + '</b>　' + (r.venue === 'out' ? '外派' : '內場') + '・' + bbPpl(r) + ' 人' +
         '<div style="font-size:13px;color:#6b665e">' + [r.course, r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? (r.place || r.address) : '',
           r.siteContact ? '現場 ' + r.siteContact + ' ' + (r.sitePhone || '') : (r.contact ? '對接 ' + r.contact + ' ' + (r.phone || '') : ''),
-          r.prepMat ? '已備料' : '⚠️ 還沒備料'].filter(Boolean).map(bbEsc).join('・') + '</div></div>';
+          r.prepMat ? '已備料' : '⚠️ 還沒備料'].filter(Boolean).map(bbEsc).join('・') + '</div>' + bbDayLockLine(r, dateStr) + '</div>';
     }).join('') : '') +
     (next.length ? '<div style="font-size:13px;color:#7A5A12;margin-top:' + (on.length ? 8 : 0) + 'px"><b>接下來 7 天包班：</b>' + next.map(function(r){
       return '<span style="cursor:pointer;text-decoration:underline" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' + bbEsc(bbMd(r.date) + ' ' + r.org + ' ' + bbPpl(r) + '人') + '</span>' }).join('、') + '</div>' : '') +
@@ -389,24 +452,5 @@ function bbDayHtml(dateStr, isToday){
 async function bbBoot(){
   try { await bbLoad(); if (window.bkBbApi) window.bkBbApi.render() } catch (e) {}
 }
-/* 11/4 之前存的包班只關了碰到的那格，補關整個下午。每筆只補一次（pmRule），之後手動取消勾選不會被改回來 */
-var bbPmBusy = false;
-async function bbPmUpgrade(){
-  if (bbPmBusy || bbEdit || !window.bkBbApi) return;
-  bbPmBusy = true;
-  try {
-    await bbLoad();
-    var todo = bbList().filter(function(r){ return !r.pmRule && bbWants(r) }), changed = false;
-    for (var i = 0; i < todo.length; i++){
-      var r = todo[i], auto = bbAutoSlots(await window.bkBbApi.slotsOn(bbSlash(r.date)), r.start, r.end);
-      r.blockSlots = bbArr(r.blockSlots).concat(auto.filter(function(s){ return bbArr(r.blockSlots).indexOf(s) < 0 }));
-      var msgs = await bbSyncLock(r);
-      if (!msgs.some(function(m){ return m.indexOf('⚠️') === 0 })) r.pmRule = 1;
-      await bbPut(r); changed = true;
-    }
-    if (changed) window.bkBbApi.render();
-  } catch (e) {} finally { bbPmBusy = false }
-}
 bbBoot();
-var bbPmWait = setInterval(function(){ if (window.ME && window.ME.staff){ clearInterval(bbPmWait); bbPmUpgrade() } }, 3000);
 setInterval(function(){ if (!bbEdit) bbBoot() }, 5 * 60000);
