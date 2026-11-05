@@ -3262,7 +3262,11 @@ async function bkCheckout(id){
      行政自己動過金額的那一列就不再覆蓋——現場常有整組算便宜、
      或補差額的狀況，系統算的不該把人手改的蓋掉。
      修正核銷時載進來的舊加購一律當作手填，金額原封不動。 */
-  addons.forEach(function(a){ if(a&&+a.amt>0)a.amtEdited=true });
+  addons.forEach(function(a){ if(!a)return;
+    if(+a.amt>0)a.amtEdited=true;
+    /* 選了庫存品項又存成 $0 的，當初就是確定沒加收，修正核銷時不能被售價蓋掉，也不用再填一次 */
+    else if(a.materialId){ a.amtEdited=true; a.amtZero=true }
+  });
   /* 訂金已收就從當日應收扣掉。金額還是記全額（業績），
      只有現金流那邊分成兩天——訂金記收款那天，尾款記核銷這天。 */
   var depAmt=old?(+old.depositAmt||0):bkDepPaid(b);
@@ -3443,7 +3447,7 @@ async function bkCheckout(id){
         (isOther
           ? '<input class="an" data-i="'+i+'" placeholder="品名" value="'+esc(a.name||"")+'">'
           : '<input class="aq" data-i="'+i+'" inputmode="numeric" placeholder="數量" value="'+(a.qty||1)+'">')+
-        '<input class="av" data-i="'+i+'" inputmode="numeric" placeholder="金額" value="'+(a.amt||"")+'">'+
+        '<input class="av" data-i="'+i+'" inputmode="numeric" placeholder="金額" value="'+(a.amt||(a.amtZero?"0":""))+'">'+
         '<select class="aw" data-i="'+i+'">'+PAYWAYS.map(function(p){
           return '<option value="'+p.k+'"'+(a.way===p.k?" selected":"")+
             (p.member&&!payer?" disabled":"")+'>'+p.n+'</option>' }).join("")+'</select>'+
@@ -3452,11 +3456,12 @@ async function bkCheckout(id){
           ? '<div class="bk-nodeduct">手打品名，不扣庫存</div>'
           : (a.unitPrice!=null
               ? '<div class="bk-nodeduct">售價 $'+a.unitPrice.toLocaleString()+' × '+(+a.qty||1)+
-                (a.amtEdited?'，金額已手動調整':'')+'</div>'
-              : '<div class="bk-nodeduct">這個品項還沒設售價，到「庫存盤點 → 品項管理」填一次，之後就會自動帶</div>'))+
+                (a.amtEdited?'，金額已手動調整':'')+'，沒加收填 0</div>'
+              : '<div class="bk-nodeduct">這個品項還沒設售價，到「庫存盤點 → 品項管理」填一次，之後就會自動帶；沒加收填 0</div>'))+
         '</div>' }).join("");
     document.querySelectorAll("#ckAdd .am").forEach(function(el){ el.onchange=function(){
       var a=addons[+el.dataset.i];
+      a.amtZero=false;
       if(!el.value){ a.materialId=null; a.qty=0; a.unitPrice=null; }
       else{ var m=bkMatById(el.value);
         a.materialId=m?m.id:el.value; a.name=m?m.name:"";
@@ -3476,7 +3481,10 @@ async function bkCheckout(id){
       }
       calc() } });
     document.querySelectorAll("#ckAdd .av").forEach(function(el){ el.oninput=function(){
-      var a=addons[+el.dataset.i]; a.amt=+el.value||0; a.amtEdited=true; calc() } });
+      var a=addons[+el.dataset.i]; a.amt=+el.value||0; a.amtEdited=true;
+      /* 空白＝忘了填，打 0＝確定沒加收，兩個都是 0 元但意思不一樣 */
+      a.amtZero=el.value.trim()!==""&&a.amt===0;
+      calc() } });
     document.querySelectorAll("#ckAdd .aw").forEach(function(el){ el.onchange=function(){ addons[+el.dataset.i].way=el.value; calc() } });
     document.querySelectorAll("#ckAdd .ax").forEach(function(el){ el.onclick=function(){ addons.splice(+el.dataset.i,1); drawAddons(); calc() } });
     var w=document.getElementById("ckAddWarn");
@@ -3699,7 +3707,9 @@ async function bkCheckout(id){
       var ap=PAYWAYS.filter(function(p){return p.k===addons[i].way})[0];
       if(addons[i].materialId&&!(+addons[i].qty>0)){
         alert("加價項目「"+(addons[i].name||"未命名")+"」的數量要大於 0"); return }
-      if(!addons[i].amt){ alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"); return }
+      /* 庫存品項打 0 可以過：畫布沒加收也要記到、扣到庫存。手打品名不扣庫存，還是要有金額。 */
+      if(!addons[i].amt&&!(addons[i].materialId&&addons[i].amtZero)){
+        alert("加價項目「"+(addons[i].name||"未命名")+"」沒有填金額"+(addons[i].materialId?"（沒加收請填 0）":"")); return }
       if(ap&&ap.member&&!payer){ alert("加價項目不能用點數，這筆沒有綁會員"); return }
     }
     /* 2026-10-22 畫布提醒：創作繪畫／選圖繪畫的會員價、單次原價沒有固定用料
@@ -3720,7 +3730,7 @@ async function bkCheckout(id){
         });
         if(!hasCanvasAddon&&!confirm(
           "「"+needCanvasFor.join("、")+"」這次有用新畫布嗎？\n\n"+
-          "・有用新畫布 → 按「取消」，在「加價項目」選畫布（沒加收就填 0）\n"+
+          "・有用新畫布 → 按「取消」，在「加價項目」選畫布（沒加收就把金額改成 0）\n"+
           "・接續上次的畫、沒用新畫布 → 按「確定」直接核銷"))return;
       }
     }
