@@ -733,15 +733,34 @@ function initMonth() {
    分頁，直接重畫一次讓畫面立刻對上。 */
 function onGlobalMonthChange() {
   renderAll();
-  // bkDate 是 booking.js 那個 IIFE 裡的私有變數，這裡碰不到，
-  // 只能透過它自己公開出來的 window.bkGoToMonth 改。
-  if (window.bkGoToMonth) {
-    var y = parseInt(document.getElementById('selYear').value);
-    var m = parseInt(document.getElementById('selMonth').value);
-    window.bkGoToMonth(y, m);
-    var todayTab = document.querySelector('.tab[data-tab="today"]');
-    if (todayTab && todayTab.classList.contains('active') && window.bkRender) bkRender();
+  var y = parseInt(document.getElementById('selYear').value);
+  var m = parseInt(document.getElementById('selMonth').value);
+  /* 2026-11-05 報表、班表設定也有自己的日期，一起接上。已經在這個月的頁面不動（見 otto2SetMonth） */
+  function isOn(k){ var p = document.getElementById('tab-' + k); return !!(p && p.classList.contains('active')) }
+  if (window.bkGoToMonth && window.bkGoToMonth(y, m)) {
+    if (isOn('today') && window.bkRender) bkRender();
   }
+  if (window.bkCalGoToMonth && window.bkCalGoToMonth(y, m)) {
+    if (isOn('sched') && window.bkSchedRender) bkSchedRender();
+  }
+  if (window.fnGoToMonth && window.fnGoToMonth(y, m)) {
+    if (isOn('finance') && window.renderFinance) renderFinance();
+  }
+}
+/* 頁面自己的 ‹ › 跨到別的月份時呼叫，右上角跟著變，其他頁面也一起換，三邊才不會各說各話 */
+function otto2SetMonth(y, m) {
+  var yEl = document.getElementById('selYear'), mEl = document.getElementById('selMonth');
+  var mm = String(m).padStart(2, '0');
+  if (yEl.value === String(y) && mEl.value === mm) return;
+  yEl.value = y; mEl.value = mm;
+  onGlobalMonthChange();
+}
+window.otto2SetMonth = otto2SetMonth;
+/* 這幾頁才吃右上角月份；其他頁面沒有月份（庫存是按週、盤點會寫進當週），藏起來免得點了沒反應 */
+var MONTH_NAV_TABS = ['today','sched','daily','monthly','finance','consumables','salary','settings','quote'];
+function updateMonthNav(tab) {
+  var nav = document.querySelector('.month-nav');
+  if (nav) nav.style.display = MONTH_NAV_TABS.indexOf(tab) >= 0 ? '' : 'none';
 }
 
 // ── Lock ───────────────────────────────────────────────
@@ -782,6 +801,7 @@ function doSwitchTab(tab) {
   });
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
+  updateMonthNav(tab);
   if (tab==='today' && window.bkRender) bkRender();
   if (tab==='sched' && window.bkSchedRender) bkSchedRender();
   if (tab==='quote' && window.renderQuote) renderQuote();

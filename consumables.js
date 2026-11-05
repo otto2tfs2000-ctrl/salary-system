@@ -15,13 +15,9 @@ function getCMCats() {
 const CM_STORE_NAMES = { '4f':'四樓', '2f':'二樓', 'guotu':'國圖', 'hq':'總部', 'camp':'營隊支出' };
 const CM_STORE_DEPT = { '4f':'旗艦館(4F)Otto2 ART CLUB', '2f':'旗艦館(2F)Otto2 ART CLUB', 'guotu':'國圖店Otto2 ART CLUB', 'hq':'總部Otto2 ART CLUB', 'camp':'旗艦館(4F)Otto2 ART CLUB－營隊' };
 
+/* 2026-11-05 拿掉耗材自己那組「查看月份」（預設寫死 2026 年 6 月，又不跟右上角連動），統一看右上角 */
 function getCMMonthKey() {
-  var yEl = document.getElementById('cm-selYear');
-  var mEl = document.getElementById('cm-selMonth');
-  if (yEl && mEl && yEl.value && mEl.value) {
-    return yEl.value + '-' + mEl.value;
-  }
-  return getMonthKey(); // fallback 用全域月份
+  return getMonthKey();
 }
 
 function getCMKey() {

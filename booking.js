@@ -2444,9 +2444,9 @@ async function bkRender(noReload){
   if(nX)nX.onclick=function(){ localStorage.setItem(BK_NOTIF_DISMISS_KEY,"1"); bkRender(true) };
   var dpEl=document.getElementById("bkDatePick");
   if(dpEl)dpEl.onclick=bkDatePick;
-  document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkRender() };
-  document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
-  document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
+  document.getElementById("bkPrev").onclick=function(){ bkDate.setDate(bkDate.getDate()-1); bkTellMonth(bkDate.getFullYear(),bkDate.getMonth()+1); bkRender() };
+  document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkTellMonth(bkDate.getFullYear(),bkDate.getMonth()+1); bkRender() };
+  document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkTellMonth(bkDate.getFullYear(),bkDate.getMonth()+1); bkRender() };
   document.getElementById("bkReload").onclick=function(){ bkMir.force=true; bkRefresh() };
   var bkMemRetry=document.getElementById("bkMemberRetry");
   if(bkMemRetry)bkMemRetry.onclick=function(){ this.disabled=true; this.textContent="連線中…"; bkMir.force=true; bkRefresh() };
@@ -2515,7 +2515,19 @@ async function bkRender(noReload){
 window.bkRender=bkRender;
 /* bkDate 是這個 IIFE 內部的變數，外面（app.js 的月份選單）碰不到，
    要跳月只能透過這支公開出去的函式改，改完由呼叫端自己決定要不要 bkRender()。 */
-window.bkGoToMonth=function(y,m){ bkDate=new Date(y,m-1,1); };
+/* 回傳有沒有真的換日期。已經在這個月就不動，不然用 ‹ › 跨月時會被拉回 1 號；選到本月就回今天 */
+window.bkGoToMonth=function(y,m){
+  if(bkDate.getFullYear()===y&&bkDate.getMonth()+1===m)return false;
+  var t=new Date();
+  bkDate=(t.getFullYear()===y&&t.getMonth()+1===m)?t:new Date(y,m-1,1);
+  return true;
+};
+window.bkCalGoToMonth=function(y,m){
+  if(bkCalY===y&&bkCalM===m)return false;
+  bkCalY=y; bkCalM=m;
+  return true;
+};
+function bkTellMonth(y,m){ if(window.otto2SetMonth)otto2SetMonth(y,m) }
 
 /* 未來備料預警的精簡版，放在今日排課最上面每次開頁都看得到（不用特地跑去庫存盤點分頁）。
    實際的加總/比對邏輯在 inventory.js 的 computeUpcomingShortages，這裡只負責顯示摘要，
@@ -2972,11 +2984,11 @@ async function bkSchedRender(){
   root.innerHTML=h;
 
   document.getElementById("bkCPrev").onclick=function(){
-    bkCalM--; if(bkCalM<1){ bkCalM=12; bkCalY-- } bkSchedRender() };
+    bkCalM--; if(bkCalM<1){ bkCalM=12; bkCalY-- } bkTellMonth(bkCalY,bkCalM); bkSchedRender() };
   document.getElementById("bkCNext").onclick=function(){
-    bkCalM++; if(bkCalM>12){ bkCalM=1; bkCalY++ } bkSchedRender() };
+    bkCalM++; if(bkCalM>12){ bkCalM=1; bkCalY++ } bkTellMonth(bkCalY,bkCalM); bkSchedRender() };
   document.getElementById("bkCNow").onclick=function(){
-    var t=new Date(); bkCalY=t.getFullYear(); bkCalM=t.getMonth()+1; bkSchedRender() };
+    var t=new Date(); bkCalY=t.getFullYear(); bkCalM=t.getMonth()+1; bkTellMonth(bkCalY,bkCalM); bkSchedRender() };
   root.querySelectorAll("[data-d]").forEach(function(el){
     el.onclick=function(){ bkSchedPick(el.dataset.d) } });
 }

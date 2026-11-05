@@ -89,6 +89,7 @@ function fnRangeLabel(){
 function fnShift(step){
   if(fnMode==="day")fnDate.setDate(fnDate.getDate()+step);
   else fnDate.setMonth(fnDate.getMonth()+step);
+  if(window.otto2SetMonth)otto2SetMonth(fnDate.getFullYear(),fnDate.getMonth()+1);
   fnRender();
 }
 
@@ -640,7 +641,9 @@ function fnBind(root){
   var p2=document.getElementById("fnNext");
   if(p2)p2.onclick=function(){ fnItem=""; fnShift(1) };
   var nw=document.getElementById("fnNow");
-  if(nw)nw.onclick=function(){ fnDate=new Date(); fnItem=""; fnRender() };
+  if(nw)nw.onclick=function(){ fnDate=new Date(); fnItem="";
+    if(window.otto2SetMonth)otto2SetMonth(fnDate.getFullYear(),fnDate.getMonth()+1);
+    fnRender() };
   var re=document.getElementById("fnRe");
   if(re)re.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
   /* 手動新增表旁邊也放一顆，新增完不用捲回最上面才能刷新列表 */
@@ -648,6 +651,14 @@ function fnBind(root){
   if(reAdd)reAdd.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
 }
 window.renderFinance=fnRender;
+/* 右上角月份選到別的月：切到「每月」看整個月。已經在這個月就不動（回傳 false），才不會打斷用 ‹ › 一天天看 */
+window.fnGoToMonth=function(y,m){
+  if(fnDate.getFullYear()===y&&fnDate.getMonth()+1===m)return false;
+  var t=new Date();
+  fnDate=(t.getFullYear()===y&&t.getMonth()+1===m)?t:new Date(y,m-1,1);
+  fnMode="month"; fnItem="";
+  return true;
+};
 
 /* ── 樣式 ── */
 (function(){
