@@ -543,6 +543,11 @@ function mbDetail(phone){
   h += '</div>';
 
   h += mbTktCardHtml(m);
+  h += '<div class="row" style="gap:6px;margin-bottom:10px">' +
+       '<button class="store-btn' + (mbDetailTab === 'rec' ? ' active' : '') + '" id="mbTabRec" onclick="mbDetailSwitch(\'rec\',\'' + phone + '\')">核銷紀錄</button>' +
+       '<button class="store-btn' + (mbDetailTab === 'ledger' ? ' active' : '') + '" id="mbTabLedger" onclick="mbDetailSwitch(\'ledger\',\'' + phone + '\')">點數明細</button></div>';
+  h += '<div id="mbPaneRec"' + (mbDetailTab === 'rec' ? '' : ' style="display:none"') + '></div>';
+  h += '<div id="mbPaneLedger"' + (mbDetailTab === 'ledger' ? '' : ' style="display:none"') + '>';
   h += '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:6px">' +
        '每一筆都可以按 ✎ 補上來源與說明。半透明的標籤是系統推斷的，確認過存一次就會變實心。</div>';
   h += '<div style="max-height:46vh;overflow:auto"><table><thead><tr>' +
@@ -569,7 +574,7 @@ function mbDetail(phone){
         '<button class="btn btn-del btn-sm" style="padding:2px 8px;min-height:28px" onclick="mbDelLedger(\'' + phone + '\',\'' + r._k + '\')">✕</button></td>' +
       '</tr>';
   });
-  h += '</tbody></table></div>';
+  h += '</tbody></table></div></div>';
   h += '<div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap">' +
        (mbCan('sellPlan') ? '<button class="btn btn-gold" style="flex:1;min-width:130px" onclick="mbSell(\'' + phone + '\')">賣方案／加點</button>' : '') +
        '<button class="btn" style="flex:1;min-width:100px" onclick="mbAdjust(\'' + phone + '\')">調整餘額</button>' +
@@ -580,6 +585,178 @@ function mbDetail(phone){
        '<button class="btn btn-del btn-sm" ' +
        'onclick="mbAskDelete(\'' + phone + '\')">刪除這位會員</button></div>';
   mbModal(h);
+  if (mbDetailTab === 'rec') mbRecFill('mbPaneRec', [phone], m.name || '');
+}
+var mbDetailTab = 'rec';
+function mbDetailSwitch(t, phone){
+  mbDetailTab = t;
+  var rec = document.getElementById('mbPaneRec'), led = document.getElementById('mbPaneLedger');
+  if (!rec || !led) return;
+  rec.style.display = t === 'rec' ? '' : 'none';
+  led.style.display = t === 'ledger' ? '' : 'none';
+  document.getElementById('mbTabRec').classList.toggle('active', t === 'rec');
+  document.getElementById('mbTabLedger').classList.toggle('active', t === 'ledger');
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (t === 'rec') mbRecFill('mbPaneRec', [phone], (m && m.name) || '');
+}
+
+/* ══ 核銷紀錄（2026-11-05）═══════════════════════════════
+   一位客人所有的上課、畫布、加購，會員分頁的明細和今日排課點名字共用這一塊。
+   上課、加購：預約單的 checkout。
+   畫布：加購裡的畫布＋庫存 autoUsed（課程用料自動扣的，用 bookingId 對回來）。
+   接續上次的畫不用新畫布，系統沒有留「沒用」這個答案，所以查不到畫布的一律寫
+   「未記錄」，不能當成沒用畫布。
+   預約系統 2026/07/30 才開始用，更早的紀錄查不到。
+   ═════════════════════════════════════════════════════ */
+var MB_REC_TTL = 300000;   /* 整包預約很大（資料庫有下載上限），今日排課載過就直接用，5 分鐘內不重抓 */
+async function mbRecBookings(){
+  var snap = window.bkBookingsSnap;
+  if (snap && snap.all && Date.now() - snap.at < MB_REC_TTL) return snap.all;
+  if (typeof window.bkFetchAll !== 'function') return null;
+  var all = await window.bkFetchAll();
+  if (all) window.bkBookingsSnap = { at: Date.now(), all: all };
+  return all;
+}
+function mbRecVals(o){
+  if (!o || typeof o !== 'object') return [];
+  return Object.keys(o).map(function(k){ return o[k] }).filter(Boolean);
+}
+/* 課程用料自動扣掉的畫布：{ 預約id: { 品名: 數量 } }。加購的畫布看 checkout.addons，這裡不算，免得算兩次 */
+function mbRecCourseCanvas(){
+  var out = {};
+  var inv = (typeof S !== 'undefined' && S && S.inventory) || {};
+  Object.keys(inv).forEach(function(store){
+    var st = inv[store];
+    if (!st || typeof st !== 'object' || !st.autoUsed) return;
+    var byId = {};
+    mbRecVals(st.items).forEach(function(i){ byId[String(i.id)] = i });
+    mbRecVals(st.autoUsed).forEach(function(day){
+      mbRecVals(day).forEach(function(r){
+        var it = byId[String(r.itemId)];
+        if (!r.bookingId || r.kind === 'addon' || !it || it.cat !== '畫布') return;
+        var one = out[r.bookingId] = out[r.bookingId] || {};
+        one[it.name] = (one[it.name] || 0) + (+r.qty || 0);
+      });
+    });
+  });
+  return out;
+}
+function mbRecAddonIsCanvas(a){
+  var inv = (typeof S !== 'undefined' && S && S.inventory) || {};
+  var hit = Object.keys(inv).some(function(store){
+    var st = inv[store];
+    return st && typeof st === 'object' && mbRecVals(st.items).some(function(i){
+      return a.materialId != null && String(i.id) === String(a.materialId) && i.cat === '畫布' });
+  });
+  return hit || /畫布/.test(String(a.name || ''));
+}
+/* 這堂課應該要有畫布嗎？課程用料有配畫布，或同一門課別的規格有配（會員價尺寸當場選的那種）才算 */
+function mbRecWantsCanvas(i){
+  var name = String(i.name || '').trim(), spec = String(i.spec || '').trim();
+  if (typeof invNeedsCanvasReminder === 'function' && invNeedsCanvasReminder(name, spec)) return true;
+  if (typeof recipeHasCanvasItem !== 'function' || typeof S === 'undefined' || !S.recipes) return false;
+  return recipeHasCanvasItem(S.recipes[name + (spec ? '|' + spec : '')]) || recipeHasCanvasItem(S.recipes[name]);
+}
+function mbRecRows(all, keys){
+  var want = {};
+  keys.forEach(function(p){ var k = mbNorm(p); if (k) want[k] = 1 });
+  var canvas = mbRecCourseCanvas();
+  var rows = [];
+  Object.keys(all || {}).forEach(function(id){
+    var b = all[id];
+    if (!b || b.status === 'cancelled' || b.status === 'expired') return;
+    var c = b.checkout || null;
+    if (!c && b.attend !== 'in') return;
+    var mine = [b.customer && b.customer.phone, b.memberPhone, c && c.payerPhone]
+      .some(function(p){ return p && want[mbNorm(p)] });
+    if (!mine) return;
+    var cv = {};
+    Object.keys(canvas[id] || {}).forEach(function(n){ cv[n] = canvas[id][n] });
+    var addons = ((c && c.addons) || []).filter(Boolean);
+    addons.forEach(function(a){
+      if (!mbRecAddonIsCanvas(a)) return;
+      var n = a.name || '畫布';
+      cv[n] = (cv[n] || 0) + (+a.qty || 1);
+    });
+    var hasCv = Object.keys(cv).length > 0;
+    rows.push({ id: id, b: b, c: c, addons: addons, canvas: cv,
+      noCanvas: !hasCv && !!c && (b.items || []).some(mbRecWantsCanvas) });
+  });
+  return rows.sort(function(x, y){
+    return String(y.b.date + y.b.slot).localeCompare(String(x.b.date + x.b.slot)) });
+}
+function mbRecRowHtml(r, keys, name){
+  var b = r.b, c = r.c;
+  var who = String((b.customer && b.customer.name) || '').trim();
+  var items = (b.items || []).map(function(i){
+    return (i.name || '') + (i.spec ? '（' + i.spec + '）' : '') + (+i.qty > 1 ? ' ×' + i.qty : '') }).join('、') || '（沒有課程資料）';
+  var line2 = [];
+  if (c){
+    var ts = (c.teachers && c.teachers.length ? c.teachers : (c.teacher ? [c.teacher] : [])).filter(Boolean);
+    if (ts.length) line2.push('老師 ' + ts.join('、'));
+    if (c.summary) line2.push(c.summary + (+c.useSessions ? '（' + (+c.useSessions) + ' 堂）' : ''));
+    var payer = c.payerPhone && mbNorm(c.payerPhone);
+    var isMe = keys.some(function(p){ return mbNorm(p) === payer });
+    if (payer && !isMe){
+      var pm = (mbList || []).find(function(x){ return x.phone === payer });
+      line2.push('扣 ' + ((pm && pm.name) || payer) + ' 的餘額');
+    }
+  }
+  var cvTxt = Object.keys(r.canvas).map(function(n){ return n + ' ×' + r.canvas[n] }).join('、');
+  var addTxt = r.addons.map(function(a){
+    return (a.name || '未命名') + (+a.qty > 1 ? ' ×' + a.qty : '') + ' $' + (+a.amt || 0).toLocaleString() }).join('、');
+  return '<div class="mb-rec-row" style="padding:9px 2px;border-bottom:1px solid var(--border)">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">' +
+      '<span style="font-size:var(--fs-xs);color:var(--text2);white-space:nowrap">' + mbEsc(b.date || '') + (b.slot ? '　' + mbEsc(b.slot) : '') + '</span>' +
+      (c ? '<b style="white-space:nowrap">$' + (+c.total || 0).toLocaleString() + '</b>'
+         : '<span style="font-size:var(--fs-xs);color:var(--red);white-space:nowrap">已報到、還沒核銷</span>') +
+    '</div>' +
+    '<div style="margin-top:2px">' + (who && who !== name ? '<span style="color:var(--text2)">【' + mbEsc(who) + '】</span>' : '') + mbEsc(items) + '</div>' +
+    (line2.length ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:2px">' + mbEsc(line2.join('　・　')) + '</div>' : '') +
+    (cvTxt ? '<div style="font-size:var(--fs-sm);margin-top:2px">🎨 畫布：' + mbEsc(cvTxt) + '</div>'
+      : (r.noCanvas ? '<div class="muted" style="font-size:var(--fs-sm);margin-top:2px">🎨 畫布：未記錄</div>' : '')) +
+    (addTxt ? '<div style="font-size:var(--fs-sm);margin-top:2px">➕ 加購：' + mbEsc(addTxt) + '</div>' : '') +
+  '</div>';
+}
+function mbRecHtml(rows, keys, name){
+  if (!rows.length)
+    return '<div class="muted" style="padding:14px 2px;font-size:var(--fs-sm)">2026/07/30 以後沒有上課紀錄，更早的紀錄系統查不到。</div>';
+  var cv = {}, cvN = 0, noCv = 0, addN = 0, addAmt = 0;
+  rows.forEach(function(r){
+    Object.keys(r.canvas).forEach(function(n){ cv[n] = (cv[n] || 0) + r.canvas[n]; cvN += r.canvas[n] });
+    if (r.noCanvas) noCv++;
+    addN += r.addons.length;
+    r.addons.forEach(function(a){ addAmt += +a.amt || 0 });
+  });
+  var cell = function(v, l){ return '<div><div style="font-size:var(--fs-lg);font-weight:600">' + v + '</div><div class="muted" style="font-size:var(--fs-xs)">' + l + '</div></div>' };
+  var cvList = Object.keys(cv).map(function(n){ return n + ' ×' + cv[n] }).join('、');
+  return '<div class="row" style="gap:24px;flex-wrap:wrap;margin-bottom:6px">' +
+      cell(rows.length, '上課次數') + cell(cvN, '畫布張數') + cell(noCv, '畫布未記錄（次）') +
+      cell('$' + addAmt.toLocaleString(), '加購 ' + addN + ' 筆') + '</div>' +
+    (cvList ? '<div class="muted" style="font-size:var(--fs-xs)">畫布：' + mbEsc(cvList) + '</div>' : '') +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:6px">紀錄從 2026/07/30 開始。「未記錄」可能是接續舊畫，也可能是核銷時沒選畫布，不等於沒用。</div>' +
+    '<div style="max-height:46vh;overflow:auto;border-top:1px solid var(--border)">' +
+      rows.map(function(r){ return mbRecRowHtml(r, keys, name) }).join('') + '</div>';
+}
+/* elId：要畫進去的框；keys：這位的電話（可以多支）；name：這位的名字，上課的人不是他才標出來 */
+async function mbRecFill(elId, keys, name){
+  var el = document.getElementById(elId);
+  if (!el) return;
+  var token = keys.join(',');
+  el.dataset.recFor = token;
+  el.innerHTML = '<div class="muted" style="padding:14px 2px;font-size:var(--fs-sm)">讀取核銷紀錄中…</div>';
+  var all = null;
+  try { all = await mbRecBookings() } catch(e) {}
+  el = document.getElementById(elId);
+  if (!el || el.dataset.recFor !== token) return;   /* 等資料的時候已經換人或關掉了 */
+  if (!all){
+    /* 讀失敗不能畫成「沒有紀錄」，看起來會像這位沒來上過課 */
+    el.innerHTML = '<div style="padding:12px 2px;color:var(--red);font-size:var(--fs-sm)">⚠️ 連不上伺服器，核銷紀錄沒讀到。 ' +
+      '<button type="button" class="btn btn-outline btn-sm" id="' + elId + 'Retry">重新讀取</button></div>';
+    document.getElementById(elId + 'Retry').onclick = function(){ mbRecFill(elId, keys, name) };
+    return;
+  }
+  el.innerHTML = mbRecHtml(mbRecRows(all, keys), keys, name);
 }
 
 /* ══ 刪除會員 ═══════════════════════════════════════════

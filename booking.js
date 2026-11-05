@@ -1948,16 +1948,13 @@ function bkResolvedPhone(b){
   return (b.customer&&b.customer.phone)||"";
 }
 /* 點客人姓名看目前餘額，不用切去會員分頁或等核銷完才看得到 */
-/* 點名字跳出來的視窗裡，列出這位之前哪幾天來過、上什麼課 */
-function bkVisitHtml(b){
-  if(!b)return "";
-  var pv=bkPastVisits(b);
-  var rows=pv.length?pv.slice(0,10).map(function(v){
-    return '<div class="bk-dline"><span>'+esc(v.date)+'</span><b style="font-weight:500">'+esc(bkVisitWho(v,b)+bkVisitItems(v))+'</b></div>' }).join("")+
-    (pv.length>10?'<div class="muted" style="font-size:12px">…還有 '+(pv.length-10)+' 筆更早的</div>':"")
-    :'<div class="muted" style="font-size:12.5px">這次之前沒有來上過課的紀錄（2026/07/30 以後）</div>';
-  return '<div style="margin:10px 0 12px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">來店紀錄'+
-    (pv.length?'（'+pv.length+' 次）':'')+'</div>'+rows+'</div>';
+/* 視窗裡的核銷紀錄跟會員分頁共用 member.js 那一塊。這筆預約留的電話和綁的會員電話都算這位的，
+   客人換格式填電話、或手動配對過的，紀錄才不會漏。 */
+function bkRecBox(){ return '<div id="bkRecBox" style="margin:10px 0 12px"></div>' }
+function bkRecFill(phone,name,b){
+  if(typeof mbRecFill!=="function")return;
+  var keys=[phone].concat(b?bkKeysOf(b):[]);
+  mbRecFill("bkRecBox",keys,String(name||"").trim());
 }
 async function bkShowBalance(phone,name,b){
   if(!phone){ alert("這筆沒有留可對應的電話，查不到會員資料。"); return }
@@ -1966,9 +1963,10 @@ async function bkShowBalance(phone,name,b){
   if(!m){
     bkSheet('<h3 style="margin:0 0 2px">'+esc(name||"")+'</h3>'+
       '<div class="bk-info">'+esc(phone)+'　查無會員資料，可能還沒建檔。</div>'+
-      bkVisitHtml(b)+
+      bkRecBox()+
       '<div class="bk-act"><button class="bk-cancel" id="bkBalX">關閉</button></div>');
     document.getElementById("bkBalX").onclick=bkClose;
+    bkRecFill(phone,name,b);
     return;
   }
   var c=m.cache||{};
@@ -1993,11 +1991,12 @@ async function bkShowBalance(phone,name,b){
       '<div><b>'+(+c.sessions||0)+'</b><span>堂數</span></div>'+
       '<div><b>'+(+c.bonus||0).toLocaleString()+'</b><span>紅利</span></div>'+
     '</div>'+
-    bkVisitHtml(b)+
+    bkRecBox()+
     '<div class="bk-act">'+
       (bkCan("sellPlan")?'<button class="bk-save" id="bkBalSell">賣方案</button>':'')+
       '<button class="bk-cancel" id="bkBalX">關閉</button></div>');
   document.getElementById("bkBalX").onclick=bkClose;
+  bkRecFill(phone,m.name||name,b);
   var sellBtn=document.getElementById("bkBalSell");
   if(sellBtn)sellBtn.onclick=async function(){ await bkSellPlanFor(phone) };
 }
