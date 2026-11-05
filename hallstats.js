@@ -23,7 +23,7 @@ async function renderHallStats(){
   var h = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div class="muted" style="font-size:var(--fs-sm)">2026-11-03 起開始記，之前的資料沒有。員工不算（目前略過 ' + (d.staffSkipped || 0) + ' 位）。</div>' +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto;flex:none" onclick="renderHallStats()">↻ 重新讀取</button></div>';
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:16px">' +
-    hsCard(d.hallEnter, '進過大廳') + hsCard(enterRooms, '進展間（人次：每人每位藝術家算一次）') + hsCard(d.listened, '聽過至少一集') + hsCard(d.finished, '聽完至少一集') + hsCard(d.members, '其中是會員') + hsCard(d.anon, '沒登入的訪客') + '</div>';
+    hsCard(d.hallEnter, '進過大廳') + hsCard(enterRooms, '進展間（人次：每人每位藝術家算一次）') + hsCard(d.listened, '聽過至少一集') + hsCard(d.finished, '聽完至少一集') + hsCard(d.members, '其中是會員') + hsCard(d.viaPhone || 0, '其中用電話驗票') + hsCard(d.nonMember || 0, '驗票時是非會員') + hsCard(d.anon, '沒登入的訪客') + '</div>';
 
   var rooms = Object.keys(d.rooms);
   if (!rooms.length) h += '<div class="empty">還沒有人聽過。</div>';
@@ -41,7 +41,7 @@ async function renderHallStats(){
   if (!list.length) h += '<div class="muted" style="font-size:var(--fs-sm)">還沒有資料。</div>';
   else h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:var(--fs-sm);white-space:nowrap"><tr class="muted"><th style="text-align:left;padding:5px">名字</th><th>身分</th><th>聽過</th><th>聽完</th><th>最後來的時間</th></tr>' +
     list.map(function(p){
-      var who = p.anon ? '訪客' : (p.name || '未綁電話'), tag = p.anon ? '未登入' : p.member ? '會員' : '非會員';
+      var who = p.anon ? '訪客' : (p.name || '未綁電話'), tag = p.anon ? (p.nm ? '非會員（驗票時）' : '未登入') : p.member ? (p.via === 'phone' ? '會員（電話驗票）' : '會員') : '非會員';
       var last = p.last ? new Date(p.last).toLocaleString('zh-TW', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }) : '';
       return '<tr style="border-top:1px solid var(--line,#eee);text-align:center"><td style="text-align:left;padding:5px">' + hsEsc(who) + '</td><td>' + tag + '</td><td>' + p.heard + ' 集</td><td>' + p.done + ' 集</td><td>' + hsEsc(last) + '</td></tr>';
     }).join('') + '</table></div>';
