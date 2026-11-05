@@ -56,6 +56,7 @@ var fnDate = new Date();
 var fnDed  = null;            /* 全部核銷紀錄 */
 var fnDep  = null;            /* 全部訂金紀錄 */
 var fnMan  = null;            /* 手動補登 */
+var fnRec  = null;            /* 業績紀錄 salesData/records */
 var fnOpen = "";              /* 課程排行展開中的那一門 */
 var fnView = "menu";          /* menu / cash / sales */
 var fnCat  = "";              /* course / goods / stored */
@@ -97,7 +98,7 @@ function fnShift(step){
    deductions 和 deposits 都整包抓下來再在前端篩。
    資料量還小，這樣寫最單純；之後筆數大了再改成按月份分片。 */
 async function fnLoad(force){
-  if(fnDed&&fnDep&&fnMan&&!force)return;
+  if(fnDed&&fnDep&&fnMan&&fnRec&&!force)return;
   fnErr="";
   try{
     var a=await (await fetch(fnf("/deductions.json"))).json();
@@ -115,6 +116,11 @@ async function fnLoad(force){
       var v=c[k]; if(!v||v.voided)return; fnMan.push(Object.assign({_id:k},v)) });
     fnMan.sort(function(x,y){ return String(x.date)<String(y.date)?-1:1 });
   }catch(e){ fnMan=[]; fnErr+="補登紀錄讀取失敗："+e.message }
+  try{
+    /* 開頁時 app.js 已經下載過同一份，有就直接用，按「重新讀取」才再抓一次 */
+    var rr=window.fbSalesRaw||await (await fetch(fnf("/salesData/records.json"))).json();
+    fnRec=(Array.isArray(rr)?rr:Object.values(rr||{})).filter(function(v){ return v&&!v.voided });
+  }catch(e){ fnRec=[]; fnErr+="業績紀錄讀取失敗："+e.message }
 }
 
 /* ── 業績（當日營業扣課收入）──
@@ -180,63 +186,62 @@ function fnSales(){
   return o;
 }
 
-/* ── 現金流 ──
-   結帳收款讀 deductions.byWay（訂金不在裡面，它記在收款那天）
-   預收定金讀 deposits
-   賣方案的錢也是實際收款，歸在「結帳收款」 */
+/* ── 業績紀錄（2026-11-05 大熊定調：實際收款和預收以這份為準，跟月報總覽同一份）──
+   只看四樓，跟月報的「成人每日登記」一致。今年 10 月以前的舊紀錄沒有 year 欄，都算 2026。
+   一筆可以分兩段付款（訂金＋尾款）：第一段 amount1／pay，第二段 pay2。
+   少數紀錄兩段加起來不等於 amount，以 amount 為準，差額歸第二段，總數才會跟業績系統一樣。 */
+var FN_RECWAYS = [
+  {k:"cash",    n:"現金"},
+  {k:"card",    n:"信用卡"},
+  {k:"linepay", n:"LINE Pay"},
+  {k:"transfer",n:"匯款"},
+  {k:"online",  n:"線上藍新"},
+  {k:"other",   n:"其他（小象線上購等）"}
+];
+var FN_RECPAY = {"現金":"cash","高鉅刷卡":"card","匯款":"transfer","4FLinepay":"linepay","國圖Linepay":"linepay",
+                 "夯客Linepay":"linepay","線上藍新":"online","其他":"other"};
+function fnRecDate(r){ return (r.year||2026)+"/"+fnPad(parseInt(r.month)||0)+"/"+fnPad(parseInt(r.day)||0) }
+function fnRecs(){
+  return (fnRec||[]).filter(function(r){ return r.dept==="4F"&&fnInRange(fnRecDate(r)) });
+}
+function fnRecParts(r){
+  var amt=+r.amount||0;
+  if(!r.pay2&&!(+r.amount2))return [{pay:r.pay||"",amt:amt}];
+  var first=Math.min(+r.amount1||0,amt);
+  return [{pay:r.pay||"",amt:first},{pay:r.pay2||r.pay||"",amt:amt-first}];
+}
+function fnIsPlanRec(r){ return String(r.category||"").indexOf("方案")===0 }
+
+/* 結帳統計：這段時間實際收到多少錢 */
 function fnCash(){
-  var o={}, cult={checkout:0,deposit:0}, note=[];
-  FN_WAYS.forEach(function(w){ o[w.k]={checkout:0,deposit:0} });
-
-  (fnDed||[]).forEach(function(r){
-    if(!fnInRange(r.date))return;
-    var bw=r.byWay||{};
-    Object.keys(bw).forEach(function(k){
-      var amt=+bw[k]||0; if(!amt)return;
-      if(FN_NONCASH.indexOf(k)>=0)return;          /* 扣點扣堂不是收錢 */
-      if(k===FN_CULTURE){ cult.checkout+=amt; return }
-      if(o[k])o[k].checkout+=amt;
-      else note.push("核銷出現沒見過的付款方式："+k);
+  var o={}, total=0, plan=0, pending=0, unknown={};
+  FN_RECWAYS.forEach(function(w){ o[w.k]=0 });
+  fnRecs().forEach(function(r){
+    var amt=+r.amount||0;
+    if(r.pending||r.pay==="未入帳"){ pending+=amt; return }
+    total+=amt;
+    if(fnIsPlanRec(r))plan+=amt;
+    fnRecParts(r).forEach(function(p){
+      var k=FN_RECPAY[p.pay];
+      if(!k){ k="other"; if(p.pay)unknown[p.pay]=1 }
+      o[k]+=p.amt;
     });
   });
+  return {by:o,total:total,plan:plan,other:total-plan,pending:pending,
+          notes:Object.keys(unknown).map(function(p){ return "業績紀錄有沒見過的付款方式："+p+"，先算在其他" })};
+}
 
-  (fnDep||[]).forEach(function(r){
-    if(!fnInRange(r.date))return;
-    var amt=+r.amount||0; if(!amt)return;
-    var k=r.way||"";
-    if(FN_NONCASH.indexOf(k)>=0)return;
-    if(k===FN_CULTURE){ cult.deposit+=amt; return }
-    if(o[k])o[k].deposit+=amt;
-    else note.push("訂金出現沒見過的付款方式："+k);
+/* 營業收入：讀月報同一筆每日營收（每日填寫按儲存才會進來） */
+function fnReportRev(){
+  var daily=(typeof S!=="undefined"&&S&&S.daily)?S.daily:{};
+  var y=fnDate.getFullYear(), m=fnDate.getMonth()+1, mKey=y+"-"+fnPad(m), sum=0;
+  var days=fnMode==="day"?[fnDate.getDate()]:[];
+  if(fnMode!=="day")for(var d=1;d<=new Date(y,m,0).getDate();d++)days.push(d);
+  days.forEach(function(d){
+    var rec=daily[dayKey("flagship",mKey,d)];
+    sum+=(rec&&+rec.revenue)||0;
   });
-
-  var ps=(typeof S!=="undefined"&&S&&S.planSales)?S.planSales:{};
-  Object.keys(ps||{}).forEach(function(d){
-    if(!fnInRange(d))return;
-    (ps[d]||[]).forEach(function(x){
-      /* 抵訂金的方案：訂金那段收款當天已經算過，這裡只算這次實收 */
-      var amt=(x.paid!=null?+x.paid:+x.price)||0; if(!amt)return;
-      /* 賣方案視窗存的是中文（現金、刷卡…），這邊要換成代碼才對得上 */
-      var k=FN_PLANPAY[x.pay]||x.pay||"";
-      if(k===FN_CULTURE){ cult.checkout+=amt; return }
-      if(o[k])o[k].checkout+=amt;
-      else note.push("賣方案的付款方式對不上（"+(x.plan||"")+" "+fnMoney(amt)+"），先沒算進現金流");
-    });
-  });
-
-  (fnMan||[]).forEach(function(r){
-    if(!fnInRange(r.date))return;
-    var amt=+r.amount||0; if(!amt)return;
-    var k=r.way||"none";
-    if(k==="none"||FN_NONCASH.indexOf(k)>=0)return;
-    if(k===FN_CULTURE){ cult.checkout+=amt; return }
-    if(o[k])o[k].checkout+=amt;
-  });
-
-  var sumCk=0,sumDp=0;
-  FN_WAYS.forEach(function(w){ sumCk+=o[w.k].checkout; sumDp+=o[w.k].deposit });
-  return {by:o,culture:cult,checkout:sumCk,deposit:sumDp,total:sumCk+sumDp,
-          notes:note.filter(function(v,i,a){return a.indexOf(v)===i})};
+  return sum;
 }
 
 /* ── 手動補登 ──
@@ -346,18 +351,11 @@ function fnCatData(cat){
     });
   }
   if(cat==="stored"){
-    var ps=(typeof S!=="undefined"&&S&&S.planSales)?S.planSales:{};
-    Object.keys(ps||{}).forEach(function(d){
-      if(!fnInRange(d))return;
-      (ps[d]||[]).forEach(function(x,xi){
-        list.push({id:"p"+d+"_"+xi,src:"plan",date:d,
-          name:(x.name||x.phone||"—")+"　"+(x.plan||""),amt:+x.price||0,pay:x.pay||"",raw:x});
-      });
-    });
-    (fnMan||[]).forEach(function(r){
-      if(!fnInRange(r.date)||r.cat!=="plan")return;
-      list.push({id:"m"+r._id,src:"man",date:r.date,name:r.note||"手動填寫",
-        amt:+r.amount||0,pay:r.way||"",raw:r});
+    fnRecs().forEach(function(r,i){
+      if(!fnIsPlanRec(r))return;
+      var ps=fnRecParts(r).map(function(p){ return p.pay }).filter(function(v,j,arr){ return arr.indexOf(v)===j });
+      list.push({id:"r"+i,src:"rec",date:fnRecDate(r),name:(r.customer||"—")+"　"+(r.note||r.category||""),
+        amt:+r.amount||0,pay:ps.join("＋"),raw:r});
     });
   }
   list.sort(function(a,b){ return a.date<b.date?-1:(a.date>b.date?1:0) });
@@ -367,7 +365,7 @@ var FN_CATNAME={course:"扣課資料",goods:"商品",stored:"預收儲值金"};
 var FN_CATNOTE={
   course:"當天上了哪些課、值多少錢。付款方式標在右邊",
   goods:"現金販售的畫布、公仔等，含核銷加購與手動填寫",
-  stored:"當天實際賣出的方案金額"
+  stored:"業績紀錄裡四樓方案類的金額"
 };
 
 /* ── 畫面：選單 → 業績統計 → 分類 → 單筆 ── */
@@ -393,7 +391,7 @@ function fnCrumb(items){
 
 function fnRender(){
   var root=document.getElementById("fnRoot"); if(!root)return;
-  if(!fnDed||!fnDep||!fnMan){
+  if(!fnDed||!fnDep||!fnMan||!fnRec){
     root.innerHTML='<div class="fn-load">讀取中…</div>';
     fnLoad().then(fnRender); return;
   }
@@ -402,7 +400,7 @@ function fnRender(){
   if(fnView==="menu"){
     h+='<div class="fn-sec"><div class="fn-st">報表</div>'+
        '<div class="fn-menu" data-go="cash"><div class="ic">💵</div><div>'+
-         '<b>結帳統計</b><i>以支付方式看每天實際收到多少錢，核對帳務用</i></div><span>›</span></div>'+
+         '<b>結帳統計</b><i>以支付方式看四樓實際收到多少錢，和業績紀錄同一份</i></div><span>›</span></div>'+
        '<div class="fn-menu" data-go="sales"><div class="ic">📊</div><div>'+
          '<b>業績統計</b><i>當天扣了多少課、賣了多少商品與方案，可以往下看到每一筆</i></div><span>›</span></div>'+
        '</div>';
@@ -429,12 +427,16 @@ function fnRender(){
   var s=fnSales();
   if(!fnCat){
     var stored=fnCatData("stored").reduce(function(a,x){ return a+x.amt },0);
-    h+='<div class="fn-total"><span>營業收入</span><b>'+fnMoney(s.total)+'</b></div>';
+    var rev=fnReportRev(), gap=Math.round(s.total-rev);
+    h+='<div class="fn-total"><span>營業收入</span><b>'+fnMoney(rev)+'</b></div>';
     h+='<div class="fn-block">'+
        fnCatRow("course","扣課資料",s.course)+
        fnCatRow("goods","商品",s.goods)+
        fnCatRow("stored","預收儲值金",stored)+
-       '<div class="fn-note">預收儲值金是賣方案收的錢，不算在營業收入裡——'+
+       (gap?'<div class="fn-note">營業收入和月報總覽同一筆。扣課和商品是核銷明細，加起來比營業收入'+
+         (gap>0?'多 ':'少 ')+fnMoney(Math.abs(gap))+
+         '，通常是還沒在每日填寫存營收，或明細含運費。</div>':'')+
+       '<div class="fn-note">預收儲值金是業績紀錄裡四樓方案類的金額，不算在營業收入裡——'+
        '那堂課還沒上，之後扣課才會認列。</div></div>';
     if(s.est)
       h+='<div class="fn-warn">有 '+s.est+' 筆堂數扣課查不到方案單價，先用課程費用認列。</div>';
@@ -449,7 +451,7 @@ function fnRender(){
      '<span>'+FN_CATNOTE[fnCat]+'</span></div>';
   h+='<div class="fn-total"><span>'+FN_CATNAME[fnCat]+'合計　'+list.length+' 筆</span><b>'+
      fnMoney(sum)+'</b></div>';
-  if(fnCat==="goods"||fnCat==="stored")h+=fnAddBox(fnCat);
+  if(fnCat==="goods")h+=fnAddBox(fnCat);
   h+='<div class="fn-block">';
   if(!list.length)h+='<div class="fn-none">這個範圍沒有資料</div>';
   list.forEach(function(x){
@@ -510,6 +512,18 @@ function fnDetailHtml(x){
     h+='<div class="fn-dl"><span>品項</span><b>'+fnEsc(x.addon.name||"加購")+'</b></div>';
     h+='<div class="fn-dl"><span>來自</span><b>核銷加購・'+fnEsc(x.raw.customer||"—")+'</b></div>';
     h+='<div class="fn-dl"><span>付款方式</span><b>'+fnEsc(fnWayName(x.pay))+'</b></div>';
+    h+='<div class="fn-dl tot"><span>金額</span><b>'+fnMoney(x.amt)+'</b></div>';
+  }else if(x.src==="rec"){
+    var rr=x.raw;
+    h+='<div class="fn-dl"><span>日期</span><b>'+fnEsc(x.date)+'</b></div>';
+    h+='<div class="fn-dl"><span>客人</span><b>'+fnEsc(rr.customer||"—")+'</b></div>';
+    h+='<div class="fn-dl"><span>種類</span><b>'+fnEsc(rr.category||"—")+'</b></div>';
+    h+='<div class="fn-dl"><span>業務</span><b>'+fnEsc(rr.staff||"—")+'</b></div>';
+    if(rr.note)h+='<div class="fn-dl"><span>備註</span><b>'+fnEsc(rr.note)+'</b></div>';
+    h+='<div class="fn-dsub">付款</div>';
+    fnRecParts(rr).forEach(function(p){
+      h+='<div class="fn-dl"><span>'+fnEsc(p.pay||"—")+'</span><b>'+fnMoney(p.amt)+'</b></div>';
+    });
     h+='<div class="fn-dl tot"><span>金額</span><b>'+fnMoney(x.amt)+'</b></div>';
   }else if(x.src==="plan"){
     var p=x.raw;
@@ -599,26 +613,17 @@ function fnRankHtml(s){
 function fnCashHtml(){
   var c=fnCash();
   var h='<div class="fn-st" style="margin-bottom:10px">結帳統計'+
-        '<span>'+(fnMode==="day"?"這天":"這個月")+'實際收到的錢</span></div>';
+        '<span>'+(fnMode==="day"?"這天":"這個月")+'四樓實際收到的錢，和業績紀錄同一份</span></div>';
   h+='<div class="fn-total"><span>總收款</span><b>'+fnMoney(c.total)+'</b></div>';
   h+='<div class="fn-grid">'+
-     '<div class="fn-kpi"><span>來自結帳收款</span><b>'+fnMoney(c.checkout)+'</b>'+
-       '<i>核銷與賣方案</i></div>'+
-     '<div class="fn-kpi"><span>預收定金</span><b>'+fnMoney(c.deposit)+'</b>'+
-       '<i>預約時先收的訂金</i></div></div>';
-  FN_WAYS.forEach(function(w){
-    var v=c.by[w.k], t=v.checkout+v.deposit;
-    h+='<div class="fn-block'+(t?"":" off")+'"><div class="fn-bt">'+w.n+'</div>'+
-       '<div class="fn-line"><span>來自結帳收款</span><b>'+fnMoney(v.checkout)+'</b></div>'+
-       '<div class="fn-line"><span>預收定金</span><b>'+fnMoney(v.deposit)+'</b></div>'+
-       '<div class="fn-sub"><span>合計</span><b>'+fnMoney(t)+'</b></div></div>';
+     '<div class="fn-kpi"><span>賣方案</span><b>'+fnMoney(c.plan)+'</b><i>方案、入會</i></div>'+
+     '<div class="fn-kpi"><span>其他收款</span><b>'+fnMoney(c.other)+'</b><i>體驗、單堂、商品等</i></div></div>';
+  FN_RECWAYS.forEach(function(w){
+    var t=c.by[w.k];
+    if(!t&&(w.k==="online"||w.k==="other"))return;
+    h+='<div class="fn-block'+(t?"":" off")+'"><div class="fn-sub" style="border-top:0;margin-top:0;padding-top:0"><span>'+w.n+'</span><b>'+fnMoney(t)+'</b></div></div>';
   });
-  var ct=c.culture.checkout+c.culture.deposit;
-  h+='<div class="fn-block cult"><div class="fn-bt">文化幣<span>應收，尚未入帳</span></div>'+
-     '<div class="fn-line"><span>來自結帳收款</span><b>'+fnMoney(c.culture.checkout)+'</b></div>'+
-     '<div class="fn-line"><span>預收定金</span><b>'+fnMoney(c.culture.deposit)+'</b></div>'+
-     '<div class="fn-sub"><span>合計</span><b>'+fnMoney(ct)+'</b></div>'+
-     '<div class="fn-note">政府核銷後才會撥款，沒有算進上面的總收款。</div></div>';
+  if(c.pending)h+='<div class="fn-warn">還有 '+fnMoney(c.pending)+' 未入帳，沒有算進總收款。</div>';
   if(c.notes.length)h+='<div class="fn-warn">'+c.notes.map(fnEsc).join("<br>")+'</div>';
   return h;
 }
@@ -651,10 +656,10 @@ function fnBind(root){
     if(window.otto2SetMonth)otto2SetMonth(fnDate.getFullYear(),fnDate.getMonth()+1);
     fnRender() };
   var re=document.getElementById("fnRe");
-  if(re)re.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
+  if(re)re.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRec=null; window.fbSalesRaw=null; fnRender() };
   /* 手動新增表旁邊也放一顆，新增完不用捲回最上面才能刷新列表 */
   var reAdd=document.getElementById("fnReAdd");
-  if(reAdd)reAdd.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRender() };
+  if(reAdd)reAdd.onclick=function(){ fnDed=null; fnDep=null; fnMan=null; fnRec=null; window.fbSalesRaw=null; fnRender() };
 }
 window.renderFinance=fnRender;
 /* 右上角月份選到別的月：切到「每月」看整個月。已經在這個月就不動（回傳 false），才不會打斷用 ‹ › 一天天看 */

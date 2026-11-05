@@ -121,6 +121,7 @@ function loadFirebaseSales() {
       if (!raw) return;
       const records = Array.isArray(raw) ? raw : Object.values(raw);
       if (!records.length) return;
+      window.fbSalesRaw = raw;   // 報表也讀這份，不用再下載一次
       fbSalesData = {};
       fbUnmatched = {};
       records.forEach(r => {
