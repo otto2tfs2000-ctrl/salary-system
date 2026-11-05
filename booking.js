@@ -1568,6 +1568,11 @@ function bkIsNewWeb(b){
 }
 function bkUpdateNewBadge(){
   var badge=document.getElementById("bk-new-badge"); if(!badge)return;
+  /* 2026-11-05 已讀時間存在瀏覽器、每個網址各一份。換網址或換裝置第一次開時沒有紀錄，
+     不能把歷史預約全算成新的（會顯示 99+），從這次開始算。 */
+  if(localStorage.getItem(BK_SEEN_KEY)===null&&bkAllWeb.length){
+    localStorage.setItem(BK_SEEN_KEY,bkAllWeb.reduce(function(m,b){ return String(b.ts||"")>m?String(b.ts):m },""));
+  }
   var lastSeen=localStorage.getItem(BK_SEEN_KEY)||"";
   var n=bkAllWeb.filter(function(b){ return String(b.ts||"")>lastSeen }).length;
   if(n>0){ badge.textContent=n>99?"99+":n; badge.style.display="inline-block" }

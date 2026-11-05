@@ -390,3 +390,5 @@ label.chk.top input{margin-top:3px}
 .mn-row{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)}
 .mn-chk{flex:1;display:flex;align-items:center;gap:8px;font-size:var(--fs-md);cursor:pointer}
 .mn-chk input{width:18px;height:18px}
+.mn-row:has(.mn-name) .mn-chk{flex:0 0 auto}
+.mn-name{flex:1;min-width:0;padding:6px 8px;font-size:var(--fs-md);border:1px solid var(--border);border-radius:8px;background:#fff}
