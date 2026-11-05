@@ -25,7 +25,8 @@
    ══════════════════════════════════════════════════════════ */
 
 var AUTH_CHANNEL_ID = "2010980574";
-var AUTH_API        = "https://otto2-notify-production-7d34.up.railway.app";
+/* 從 /app/ 入口（Railway 或 Cloudflare 轉接）開的，後端就走同一個網址，公司網路才不會被擋（2026-11-05） */
+var AUTH_API        = location.pathname.indexOf("/app/") === 0 ? location.origin : "https://otto2-notify-production-7d34.up.railway.app";
 /* 跟著目前網址走：github.io 或備用入口 /app/ 都登入回得來（2026-11-05） */
 var AUTH_REDIRECT   = location.origin + location.pathname.replace(/[^\/]*$/, "");
 var AUTH_KEY        = "otto2_staff_session";

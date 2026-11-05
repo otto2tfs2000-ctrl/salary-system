@@ -9,7 +9,7 @@
 
 var BK_URL   = "https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app";
 var SAL_URL  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
-var NOTIFY   = "https://otto2-notify-production-7d34.up.railway.app";
+var NOTIFY   = AUTH_API;   /* 跟 auth.js 同一個，後端網址只改一處 */
 var LIFF_LINK = "https://liff.line.me/2010906803-FMDYktUN"; // 客人點這個連結，開一次就會自動綁定 LINE
 var SLOTS    = ["10:00-12:00","14:00-16:00","16:00-18:00"];
 /* ══ 晚上時段（2026-08-10）══════════════════════════════
@@ -237,7 +237,7 @@ function bkCatalogFetch(force){
   bkCatP=(async function(){
     try{
       var ac=new AbortController(), tm=setTimeout(function(){ ac.abort() },3500);   /* 最多等 3.5 秒，慢就直接讀試算表 */
-      var r=await fetch((typeof AUTH_API!=="undefined"?AUTH_API:"https://otto2-notify-production-7d34.up.railway.app")+"/liff/catalog",
+      var r=await fetch(NOTIFY+"/liff/catalog",
         {method:"POST",headers:{"Content-Type":"application/json"},body:"{}",signal:ac.signal});
       clearTimeout(tm);
       var j=await r.json();

@@ -7,7 +7,7 @@
 
 var MB_URL = 'https://otto2-booking-f9ef7-default-rtdb.asia-southeast1.firebasedatabase.app';
 /* 推播走 Railway，不直接碰 LINE API——金鑰不能出現在瀏覽器裡 */
-var MB_NOTIFY = 'https://otto2-notify-production-7d34.up.railway.app';
+var MB_NOTIFY = AUTH_API;   /* 跟 auth.js 同一個 */
 var mbList = null, mbLoading = false, mbQuery = '', mbOpenPhone = null, mbTab = 'members';
 
 var mbf = function(p){ return MB_URL.replace(/\/$/, '') + p };
