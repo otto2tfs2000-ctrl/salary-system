@@ -391,4 +391,8 @@ label.chk.top input{margin-top:3px}
 .mn-chk{flex:1;display:flex;align-items:center;gap:8px;font-size:var(--fs-md);cursor:pointer}
 .mn-chk input{width:18px;height:18px}
 .mn-row:has(.mn-name) .mn-chk{flex:0 0 auto}
+.mn-drag{flex:0 0 44px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text2,#777);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;border-radius:8px}
+.mn-drag:hover{background:var(--border)}
+.mn-row.mn-dragging{background:#faf3df;box-shadow:0 4px 14px rgba(0,0,0,.18);position:relative;z-index:1;border-radius:8px}
+.mn-row.mn-dragging .mn-drag{cursor:grabbing}
 .mn-name{flex:1;min-width:0;padding:6px 8px;font-size:var(--fs-md);border:1px solid var(--border);border-radius:8px;background:#fff}

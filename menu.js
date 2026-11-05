@@ -69,14 +69,13 @@ function mnDraw(){
   }
   var own = mnIsOwner(), d = mnDraft;
   m.innerHTML = '<div class="mn-sheet"><div class="card-title" style="margin-bottom:6px">⚙️ 整理選單</div>' +
-    '<div class="hint" style="margin-bottom:12px">' + (own ? '直接點名字可以改，用 ▲▼ 排順序，改好全店都會一樣。' : '名字和順序由管理員設定。') +
+    '<div class="hint" style="margin-bottom:12px">' + (own ? '直接點名字可以改，按住右邊的 ☰ 上下拖曳排順序，按儲存後全店都會一樣。' : '名字和順序由管理員設定。') +
       '取消勾選＝只在你這台手機／電腦藏起來，別人看不到你的設定，權限也不會變。</div>' +
     d.order.map(function(k, i){
-      return '<div class="mn-row">' +
+      return '<div class="mn-row" data-mnrow="' + mnEsc(k) + '">' +
         '<label class="mn-chk"><input type="checkbox" data-mnk="' + mnEsc(k) + '"' + (d.hide.indexOf(k) < 0 ? ' checked' : '') + '>' + (own ? '' : ' ' + mnEsc(mnName(k))) + '</label>' +
         (own ? '<input class="mn-name" maxlength="20" data-mnname="' + mnEsc(k) + '" value="' + mnEsc(d.names[k] || mnOrigNames[k] || k) + '" aria-label="分頁名字">' : '') +
-        (own ? '<button class="btn btn-outline btn-sm" data-mnup="' + i + '"' + (i ? '' : ' disabled') + '>▲</button>' +
-               '<button class="btn btn-outline btn-sm" data-mndn="' + i + '"' + (i < d.order.length - 1 ? '' : ' disabled') + '>▼</button>' : '') +
+        (own ? '<span class="mn-drag" data-mndrag title="按住上下拖曳">☰</span>' : '') +
         '</div>';
     }).join('') +
     '<div class="toolbar" style="margin-top:14px"><button class="btn btn-gold" id="mn-save">儲存</button>' +
@@ -89,9 +88,7 @@ function mnDraw(){
     if (!x.checked && i < 0) d.hide.push(k);
   } });
   m.querySelectorAll('[data-mnname]').forEach(function(x){ x.oninput = function(){ d.names[x.dataset.mnname] = x.value } });
-  function mv(i, j){ var t = d.order[i]; d.order[i] = d.order[j]; d.order[j] = t; mnDraw() }
-  m.querySelectorAll('[data-mnup]').forEach(function(b){ b.onclick = function(){ var i = +b.dataset.mnup; mv(i, i - 1) } });
-  m.querySelectorAll('[data-mndn]').forEach(function(b){ b.onclick = function(){ var i = +b.dataset.mndn; mv(i, i + 1) } });
+  m.querySelectorAll('[data-mndrag]').forEach(function(h){ h.onpointerdown = function(e){ mnDragStart(e, h, m, d) } });
   document.getElementById('mn-x').onclick = mnClose;
   document.getElementById('mn-reset').onclick = function(){
     if (!confirm(own ? '回到程式原本的名字和順序，全店都會變回來；你自己藏起來的分頁也全部打開。' : '你藏起來的分頁全部打開。')) return;
@@ -99,6 +96,44 @@ function mnDraw(){
     mnSave(own ? 'reset' : false);
   };
   document.getElementById('mn-save').onclick = function(){ mnSave(own) };
+}
+/* 按住 ☰ 拖曳。手機手指在拖動時，被按住的那一列不能離開畫面結構，不然瀏覽器會中斷這次觸控，
+   所以一律是把「旁邊那列」搬到另一邊，被拖的那列自己不動。放開才寫回 d.order，存檔要按儲存。 */
+function mnDragStart(e, handle, mask, d){
+  e.preventDefault();
+  var row = handle.closest('.mn-row'), sheet = mask.querySelector('.mn-sheet'), y = e.clientY, id = e.pointerId, raf = 0;
+  row.classList.add('mn-dragging');
+  function step(){
+    var box = sheet.getBoundingClientRect();
+    if (y < box.top + 48) sheet.scrollTop -= 8;       // 清單比螢幕長時，拖到上下邊會自己捲
+    else if (y > box.bottom - 48) sheet.scrollTop += 8;
+    place();
+    raf = requestAnimationFrame(step);
+  }
+  function place(){
+    var p = row.previousElementSibling, n = row.nextElementSibling, r;
+    while (p && p.classList.contains('mn-row') && (r = p.getBoundingClientRect()) && y < r.top + r.height / 2) {
+      row.after(p); p = row.previousElementSibling;
+    }
+    while (n && n.classList.contains('mn-row') && (r = n.getBoundingClientRect()) && y > r.top + r.height / 2) {
+      row.before(n); n = row.nextElementSibling;
+    }
+  }
+  function move(ev){ if (ev.pointerId === id) y = ev.clientY }
+  function end(ev){
+    if (ev.pointerId !== id) return;
+    cancelAnimationFrame(raf);
+    y = ev.clientY; place();
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+    row.classList.remove('mn-dragging');
+    d.order = [].map.call(mask.querySelectorAll('[data-mnrow]'), function(x){ return x.dataset.mnrow });
+  }
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+  raf = requestAnimationFrame(step);
 }
 function mnClose(){ var m = document.getElementById('mn-mask'); if (m) m.classList.remove('on') }
 async function mnSave(shared){
