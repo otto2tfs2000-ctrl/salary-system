@@ -25,7 +25,7 @@
    ══════════════════════════════════════════════════════════ */
 
 var AUTH_CHANNEL_ID = "2010980574";
-var AUTH_API        = "https://otto2-notify-production.up.railway.app";
+var AUTH_API        = "https://otto2-notify-production-7d34.up.railway.app";
 var AUTH_REDIRECT   = "https://otto2tfs2000-ctrl.github.io/salary-system/";
 var AUTH_KEY        = "otto2_staff_session";
 
