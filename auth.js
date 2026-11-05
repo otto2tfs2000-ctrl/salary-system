@@ -26,7 +26,8 @@
 
 var AUTH_CHANNEL_ID = "2010980574";
 var AUTH_API        = "https://otto2-notify-production-7d34.up.railway.app";
-var AUTH_REDIRECT   = "https://otto2tfs2000-ctrl.github.io/salary-system/";
+/* 跟著目前網址走：github.io 或備用入口 /app/ 都登入回得來（2026-11-05） */
+var AUTH_REDIRECT   = location.origin + location.pathname.replace(/[^\/]*$/, "");
 var AUTH_KEY        = "otto2_staff_session";
 
 var ME = null;   /* 登入後放這裡：{userId, displayName, picture, staff, registered, token} */

@@ -21,7 +21,7 @@
    寫入（新增、編輯、移除、發邀請、作廢邀請）這一輪還是直連資料庫，
    等 .write 那輪一起搬。（2026-10-23 寫入也搬完了，STAFF_DB 已經沒人在用） */
 var STAFF_DB  = "https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app";
-var STAFF_URL = "https://otto2tfs2000-ctrl.github.io/salary-system/";
+var STAFF_URL = location.origin + location.pathname.replace(/[^\/]*$/, "");
 
 /* 分頁清單，key 要跟 index.html 的 data-tab 一致 */
 var STAFF_TABS = [
