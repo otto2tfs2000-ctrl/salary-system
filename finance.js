@@ -129,13 +129,19 @@ async function fnLoad(force){
 
    賣方案的錢不在這裡，那是預收，只出現在現金流。
    ── */
+/* courseRev 是核銷當下算好的認列金額，舊資料沒有就退回課程費用。
+   2026-11-05 堂數扣課查不到方案單價時，courseRev 存的是牌價（$933 的課記成 $1,200），
+   改用核銷時的課程費用，跟月報總覽一致。課程費用是 0（行政歸零）才留牌價，不然這堂會變成沒營收。 */
+function fnCourseRev(r){
+  if(r.coursePay==="sessions"&&!(+r.sessionUnit)&&+r.courseAmt>0)return +r.courseAmt;
+  return (r.courseRev!=null)?(+r.courseRev||0):(+r.courseAmt||0);
+}
 function fnSales(){
   var o={course:0,goods:0,rows:[],est:0};
   var byCourse={};
   (fnDed||[]).forEach(function(r){
     if(!fnInRange(r.date))return;
-    /* courseRev 是核銷當下算好的認列金額，舊資料沒有就退回課程費用 */
-    var rev=(r.courseRev!=null)?(+r.courseRev||0):(+r.courseAmt||0);
+    var rev=fnCourseRev(r);
     var estimated=(r.coursePay==="sessions"&&!(+r.sessionUnit));
     if(estimated)o.est++;
     o.course+=rev;
@@ -314,7 +320,7 @@ function fnCatData(cat){
   if(cat==="course"){
     (fnDed||[]).forEach(function(r,idx){
       if(!fnInRange(r.date))return;
-      var rev=(r.courseRev!=null)?(+r.courseRev||0):(+r.courseAmt||0);
+      var rev=fnCourseRev(r);
       list.push({id:"d"+idx,src:"ded",date:r.date,name:r.customer||"—",
         amt:rev,pay:r.coursePay||"",raw:r});
     });
