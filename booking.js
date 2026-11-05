@@ -801,9 +801,12 @@ var WD=["日","一","二","三","四","五","六"];
 async function jget(u){ try{ var r=await (await fetch(u)).json(); return (r&&r.error)?null:r }catch(e){ return null } }
 
 /* ── 載入 ── */
-async function bkLoad(){
+/* strict=true：讀不到就丟錯、不動現有資料，讓今日排課顯示連線錯誤，
+   不會畫出「0 組預約」讓人以為今天沒客人（2026-11-05）。 */
+async function bkLoad(strict){
   var got=await bkMirGet();
   if(!got)got=await bkFetchAll();
+  if(!got&&strict)throw new Error("預約資料沒讀到");
   /* 留一份給 inventory.js 的備料預警用，它剛好在畫完排課板後馬上要同一包預約，
      不用再下載一次（整包 400 多 KB，手機上很有感）。抓失敗就不留，讓它自己抓。 */
   if(got)window.bkBookingsSnap={at:Date.now(),all:got};
@@ -2244,8 +2247,55 @@ async function bkMember(phone){
 /* ── 畫面 ── */
 /* noReload=true：只是收合/展開這類純畫面切換，資料沒變，不用重抓 430KB 的整包預約。 */
 var bkDrawnDate="";
+var BK_LOAD_TIMEOUT=30000;
+/* 會員資料只能經過 Railway 讀，預約資料讀不到 Railway 時還能直接讀資料庫。
+   所以 Railway 連不上時排課板照開，只有會員資料先不顯示（2026-11-05）。 */
+var bkMemberDown=false;
+function bkLoadIndexSoft(){
+  var tm=null;
+  return Promise.race([
+    bkLoadIndex(),
+    new Promise(function(_,no){ tm=setTimeout(function(){ no(new Error("等太久沒有回應")) },12000) })
+  ]).then(function(){ bkMemberDown=false },function(){ bkMemberDown=true })
+    .then(function(){ clearTimeout(tm) });
+}
+function bkMemberDownHtml(){
+  if(!bkMemberDown)return "";
+  return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;padding:10px 14px;background:#fdf1ef;border:1px solid #e0a59c;border-radius:8px;color:#8f2f22;font-size:14.5px">'+
+    '<span style="flex:1;min-width:200px">⚠️ 連不上伺服器：下面的預約是最新的，但會員資料沒讀到，'+
+    (bkIndexReady?'會員標籤是上次讀到的。':'會員／新客標籤先不顯示。')+
+    '核銷、賣方案、手動登記這類動作可能會失敗，請等連線恢復再做。</span>'+
+    '<button type="button" id="bkMemberRetry" style="padding:8px 18px;background:#fff;color:#8f2f22;border:1px solid #c9776a;border-radius:7px;font:inherit;font-weight:600;cursor:pointer">重新連線</button></div>';
+}
+/* 讀取失敗的畫面（2026-11-05）。以前任何一種資料讀失敗，畫面就永遠停在「載入中…」。
+   同一天的排課板已經畫過：留著舊資料，上面加提醒；
+   其他情況：不畫排課板，因為空的排課板看起來就像今天沒有預約。 */
+function bkShowLoadError(root,err){
+  var old=document.getElementById("bkLoadErr"); if(old)old.remove();
+  var keepBoard=!!root.querySelector("#bkPrev")&&bkDrawnDate===ds(bkDate);
+  var why=esc(String(err&&err.message||err||""));
+  var box=document.createElement("div");
+  box.id="bkLoadErr";
+  box.style.cssText=keepBoard
+    ?"display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;padding:10px 14px;background:#fdf1ef;border:1px solid #e0a59c;border-radius:8px;color:#8f2f22;font-size:14.5px"
+    :"text-align:center;margin:28px auto;max-width:460px;padding:26px 20px;background:#fdf1ef;border:1px solid #e0a59c;border-radius:10px;color:#8f2f22;font-size:14.5px;line-height:1.7";
+  box.innerHTML=(keepBoard
+    ?'<span style="flex:1;min-width:200px">⚠️ 連不上伺服器，下面是上次讀到的資料，可能不是最新的。</span>'
+    :'<div style="font-size:17px;font-weight:700;margin-bottom:6px">⚠️ 連不上伺服器，預約資料沒讀到</div>'+
+     '<div>這不代表今天沒有預約。請確認網路後再試，一直不行可以先換手機熱點。</div>'+
+     (why?'<div style="font-size:12.5px;color:#a8695f;margin:6px 0 14px">（'+why+'）</div>':'<div style="height:14px"></div>'))+
+    '<button type="button" id="bkLoadRetry" style="padding:8px 18px;background:#fff;color:#8f2f22;border:1px solid #c9776a;border-radius:7px;font:inherit;font-weight:600;cursor:pointer">重新讀取</button>';
+  if(keepBoard)root.insertBefore(box,root.firstChild);
+  else{ bkDrawnDate=""; root.innerHTML=""; root.appendChild(box) }
+  document.getElementById("bkLoadRetry").onclick=function(){
+    this.disabled=true; this.textContent="讀取中…";
+    bkMir.force=true; bkRefresh();
+  };
+}
 async function bkRender(noReload){
   var root=document.getElementById("bkRoot"); if(!root)return;
+  /* 第一次載入還沒結束：等它畫就好，先畫會是一塊空的排課板 */
+  if(bkBusy&&!bkDrawnDate)return;
   if(!bkBusy&&!(noReload===true&&bkDrawnDate)){ bkBusy=true;
     /* 以前每次重抓都先把整塊清成「載入中…」再畫回來，手機上看起來就是閃一下。
        已經畫過排課板的話，舊畫面留著等新資料直接換上去；
@@ -2254,8 +2304,14 @@ async function bkRender(noReload){
     else if(bkDrawnDate!==ds(bkDate))root.style.opacity=".45";
     /* 這三個來源互不相依，以前排隊一個等一個做，開分頁的延遲是三段加總。
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
-    try{ await Promise.all([bkLoad(), bkLoadIndex(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds(), bkLoadShips()]); }
-    finally{ bkBusy=false; root.style.opacity=""; } }
+    var loadErr=null, loadTm=null;
+    try{ await Promise.race([
+      Promise.all([bkLoad(true), bkLoadIndexSoft(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds(), bkLoadShips()]),
+      new Promise(function(_,no){ loadTm=setTimeout(function(){ no(new Error("等太久沒有回應")) },BK_LOAD_TIMEOUT) })
+    ]); }
+    catch(e){ loadErr=e||new Error("讀取失敗") }
+    finally{ clearTimeout(loadTm); bkBusy=false; root.style.opacity=""; }
+    if(loadErr){ bkShowLoadError(root,loadErr); return } }
   bkDrawnDate=ds(bkDate);
   var d=bkDate, today=ds(new Date())===ds(d);
   var dsNow=ds(d);
@@ -2273,6 +2329,7 @@ async function bkRender(noReload){
   }).map(function(s){ return s+"（上限"+bkCapOfSlot(dsNow,s)+"）" });
 
   root.innerHTML=
+   bkMemberDownHtml()+
    bkNotifBannerHtml()+
    bkCancelBannerHtml()+
    bkHoldBannerHtml()+
@@ -2387,6 +2444,8 @@ async function bkRender(noReload){
   document.getElementById("bkNext").onclick=function(){ bkDate.setDate(bkDate.getDate()+1); bkRender() };
   document.getElementById("bkToday").onclick=function(){ bkDate=new Date(); bkRender() };
   document.getElementById("bkReload").onclick=function(){ bkMir.force=true; bkRefresh() };
+  var bkMemRetry=document.getElementById("bkMemberRetry");
+  if(bkMemRetry)bkMemRetry.onclick=function(){ this.disabled=true; this.textContent="連線中…"; bkMir.force=true; bkRefresh() };
   /* ＋／− 以雲端最新的老師數為準加減，不是畫面上可能已經過時的數字 */
   var bkTStep=async function(pm,delta){
     if(!(await bkSchedFreshOrStop(dsNow)))return;
@@ -2773,12 +2832,12 @@ function bkCard(b){
       (b.customer&&b.customer.childName?'<span class="bk-childname">・小朋友 '+esc(b.customer.childName)+'</span>':'')+
       ' '+bkPplText(b)+
       /* 卡片上不再標 NEW（2026-09-23 老闆要求），分頁旁的紅點提醒照舊 */
-      (bkIsMember(b)?'<span class="bk-tag m">會員</span>':'<span class="bk-tag nc">新客</span>')+
+      (!bkIndexReady?'':bkIsMember(b)?'<span class="bk-tag m">會員</span>':'<span class="bk-tag nc">新客</span>')+
       /* 二次體驗（2026-09-23 老闆定的規則）：沒有方案（點、券、堂都沒有）但之前來過的，
          一律標出上次來的日期跟上了什麼。灰色＝上次上繪畫課，黃色＝上次上多媒材。
          有方案的會員不用看這個，不顯示。這次又約體驗價的，後面加註「收原價」。 */
       (function(){
-        if(bkIsMember(b))return "";
+        if(!bkIndexReady||bkIsMember(b))return "";
         var pv=bkPastVisits(b); if(!pv.length)return "";
         var tip=pv.map(function(v){ return v.date+" "+bkVisitWho(v,b)+bkVisitItems(v) }).join("\n");
         var lv=pv[0], paint=bkIsPainting(lv);
