@@ -1177,6 +1177,11 @@ function gcdHtml(){
     '<span>晚上從 ' + hrSel('from', g.from) + ' 到隔天 ' + hrSel('to', g.to) + '</span>' +
     '<span>每人每晚最多 <input type="number" min="1" max="10" value="' + (+g.perNight || 2) + '" style="width:56px;' + box + '" onchange="gcdDraft.perNight=+this.value"> 次</span></div>' +
     '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">畫面上的白天／晚上是照客人手機時間自動切換；能不能抽獎是照這裡的時間（台灣時間）判斷。</div></div>';
+  h += '<div class="card"><div class="card-title">打開遊戲時跳出公告</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-sm);margin-bottom:10px"><input type="checkbox"' + (g.notice ? ' checked' : '') + ' onchange="gcdDraft.notice=this.checked"> <b>打開公告</b>（家長打開遊樂島或作品小屋時跳一次；上面「開放雪橇禮物」也要打勾才會跳）</label>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;font-size:var(--fs-sm)"><label>標題<br><input maxlength="30" value="' + gcEsc(g.noticeT || '') + '" style="width:100%;max-width:420px;' + box + '" onchange="gcdDraft.noticeT=this.value"></label>' +
+    '<label>內容（最多 300 字）<br><textarea maxlength="300" rows="4" style="width:100%;max-width:520px;' + box + ';font-family:inherit" onchange="gcdDraft.noticeTxt=this.value">' + gcEsc(g.noticeTxt || '') + '</textarea></label></div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">每個人只會看到一次；改了標題或內容再儲存，大家會再看到一次新的。</div></div>';
   h += '<div class="card"><div class="card-title">獎品與機率　<span style="font-size:var(--fs-sm);color:' + (Math.abs(tot - 100) < .01 ? 'var(--text2)' : 'var(--red)') + ';font-weight:400">機率加起來 ' + (Math.round(tot * 100) / 100) + '%' + (Math.abs(tot - 100) < .01 ? '' : '（不是 100 也能用，會照比例換算，右邊「實際」是換算後的）') + '</span></div>' +
     '<div style="overflow-x:auto"><table style="width:100%;font-size:var(--fs-sm);border-collapse:collapse"><tr style="color:var(--text2);text-align:left"><th>圖示</th><th>名稱</th><th>種類</th><th>數量／點數</th><th>機率 %</th><th>實際</th><th>限量</th><th>已送出</th><th></th></tr>';
   g.prizes.forEach(function(p, i){
