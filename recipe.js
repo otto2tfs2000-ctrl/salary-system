@@ -1,7 +1,7 @@
 /* ══════════════════════════════════════════════════════════
    課程用料：每個課程用掉哪些材料、成本多少、毛利多少
    材料來源：庫存盤點的品項（含單位成本）
-   課程來源：Google 試算表「課程」分頁
+   課程來源：後台「📚 課程管理」（每次點開這頁都重新讀，總開關沒開才讀 Google 試算表「課程」分頁）
    存放：salaryData.recipes[課程key] = { items:[{id,qty}], note }
    ══════════════════════════════════════════════════════════ */
 
@@ -91,6 +91,31 @@ function rcCost(key){
 
 async function rcLoadCourses(){
   if (rcCourses) return;
+  /* 2026-11-07：直接讀課程管理的資料庫（不經伺服器 60 秒快取、也不用整頁重新整理），
+     下架中的課也列出來（新課通常先建好用料再上架）。總開關沒開才退回下面的舊讀法。 */
+  try {
+    var d = window.catFb ? await catFb('GET', '/courseCatalog') : null;
+    if (d && d.meta && d.meta.live === true && d.rows) {
+      var rows = Object.keys(d.rows).map(function(k){ var r = d.rows[k]; r.id = r.id || k; return r })
+        .filter(function(r){ return r && r.name });
+      var TIER = /^(體驗價|會員價|單次原價)$/, base = {}, ord = {};
+      rows.forEach(function(r){
+        var sp = String(r.spec || '').trim();
+        if (TIER.test(sp) && /單次原價/.test(sp)) base[r.name] = r;
+        var c = r.cat || '', o = +r.ord || 0; if (ord[c] === undefined || o < ord[c]) ord[c] = o;
+      });
+      rows.sort(function(a, b){
+        return (ord[a.cat || ''] - ord[b.cat || '']) || ((+a.ord || 0) - (+b.ord || 0));
+      });
+      rcCourses = rows.map(function(r){
+        var sp = String(r.spec || '').trim(), b = base[r.name], price;
+        if (TIER.test(sp) && b) price = /體驗價/.test(sp) ? (b.pFirst || r.price) : /會員價/.test(sp) ? (b.pMember || r.price) : (r.price || b.pOrig);
+        else price = r.pMember || r.pOrig || r.price;
+        return { cat: String(r.cat || ''), name: String(r.name).trim(), spec: sp, price: Math.round(+price || 0), off: r.on === false };
+      });
+      return;
+    }
+  } catch (e) {}
   /* 課程管理開著就讀它（key 一樣是「課程名|規格」，用料不用搬）；沒開或讀不到就照舊讀試算表 */
   try {
     var cat = window.bkCatalogFetch ? await bkCatalogFetch() : null;
@@ -165,7 +190,8 @@ async function renderRecipe(){
     var n = r && r.items ? r.items.length : 0;
     var gross = c.price - cost, rate = c.price ? Math.round(gross / c.price * 100) : 0;
     h += '<tr>';
-    h += '<td>' + c.name + (c.spec ? '<span class="muted" style="font-size:13.5px">（' + c.spec + '）</span>' : '') + '</td>';
+    h += '<td>' + c.name + (c.spec ? '<span class="muted" style="font-size:13.5px">（' + c.spec + '）</span>' : '') +
+         (c.off ? ' <span class="muted" style="font-size:12px;border:1px solid var(--line,#ccc);border-radius:8px;padding:0 6px">下架中</span>' : '') + '</td>';
     h += '<td style="text-align:right">' + (c.price ? c.price.toLocaleString() : '—') + '</td>';
     h += '<td style="text-align:right">' + (n ? Math.round(cost).toLocaleString() : '—') + '</td>';
     h += '<td style="text-align:right">' + (n && c.price ? gross.toLocaleString() : '—') + '</td>';

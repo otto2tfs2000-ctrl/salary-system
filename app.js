@@ -818,7 +818,7 @@ function doSwitchTab(tab) {
   if (tab==='hallstats' && window.renderHallStats) renderHallStats();
   if (tab==='shop' && window.renderShop) renderShop();
   if (tab==='catalog' && window.renderCatalog) renderCatalog();
-  if (tab==='recipe') renderRecipe();
+  if (tab==='recipe') { rcCourses = null; renderRecipe(); }   /* 每次點開都重新讀課程，課程管理剛新增的課才會出現 */
   if (tab==='daily') renderDaily();
   if (tab==='monthly') renderMonthly();
   if (tab==='finance' && window.renderFinance) renderFinance();
