@@ -19,7 +19,7 @@ function gcEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
 var GC_WHO = { all:'所有人', mem:'只有會員', new:'只有非會員' };
 var GC_TYPE = { bonus:'紅利', ticket:'票券／贈品', none:'銘謝惠顧' };
-var GC_WHY = { gold:'黃金扭蛋', daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試' };
+var GC_WHY = { gold:'黃金扭蛋', daily:'每日', 'class':'上課加碼', book:'預約加碼', double:'加碼日', milestone:'集章保底', quiz:'問答加碼', memory:'翻牌加碼', collect:'圖鑑集滿', test:'測試', silver:'銀色扭蛋', sled:'雪橇禮物' };
 var gcQuiz = null;
 var GC_KIND = { cash:'現金抵用', goods:'實體贈品', bundle:'贈課券', other:'其他' };
 
@@ -39,11 +39,11 @@ async function renderGacha(){
     el.innerHTML = '<div class="empty">載入扭蛋資料中…</div>';
     try { await gcLoad() } catch(e) { el.innerHTML = '<div class="empty">讀不到扭蛋資料：' + gcEsc(e.message) + '</div>'; return }
   }
-  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋'],['silver','🥈 銀色扭蛋']];
+  var tabs = [['overview','總覽'],['log','中獎紀錄・核銷'],['prizes','獎品設定'],['games','小遊戲'],['settings','活動設定'],['gold','🪙 黃金扭蛋'],['silver','🥈 銀色扭蛋'],['sled','🛷 雪橇禮物']];
   var h = '<div class="store-tabs" style="margin-bottom:14px">' + tabs.map(function(t){
     return '<button class="store-btn' + (gcTab === t[0] ? ' active' : '') + '" onclick="gcSwitch(\'' + t[0] + '\')">' + t[1] + '</button>' }).join('') +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="gcReload()">↻ 重新讀取</button></div>';
-  if (gcData.isDefault && gcTab !== 'gold' && gcTab !== 'silver') h += '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm);margin-bottom:14px">' +
+  if (gcData.isDefault && gcTab !== 'gold' && gcTab !== 'silver' && gcTab !== 'sled') h += '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm);margin-bottom:14px">' +
     '目前用的是程式內建的預設設定，還沒在這裡存過。改完獎品或活動設定按「儲存」之後，就會以這裡的為準。</div>';
   if (gcTab === 'gold' && !gcgData) {
     el.innerHTML = h + '<div class="empty">載入黃金扭蛋設定中…</div>';
@@ -53,7 +53,11 @@ async function renderGacha(){
     el.innerHTML = h + '<div class="empty">載入銀色扭蛋設定中…</div>';
     try { await gcsLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到銀色扭蛋設定：' + gcEsc(e.message) + '</div>'; return }
   }
-  h += gcTab === 'silver' ? gcsHtml() : gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
+  if (gcTab === 'sled' && !gcdData) {
+    el.innerHTML = h + '<div class="empty">載入雪橇禮物設定中…</div>';
+    try { await gcdLoad() } catch(e) { el.innerHTML = h + '<div class="empty">讀不到雪橇禮物設定：' + gcEsc(e.message) + '</div>'; return }
+  }
+  h += gcTab === 'sled' ? gcdHtml() : gcTab === 'silver' ? gcsHtml() : gcTab === 'gold' ? gcgHtml() : gcTab === 'log' ? gcLogHtml() : gcTab === 'prizes' ? gcPrizesHtml() : gcTab === 'games' ? gcGamesHtml() : gcTab === 'settings' ? gcSettingsHtml() : gcOverviewHtml();
   el.innerHTML = h;
   if (gcTab === 'log') {
     var sb = document.getElementById('gc-search');
@@ -69,7 +73,7 @@ function gcgDirty(){
 }
 async function gcReload(){
   if (gcgDirty() && !confirm('黃金扭蛋獎品表有改了還沒儲存的地方（例如商品金額）。\n重新讀取會把這些修改丟掉，確定要重新讀取嗎？\n\n（按「取消」回去，先按「💾 儲存黃金扭蛋設定」）')) return;
-  gcData = null; gcgData = null; gcgDraft = null; gcTkts = {}; await renderGacha() }
+  gcData = null; gcgData = null; gcgDraft = null; gcsData = null; gcdData = null; gcTkts = {}; await renderGacha() }
 
 function gcLogList(){
   var l = gcData.log || {};
@@ -109,7 +113,7 @@ function gcColListHtml(pls, all){
 function gcOverviewHtml(){
   var cfg = gcData.cfg, today = gcData.today, all = gcLogList();
   var real = all.filter(function(x){ return !x.test });
-  var spins = real.filter(function(x){ return x.why !== 'milestone' && x.why !== 'gold' });
+  var spins = real.filter(function(x){ return x.why !== 'milestone' && x.why !== 'gold' && x.why !== 'sled' });
   var todaySpins = spins.filter(function(x){ return x.date === today });
   var uniq = function(a){ var s = {}; a.forEach(function(x){ s[x.phone] = 1 }); return Object.keys(s).length };
   var bonus = real.filter(function(x){ return x.type === 'bonus' }).reduce(function(s, x){ return s + (+x.v || 0) }, 0);
@@ -1144,5 +1148,64 @@ async function gcsSave(){
   try {
     await staffApi('/staff/gacha/silver/save', { silver: gcsDraft });
     gcsData = null; await renderGacha(); alert('已儲存');
+  } catch(e){ alert('儲存失敗：' + e.message) }
+}
+
+/* ══ 雪橇禮物（2026-11-07 大熊）══
+   晚上（預設 17:00～隔天 6:00）聖誕老公公駕雪橇飛過走格子島、作品島，客人點到就抽一次，每人每晚最多 perNight 次。
+   抽獎在伺服器（/gacha/sled/spin），這頁只管開關、時間、次數、獎品與機率。稀有獎品設限量，送完就不會再抽到。 */
+var gcdData = null, gcdDraft = null;
+var GCD_TYPE = { bonus:'紅利點數', gift:'走格子禮物', silver:'銀色扭蛋', ticket:'票券／贈品', none:'銘謝惠顧' };
+var GCD_KIND = { cash:'折價券', goods:'實體獎品', upgrade:'畫布升級券', other:'其他' };
+async function gcdLoad(){
+  gcdData = await staffApi('/staff/gacha/sled', {});
+  gcdDraft = JSON.parse(JSON.stringify(gcdData.sled));
+}
+function gcdSet(i, k, v){ gcdDraft.prizes[i][k] = v; }
+function gcdAdd(){ gcdDraft.prizes.push({ id:'d' + Date.now().toString(36).slice(-5), ic:'🎁', nm:'', type:'bonus', v:1, w:0 }); renderGacha() }
+function gcdDel(i){ gcdDraft.prizes.splice(i, 1); renderGacha() }
+function gcdHtml(){
+  var g = gcdDraft, tot = g.prizes.reduce(function(a, p){ return a + (+p.w || 0) }, 0);
+  var box = 'padding:6px 7px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)';
+  var inp = function(i, k, v, w, type){ return '<input' + (type ? ' type="' + type + '" step="any"' : '') + ' value="' + gcEsc(v == null ? '' : v) + '" style="width:' + w + 'px;' + box + '" onchange="gcdSet(' + i + ',\'' + k + '\',this.value)">' };
+  var hrSel = function(k, v){ var o = ''; for (var x = 0; x < 24; x++) o += '<option value="' + x + '"' + (+v === x ? ' selected' : '') + '>' + x + ':00</option>'; return '<select style="' + box + '" onchange="gcdDraft.' + k + '=+this.value">' + o + '</select>' };
+  var h = '<div class="card"><div class="card-title">🛷 雪橇禮物</div>' +
+    '<div style="font-size:var(--fs-sm);color:var(--text2);line-height:1.8;margin-bottom:10px">晚上聖誕老公公駕雪橇飛過走格子島和作品島，客人點到雪橇就抽一次。抽到的票券從抽到那天起一個月內來店領；銀色扭蛋 7 天內要轉。' +
+    (gcdData.isDefault ? '<br><b>目前是程式內建的建議設定，改好按「儲存」才會以這裡為準。</b>' : '') + '</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-sm);margin-bottom:10px"><input type="checkbox"' + (g.enabled ? ' checked' : '') + ' onchange="gcdDraft.enabled=this.checked"> <b>開放雪橇禮物</b>（關掉時雪橇照樣飛，點了只會說聖誕快樂）</label>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:var(--fs-sm)">' +
+    '<span>晚上從 ' + hrSel('from', g.from) + ' 到隔天 ' + hrSel('to', g.to) + '</span>' +
+    '<span>每人每晚最多 <input type="number" min="1" max="10" value="' + (+g.perNight || 2) + '" style="width:56px;' + box + '" onchange="gcdDraft.perNight=+this.value"> 次</span></div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px">畫面上的白天／晚上是照客人手機時間自動切換；能不能抽獎是照這裡的時間（台灣時間）判斷。</div></div>';
+  h += '<div class="card"><div class="card-title">獎品與機率　<span style="font-size:var(--fs-sm);color:' + (Math.abs(tot - 100) < .01 ? 'var(--text2)' : 'var(--red)') + ';font-weight:400">機率加起來 ' + (Math.round(tot * 100) / 100) + '%' + (Math.abs(tot - 100) < .01 ? '' : '（不是 100 也能用，會照比例換算，右邊「實際」是換算後的）') + '</span></div>' +
+    '<div style="overflow-x:auto"><table style="width:100%;font-size:var(--fs-sm);border-collapse:collapse"><tr style="color:var(--text2);text-align:left"><th>圖示</th><th>名稱</th><th>種類</th><th>數量／點數</th><th>機率 %</th><th>實際</th><th>限量</th><th>已送出</th><th></th></tr>';
+  g.prizes.forEach(function(p, i){
+    var sel = '<select style="' + box + '" onchange="gcdSet(' + i + ',\'type\',this.value);renderGacha()">' +
+      Object.keys(GCD_TYPE).map(function(k){ return '<option value="' + k + '"' + (p.type === k ? ' selected' : '') + '>' + GCD_TYPE[k] + '</option>' }).join('') + '</select>';
+    var kind = '<select style="' + box + '" onchange="gcdSet(' + i + ',\'kind\',this.value)">' +
+      Object.keys(GCD_KIND).map(function(k){ return '<option value="' + k + '"' + ((p.kind || 'other') === k ? ' selected' : '') + '>' + GCD_KIND[k] + '</option>' }).join('') + '</select>';
+    var amt = p.type === 'gift' || p.type === 'silver' ? inp(i, 'n', p.n, 52, 'number') + (p.type === 'gift' ? ' 個' : ' 顆') : p.type === 'bonus' ? inp(i, 'v', p.v, 52, 'number') + ' 點' : p.type === 'ticket' ? kind : '—';
+    var sent = (gcdData.stock || {})[p.id] || 0, lim = p.qty != null && p.qty !== '';
+    h += '<tr style="border-top:1px solid var(--border)"><td>' + inp(i, 'ic', p.ic, 40) + '</td><td>' + inp(i, 'nm', p.nm, 150) + '</td><td>' + sel + '</td><td style="white-space:nowrap">' + amt + '</td>' +
+      '<td>' + inp(i, 'w', p.w, 64, 'number') + '</td><td class="muted">' + (tot ? Math.round((+p.w || 0) / tot * 1000) / 10 + '%' : '—') + '</td>' +
+      '<td>' + inp(i, 'qty', p.qty == null ? '' : p.qty, 52, 'number') + '</td><td class="muted">' + (lim ? sent + ' / ' + p.qty + (sent >= +p.qty ? ' <b style="color:var(--red)">送完</b>' : '') : '—') + '</td>' +
+      '<td><a style="color:var(--red);cursor:pointer;font-size:var(--fs-xs)" onclick="gcdDel(' + i + ')">刪除</a></td></tr>';
+  });
+  h += '</table></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="gcdAdd()">＋ 加一個獎品</button>' +
+    '<button class="btn" style="margin-left:auto" onclick="gcdSave()">儲存</button></div>' +
+    '<div class="muted" style="font-size:var(--fs-xs);margin-top:8px;line-height:1.7">限量空白＝不限。限量是整個活動的總數，送完就自動改抽其他獎品，不會多送。<br>紅利點數是真成本；這裡的紅利跟走格子的紅利上限分開算。</div></div>';
+  var ns = gcdData.nights || [];
+  h += '<div class="card"><div class="card-title">最近每晚送出</div>';
+  h += ns.length ? ns.map(function(n){
+    var w = Object.keys(n.won).map(function(k){ return gcEsc(k) + ' ×' + n.won[k] }).join('、');
+    return '<div style="display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:var(--fs-sm);flex-wrap:wrap"><span style="width:90px;color:var(--text3)">' + gcEsc(n.d.slice(5).replace('-', '/')) + ' 晚上</span>' +
+      '<span style="width:120px">' + n.people + ' 人・' + n.n + ' 次</span><span style="flex:1 1 200px;color:var(--text2)">' + w + '</span></div>';
+  }).join('') : '<div class="empty">還沒有人點到雪橇（開放後晚上才會有）</div>';
+  return h + '<div class="muted" style="font-size:var(--fs-xs);margin-top:8px">誰抽到什麼、票券核銷，在「中獎紀錄・核銷」看（標籤「雪橇禮物」）。</div></div>';
+}
+async function gcdSave(){
+  try {
+    await staffApi('/staff/gacha/sled/save', { sled: gcdDraft });
+    gcdData = null; await renderGacha(); alert('已儲存');
   } catch(e){ alert('儲存失敗：' + e.message) }
 }
