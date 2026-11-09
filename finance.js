@@ -139,7 +139,7 @@ async function fnLoad(force){
    2026-11-05 堂數扣課查不到方案單價時，courseRev 存的是牌價（$933 的課記成 $1,200），
    改用核銷時的課程費用，跟月報總覽一致。課程費用是 0（行政歸零）才留牌價，不然這堂會變成沒營收。 */
 function fnCourseRev(r){
-  if(r.coursePay==="sessions"&&!(+r.sessionUnit)&&+r.courseAmt>0)return +r.courseAmt;
+  if(r.coursePay==="sessions"&&!(+r.sessionUnit)&&+r.courseAmt>0)return +r.courseAmt+(+r.courseAmt2||0);
   return (r.courseRev!=null)?(+r.courseRev||0):(+r.courseAmt||0);
 }
 function fnSales(){

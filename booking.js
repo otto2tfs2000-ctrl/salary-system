@@ -2825,7 +2825,11 @@ function bkCard(b){
     depTag='<span class="bk-tag d">訂金 $'+dp.amt.toLocaleString()+' 已抵方案'+(dp.plan?'・'+esc(dp.plan):'')+'</span>';
   var doneHtml="";
   if(c){
-    var lines='<div class="bk-dline"><span>課程</span><b>$'+(+c.courseAmt||0).toLocaleString()+'</b></div>';
+    var lines='<div class="bk-dline"><span>課程'+(+c.courseAmt2?"・"+esc(bkWayName(c.coursePay)):"")+
+      '</span><b>$'+(+c.courseAmt||0).toLocaleString()+'</b></div>';
+    if(+c.courseAmt2)
+      lines+='<div class="bk-dline"><span>課程・'+esc(bkWayName(c.coursePay2))+'</span><b>$'+
+        (+c.courseAmt2).toLocaleString()+'</b></div>';
     (c.addons||[]).forEach(function(a){
       lines+='<div class="bk-dline"><span>加購・'+esc(a.name||"未命名")+'</span><b>$'+
         (+a.amt||0).toLocaleString()+'</b></div>';
@@ -3220,6 +3224,14 @@ async function bkCheckout(id){
   var course={amt:old?old.courseAmt:(b.total||0), way:old?old.coursePay:""};
   /* 固定時段：每次就是扣預扣的那 800 點，第一次核銷直接帶好 */
   if(!old&&b.fixed){ course.amt=+b.fixed.pts||FIXED_PTS; course.way="points" }
+  /* ══ 堂數＋別的方式一起付（2026-11-09）══════════════════
+     同一筆課有人用堂數、有人用點數（或堂數不夠、差的用點數補），
+     以前課程付款方式只能選一種，只能拆好幾筆核銷。
+     選了堂數扣抵之後可以再填「另一部分」的金額和付款方式，
+     存成 courseAmt2／coursePay2，點數、紅利、營收、現金流都一起算。
+     只在堂數扣抵時有效，切到其他方式就不算。 */
+  course.amt2=old?(+old.courseAmt2||0):0;
+  course.way2=old?(old.coursePay2||""):"";
   /* 牌價要另外留一份。堂數扣抵時「課程費用」會歸零——那堂課的錢
      客人買方案時就付了，今天沒收現金，收了就是同一堂課收兩次。
      但業績認列還是要有個底：查得到方案單價就用單價，查不到才退回牌價，
@@ -3316,6 +3328,10 @@ async function bkCheckout(id){
    '<div class="bk-f"><label>課程付款方式</label><div class="bk-ways" id="ckWays"></div></div>'+
    '<div class="bk-f" id="ckSeBox" style="display:none"><label>這次扣幾堂</label>'+
      '<input id="ckSe" inputmode="decimal" value=""><div class="bk-left" id="ckSeHint"></div></div>'+
+   '<div class="bk-f" id="ckSplitBox" style="display:none"><label>另一部分用別的方式付（沒有就空著）</label>'+
+     '<input id="ckAmt2" inputmode="numeric" placeholder="金額" value="'+(course.amt2||"")+'">'+
+     '<div class="bk-ways" id="ckWays2" style="margin-top:8px"></div>'+
+     '<div class="bk-left">例如兩人一起來，一人扣堂數、一人扣點數；或堂數不夠，差的用點數補。</div></div>'+
    '<div class="bk-f"><label>加價項目（畫布、公仔、補差額等）</label><div id="ckAdd"></div>'+
      '<button class="bk-mini" id="ckAddNew">＋ 新增一項</button><div id="ckAddWarn"></div></div>'+
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
@@ -3521,10 +3537,31 @@ async function bkCheckout(id){
     }
     return Math.max(0,+useSeN||0);
   }
+  /* 第二部分付款：只有堂數扣抵、有填金額、有選方式才算數。
+     訂金先抵課程費用，抵不完的再抵這一部分。 */
+  function ckPart2(){
+    if(course.way!=="sessions"||!(+course.amt2>0)||!course.way2)return null;
+    var depLeft=Math.max(0,depAmt-(+course.amt||0));
+    return {amt:+course.amt2, way:course.way2, due:Math.max(0,+course.amt2-depLeft)};
+  }
+  function drawWays2(){
+    var box=document.getElementById("ckWays2"); if(!box)return;
+    box.innerHTML=PAYWAYS.filter(function(p){ return p.k!=="sessions" }).map(function(p){
+      return '<div class="bk-way'+(course.way2===p.k?" on":"")+(p.member&&!payer?" dis":"")+
+        '" data-w2="'+p.k+'">'+p.n+'</div>' }).join("");
+    box.querySelectorAll("[data-w2]").forEach(function(el){
+      el.onclick=function(){
+        var k=el.dataset.w2;
+        course.way2=(course.way2===k)?"":k;   /* 再點一次取消 */
+        drawWays2(); calc();
+      } });
+  }
   function drawSe(){
     var box=document.getElementById("ckSeBox"); if(!box)return;
     var on=(course.way==="sessions");
     box.style.display=on?"":"none";
+    var sb=document.getElementById("ckSplitBox");
+    if(sb){ sb.style.display=on?"":"none"; if(on)drawWays2(); }
     if(!on)return;
     var n=ckSeNow();
     var hint=document.getElementById("ckSeHint");
@@ -3564,9 +3601,13 @@ async function bkCheckout(id){
       document.getElementById("ckAmt").value="";
     }
     var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
-    var total=course.amt+addTotal;
+    var p2=ckPart2();
+    var total=course.amt+(p2?p2.amt:0)+addTotal;
     var bonus=bonusOf(course.amt), su=null; /* 加價項目不算紅利 */
     var h="課程 <b>$"+course.amt.toLocaleString()+"</b>";
+    if(p2)h+="　另一部分 <b>$"+p2.amt.toLocaleString()+"</b>（"+esc(bkWayName(p2.way))+"）";
+    if(course.way==="sessions"&&+course.amt2>0&&!course.way2)
+      h='<div class="bk-err">另一部分填了 $'+(+course.amt2).toLocaleString()+'，還沒選付款方式</div>'+h;
     if(addTotal)h+="　加價 <b>$"+addTotal.toLocaleString()+"</b>";
     h+="　合計 <b>$"+total.toLocaleString()+"</b><br>";
     if(depAmt){
@@ -3576,7 +3617,7 @@ async function bkCheckout(id){
         h+='<div class="bk-err">訂金比總金額還多，請先確認課程費用有沒有填錯</div>';
     }
     if(payer){
-      var usePt=(course.way==="points"?course.amt:0)+
+      var usePt=(course.way==="points"?course.amt:0)+(p2&&p2.way==="points"?p2.due:0)+
         addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
       var useSe=(course.way==="sessions")?ckSeNow():0;
       /* 修正核銷時，payer.cache 是「上一次核銷扣完」的餘額，存檔當下
@@ -3621,8 +3662,9 @@ async function bkCheckout(id){
       /* 堂數扣抵是用會員自己的堂數卡上課，不是這次花新的錢，不算紅利。
          紅利只在真的收到錢（現金／點數／LINE Pay 等）時才給。 */
       if(course.way==="sessions"){
-        bonus=0;
-        h+="堂數扣抵不累積紅利";
+        bonus=p2?bonusOf(p2.amt):0;
+        h+=p2?("堂數那部分不累積紅利，另一部分紅利 <b>+"+bonus+"</b> 點（"+p2.amt.toLocaleString()+" ÷ 500）")
+             :"堂數扣抵不累積紅利";
       }else{
         bonus=bonusOf(course.amt);
         h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+course.amt.toLocaleString()+" ÷ 500，加價不計）";
@@ -3631,6 +3673,7 @@ async function bkCheckout(id){
     document.getElementById("ckCalc").innerHTML=h;
   }
   document.getElementById("ckAmt").oninput=function(){ ckAmtTouched=true; calc() };
+  document.getElementById("ckAmt2").oninput=function(){ course.amt2=+this.value||0; calc() };
   document.getElementById("ckSe").oninput=function(){
     seTouched=true; useSeN=+this.value||0; calc() };
   function drawTeachers(){
@@ -3716,7 +3759,10 @@ async function bkCheckout(id){
       var seN=ckSeNow();
       if(!seN){ alert("堂數扣抵要大於 0，可以填 0.5 這種半堂"); return }
       var q=ckItemsQty();
-      if(q&&seN!==q&&!confirm("課程項目合計 "+q+" 位，但這次只扣 "+seN+" 堂。\n\n"+
+      if(+course.amt2>0&&!course.way2){ alert("「另一部分」填了金額，要選付款方式"); return }
+      var w2=PAYWAYS.filter(function(p){return p.k===course.way2})[0];
+      if(+course.amt2>0&&w2&&w2.member&&!payer){ alert("另一部分用點數要先選會員"); return }
+      if(q&&seN!==q&&!(+course.amt2>0)&&!confirm("課程項目合計 "+q+" 位，但這次只扣 "+seN+" 堂。\n\n"+
         "確定嗎？（部分人用堂數、其他人付現的話這樣是對的）"))return;
     }
     addons=addons.filter(function(a){ return a.materialId||a.name||a.amt });
@@ -3752,7 +3798,8 @@ async function bkCheckout(id){
       }
     }
     var courseDue=Math.max(0,course.amt-depAmt);
-    var usePt=(course.way==="points"?courseDue:0)+
+    var p2=ckPart2();
+    var usePt=(course.way==="points"?courseDue:0)+(p2&&p2.way==="points"?p2.due:0)+
       addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
     if(payer&&usePt>(payer.cache&&payer.cache.points||0)&&
        !confirm("點數不足，扣完會變成負數。確定嗎？"))return;
@@ -3782,12 +3829,15 @@ async function bkCheckout(id){
       var sUnit=useSe?bkSessionUnit(payer):null;
       /* 查得到方案單價就「單堂 × 堂數」；查不到才退回牌價——
          牌價本來就是整筆的總價，不能再乘一次堂數。 */
+      /* 另一部分（點數、現金…）照收的金額認列；查不到單價退回牌價時，
+         牌價是整筆的總價，已經包含另一部分，要扣掉才不會算兩次 */
+      var p2Amt=p2?p2.amt:0;
       var courseRev=useSe
-        ?(sUnit?sUnit.unit*useSe:(courseList||course.amt))
+        ?(sUnit?sUnit.unit*useSe+p2Amt:Math.max(courseList||course.amt,p2Amt))
         :course.amt;
       /* 堂數扣抵不算紅利（用堂數卡上課，沒有新收錢），跟畫面預覽算法要一致，
          不然客人看到的跟實際入帳的會不一樣 */
-      var bonus=useSe?0:bonusOf(course.amt);
+      var bonus=useSe?(p2?bonusOf(p2.amt):0):bonusOf(course.amt);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
@@ -3800,9 +3850,10 @@ async function bkCheckout(id){
          訂金不寫在這裡——它已經在收款那天記過一筆 deposits，
          寫兩次現金流就會多算一筆。 */
       var byWay={}; if(courseDue)byWay[course.way]=(byWay[course.way]||0)+courseDue;
+      if(p2&&p2.due)byWay[p2.way]=(byWay[p2.way]||0)+p2.due;
       addons.forEach(function(a){ byWay[a.way]=(byWay[a.way]||0)+(+a.amt||0) });
       var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
-      var total=course.amt+addTotal;
+      var total=course.amt+p2Amt+addTotal;
       var due=Math.max(0,total-depAmt);
       var dt=new Date(b.date.replace(/\//g,"-")+"T00:00:00");
       var addonTxt=addons.map(function(a){
@@ -3812,6 +3863,7 @@ async function bkCheckout(id){
         payerPhone:payer?payer.phone:"",teacher:t,teachers:teachers.slice(),
         people:nAdult+nKid,adults:nAdult,kids:nKid,
         courseAmt:course.amt,coursePay:course.way,
+        courseAmt2:p2Amt,coursePay2:p2?p2.way:"",
         addons:addons,addonTotal:addTotal,addonText:addonTxt,
         total:total,byWay:byWay,bonus:bonus,
         depositAmt:depAmt,depositWay:depWay,due:due,
@@ -3833,7 +3885,8 @@ async function bkCheckout(id){
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         /* 核銷時改過課程就寫回預約單，卡片、月報、用料才會一致 */
         items:outItems,
-        checkout:{courseAmt:course.amt,coursePay:course.way,addons:addons,addonTotal:addTotal,
+        checkout:{courseAmt:course.amt,coursePay:course.way,
+          courseAmt2:p2Amt,coursePay2:p2?p2.way:"",addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
           depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
           courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
