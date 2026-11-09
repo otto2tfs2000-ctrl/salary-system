@@ -162,6 +162,11 @@ function bkMatById(id){
   if(id==null||id==="")return null;
   return bkAddonMats().filter(function(m){ return String(m.id)===String(id) })[0]||null;
 }
+/* 加價項目選「其他（不扣庫存）」、品名手打含「畫布」＝訂做畫布（只有一張、不進庫存）。
+   用了它就表示課程用料內附的標準畫布沒用到，核銷時不要再扣那張。 */
+function ckIsCustomCanvas(a){
+  return !!a&&!a.materialId&&/畫布/.test(String(a.name||""));
+}
 /* 舊核銷紀錄的加購只存了品名，開「修正核銷」時比對一次，對得上就自動接回庫存品項 */
 function bkMatByName(nm){
   var k=String(nm==null?"":nm).replace(/\s/g,"").toLowerCase();
@@ -3789,7 +3794,7 @@ async function bkCheckout(id){
       if(needCanvasFor.length){
         var hasCanvasAddon=addons.some(function(a){
           var m=a.materialId?bkMatById(a.materialId):null;
-          return m&&m.cat==="畫布";
+          return (m&&m.cat==="畫布")||(!m&&ckIsCustomCanvas(a));
         });
         if(!hasCanvasAddon&&!confirm(
           "「"+needCanvasFor.join("、")+"」這次有用新畫布嗎？\n\n"+
@@ -3907,9 +3912,11 @@ async function bkCheckout(id){
       try{
         if(typeof releaseInvAutoUse==="function")releaseInvAutoUse(id);
         /* 加購裡如果已經有畫布類的品項（例如客人升級大尺寸畫布另外收費），
-           表示規格內附的那張畫布沒被用到，課程用料就不要重複扣同一類。 */
+           表示規格內附的那張畫布沒被用到，課程用料就不要重複扣同一類。
+           2026-11-09 手打品名含「畫布」（訂做畫布，不進庫存）也算：標準畫布一樣沒用到。 */
         var skipCats=addons.map(function(a){
           var m=a.materialId&&typeof bkMatById==="function"?bkMatById(a.materialId):null;
+          if(!m&&ckIsCustomCanvas(a))return "畫布";
           return m&&m.cat }).filter(Boolean);
         var r1=(typeof consumeInvForBooking==="function")
           ?consumeInvForBooking(id,b.date,outItems,null,skipCats):{ok:[],miss:[]};
