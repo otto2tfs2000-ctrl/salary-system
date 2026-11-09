@@ -71,7 +71,7 @@ body{font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
 .month-nav select{background:var(--bg3);border:1px solid var(--border);color:var(--text);
   padding:6px 10px;border-radius:7px;font-size:14.5px;cursor:pointer;outline:none;font-family:inherit}
 
-.page{display:none;padding:26px 28px 64px;max-width:1240px;margin:0 auto}.page.active{display:block}
+.page{display:none;padding:26px 28px 64px;max-width:1600px;margin:0 auto}.page.active{display:block}
 .page h2{font-family:var(--serif);font-size:20px;font-weight:400;color:var(--text);
   letter-spacing:.3px;margin-bottom:4px}
 
