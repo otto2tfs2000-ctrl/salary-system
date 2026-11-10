@@ -16,6 +16,33 @@ async function renderEvents(){
   }
   el.innerHTML = evHtml();
 }
+/* 2026-11-10 活動卡片「🏠 現場」那一半的報名人數：/staff/events 沒帶，還沒結束太久的活動各讀一次名單來數，讀過就記著；
+   進報名登記再出來時用手上那份名單重算，不重讀 */
+var evCnt = {};
+function evCntOf(list){
+  var rows = Object.values(list || {}), c = { n:rows.length, comp:0, paid:0 };
+  rows.forEach(function(r){ c.comp += (r.companion != null ? +r.companion || 0 : Math.max(0, (+r.dinner || 0) - 1)); if (r.paid) c.paid++ });
+  return c;
+}
+function evCntHtml(id){
+  var c = evCnt[id];
+  if (!c || c === 'load') return '<span class="muted">報名人數讀取中…</span>';
+  if (c === 'old') return '<span class="muted">活動已結束，按下面看名單</span>';
+  if (c === 'err') return '<span class="muted">報名人數讀不到，按下面進去看</span>';
+  if (!c.n) return '還沒有人報名';
+  return '報名 <b>' + c.n + '</b> 人' + (c.comp ? '（另攜伴 ' + c.comp + ' 人）' : '') + '<br>已繳 <b>' + c.paid + '</b> 人' +
+    (c.n - c.paid ? '・<span style="color:var(--red2,#c94d4d)">未繳 ' + (c.n - c.paid) + ' 人</span>' : '');
+}
+function evCntLoad(list){
+  list.forEach(function(e){
+    if (evCnt[e.id]) return;
+    if (evDaysTo(e.date) < -14) { evCnt[e.id] = 'old'; return }
+    evCnt[e.id] = 'load';
+    staffApi('/staff/events/reg', { id: e.id }).then(function(j){ evCnt[e.id] = evCntOf(j.reg) }, function(){ evCnt[e.id] = 'err' })
+      .then(function(){ if (!regEv && !evEdit && !balEdit && document.getElementById('tab-events').classList.contains('active')) renderEvents() });
+  });
+}
+function evRegBack(){ if (regEv && regList) evCnt[regEv.id] = evCntOf(regList); regEv = null; renderEvents() }
 function evMd(d){ return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : '' }
 function evDaysTo(d){ return Math.round((Date.parse(d + 'T00:00:00+08:00') - Date.parse(evData.today + 'T00:00:00+08:00')) / 864e5) }
 function evHtml(){
@@ -24,26 +51,40 @@ function evHtml(){
   if (balEdit) return balFormHtml();
   var list = Object.values(evData.list || {}).sort(function(a, b){ return String(b.date).localeCompare(String(a.date)) });
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">活動公告' +
-    '<button class="btn btn-outline btn-sm" style="margin-left:auto;margin-right:8px" onclick="evData=null;renderEvents()">↻ 重新讀取</button>' +
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto;margin-right:8px" onclick="evData=null;evCnt={};renderEvents()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="evNew()">＋ 新增活動</button></div>' +
-    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px">放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
+    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px">每場活動分兩半看：🏠 現場是真的要辦的那一面（報名、繳費），🏝️ 遊樂島是島上跟著動的那一面。<br>放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
     '「💐 我想去」花牆，活動前幾天島上開始開花，越接近開越多。活動當天過完就自動收掉。<br>報名一律在櫃檯，「我想去」只是讓大家看得到人氣，不是報名。</div>';
   if (!list.length) h += '<div class="empty">還沒有活動，按右上角「＋ 新增活動」。</div>';
   list.forEach(function(e){
     var w = (evData.want || {})[e.id] || {}, ws = Object.keys(w).map(function(k){ return w[k] }).sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
     var dt = evDaysTo(e.date), st = e.on === false ? '<span style="color:var(--text3)">已關閉</span>' : dt < 0 ? '<span style="color:var(--text3)">已結束</span>' :
       (e.showFrom && evData.today < e.showFrom) ? '<span style="color:var(--gold2)">' + evMd(e.showFrom) + ' 開始在島上露出</span>' : '<span style="color:var(--green2)">島上露出中・倒數 ' + dt + ' 天</span>';
-    h += '<div style="display:flex;gap:14px;border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;flex-wrap:wrap">' +
-      '<div style="width:96px;height:136px;border-radius:8px;background:var(--bg3) center/cover no-repeat;flex:none' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
-      '<div style="flex:1 1 220px;min-width:0">' +
+    var bals = Object.values(evData.bal || {}).filter(function(b){ return b.eventId === e.id });
+    h += '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">' +
+      '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:10px">' +
+      '<div style="width:72px;height:102px;border-radius:8px;background:var(--bg3) center/cover no-repeat;flex:none' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
+      '<div style="flex:1;min-width:0">' +
       '<div style="font-size:16px;font-weight:600">' + gcEsc(e.title) + '</div>' +
       '<div style="font-size:var(--fs-sm);margin:4px 0">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.sub ? '<br><span class="muted">' + gcEsc(e.sub) + '</span>' : '') + '</div>' +
-      '<div style="font-size:var(--fs-sm)">' + st + '</div>' +
-      '<div style="font-size:var(--fs-sm);margin-top:6px;cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</div>' +
+      '</div><button class="btn btn-outline btn-sm" style="flex:none" onclick="evOpen(\'' + e.id + '\')">編輯</button></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      /* 左半：現場真的辦的那一面 */
+      '<div class="ev-half"><div class="ev-half-t">🏠 現場</div>' +
+      '<div style="font-size:var(--fs-sm);line-height:1.8">' + evCntHtml(e.id) + (e.fee ? '<br><span class="muted">費用：' + gcEsc(e.fee) + '</span>' : '') + '</div>' +
+      '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="regOpen(\'' + e.id + '\')">📝 報名登記</button></div>' +
+      /* 右半：遊樂島上跟著動的那一面 */
+      '<div class="ev-half"><div class="ev-half-t">🏝️ 遊樂島</div>' +
+      '<div style="font-size:var(--fs-sm);line-height:1.8">' + st +
+      (e.on !== false && dt >= 0 ? '<br><span class="muted">🌸 ' + (e.bloomFrom ? evMd(e.bloomFrom) + ' 起' : '活動前 ' + (e.bloomDays || 14) + ' 天') + '開始開花</span>' : '') +
+      '<br><span style="cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</span>' +
+      '<br>🎈 ' + (bals.length ? bals.map(function(b){ return '<span style="cursor:pointer;text-decoration:underline" onclick="balOpen(\'' + b.id + '\')">' + gcEsc(BAL_ST[b.style] || b.style) + '</span>（' + balStatus(b) + '）' }).join('、') : '<span class="muted">這場還沒有熱氣球</span>') +
+      '</div>' +
       (evShowWant[e.id] && ws.length ? '<div style="font-size:var(--fs-xs);margin-top:6px;line-height:1.9">' + ws.map(function(x){
         return gcEsc(x.name || x.nm) + ' <span class="muted">' + gcEsc(x.phone || '（沒綁電話）') + '・' + String(x.at).slice(5, 10).replace('-', '/') + '</span>' }).join('<br>') + '</div>' : '') +
-      '</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-gold btn-sm" onclick="regOpen(\'' + e.id + '\')">📝 報名登記</button><button class="btn btn-outline btn-sm" onclick="evOpen(\'' + e.id + '\')">編輯</button></div></div>';
+      '</div></div></div>';
   });
+  evCntLoad(list);
   return h + '</div>' + balListHtml();
 }
 function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', poster2:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
@@ -155,7 +196,7 @@ function regRows(){ return Object.values(regList || {}).sort(function(a, b){ ret
 function regHtml(){
   if (regEdit) return regFormHtml();
   var e = regEv, h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">' +
-    '<button class="btn btn-outline btn-sm" onclick="regEv=null;renderEvents()">← 活動公告</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="evRegBack()">← 活動公告</button>' +
     '<span>📝 報名登記・' + gcEsc(e.title) + '</span>' +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="regReload()">↻ 重新讀取</button>' +
     (regList ? '<button class="btn btn-outline btn-sm" onclick="regCsv()">⬇ 下載名單</button><button class="btn btn-gold btn-sm" onclick="regNew()">＋ 新增報名</button>' : '') + '</div>' +

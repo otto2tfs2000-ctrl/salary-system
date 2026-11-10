@@ -8,7 +8,7 @@ var FUN_ITEMS = [
   { tab:'gacha',  ic:'🎰', nm:'扭扭樂（扭蛋機）', d:'10 月畢卡索、11/1 起聖誕扭扭樂：總覽、中獎紀錄與核銷、獎品、小遊戲、黃金扭蛋' },
   { tab:'xmas',   ic:'🎄', nm:'聖誕走格子',   d:'11 月起的走格子遊戲設定' },
   { tab:'shop',   ic:'🏪', nm:'藝享選品館',   d:'紅利商店：商品、分類、店員臺詞' },
-  { tab:'events', ic:'📣', nm:'活動公告',     d:'餐敘、展覽、看展：上傳海報、改日期，看誰按了「我想去」' },
+  { tab:'events', ic:'📣', nm:'活動公告',     d:'餐敘、展覽、看展：現場報名收費，和遊樂島上的倒數、開花、熱氣球，同一場活動一起看' },
   { tab:'pets',   ic:'🐹', nm:'寵物離家出走', d:'作品小屋的天竺鼠／青蛙：誰的寵物離家、LINE 推播、明信片照片' },
   { tab:'hallstats', ic:'🎧', nm:'講堂收聽紀錄', d:'畫框背後：多少人進來、聽了哪一集、有沒有聽完' }
 ];
@@ -21,7 +21,7 @@ function funCan(t){
   return a.indexOf('fun') >= 0 || a.indexOf(t) >= 0;
 }
 /* 2026-11-10 管理員在「整理選單」勾了獨立放到左邊的項目（menu.js mnSolo），這裡的卡片和切換鈕就不再列 */
-function funSolo(t){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(t) >= 0 }
+function funSolo(t){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(t) >= 0 && !(Array.isArray(window.mnBoth) && mnBoth.indexOf(t) >= 0) }   /* 兩邊都放的不算 */
 function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) && !funSolo(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;

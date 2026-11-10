@@ -381,6 +381,9 @@ label.chk.top input{margin-top:3px}
 
 /* ── ⚙️ 整理選單（menu.js，2026-10-29）── */
 .tabs .tab.mn-hide,.tabs .tab.mn-off{display:none!important}
+.mn-sel{flex:0 0 auto;padding:6px 8px;font-size:var(--fs-sm);border:1px solid var(--border);border-radius:8px;background:#fff}
+.ev-half{flex:1 1 240px;min-width:0;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.ev-half-t{font-size:var(--fs-sm);font-weight:600;margin-bottom:6px}
 .mn-sec{margin:16px 0 4px;font-size:var(--fs-md);font-weight:600}
 .mn-open{padding:12px 20px;font-size:13.5px;color:var(--side-text);cursor:pointer;opacity:.75;margin-top:8px;border-top:1px solid rgba(255,255,255,.08)}
 .mn-open:hover{opacity:1;background:var(--side2)}
