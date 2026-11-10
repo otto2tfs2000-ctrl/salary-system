@@ -6,10 +6,14 @@
    新加的分頁如果還沒排過，會放在程式預設位置的前一個分頁後面，不會跑到最底下。
    2026-11-05 管理員可以改分頁名字，全店一起換，存在同一筆 /menuLayout 的 names:{分頁 key:名字}；
    只改左邊選單顯示的字，分頁 key、權限、裡面的頁面標題都不動。今日排課的紅色數字是子元素，不能整個 textContent 蓋掉。
+   2026-11-10 「藝術家小活動」裡的每一項（fun.js FUN_ITEMS）可以由管理員勾「獨立放到左邊」，全店一樣，
+   存在同一筆 /menuLayout 的 solo:[分頁 key]。六項在左邊都先建好分頁（data-solo），沒勾的用 mn-off 藏著；
+   勾了的從「藝術家小活動」卡片和上方切換鈕拿掉（fun.js funSolo），入口的 data-sub 也跟著少一項，才不會兩顆一起亮。
+   權限沒變：照 funCan，原本看不到的人拉出來也看不到。全部拉出來時入口自己收起來。
    ══════════════════════════════════════════════════════════ */
 var MN_URL = 'https://otto2-2026-default-rtdb.asia-southeast1.firebasedatabase.app/menuLayout.json';
 var MN_HIDE_KEY = 'otto2_menu_hide';
-var mnDefault = [], mnShared = null, mnNames = {}, mnOrigNames = {}, mnDraft = null;
+var mnDefault = [], mnShared = null, mnNames = {}, mnOrigNames = {}, mnDraft = null, mnSolo = [], mnFunSub = '';
 
 function mnEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] }) }
 function mnTabs(){ return [].slice.call(document.querySelectorAll('.tabs .tab[data-tab]')) }
@@ -31,6 +35,16 @@ function mnHidden(){ try { var a = JSON.parse(localStorage.getItem(MN_HIDE_KEY) 
 function mnSetHidden(a){ try { localStorage.setItem(MN_HIDE_KEY, JSON.stringify(a)) } catch (e) {} }
 function mnIsOwner(){ return !!(window.ME && ME.staff && ME.staff.role === 'owner') }
 
+function mnFunItems(){ return window.FUN_ITEMS || [] }
+function mnIsFunItem(k){ return mnFunItems().some(function(x){ return x.tab === k }) }
+function mnFunCan(k){ return window.funCan ? funCan(k) : true }
+/* 這個人的選單上該不該有這一顆（solo＝目前或草稿裡獨立出來的清單） */
+function mnShown(k, solo){
+  var t = mnTab(k); if (!t || t.style.display === 'none') return false;
+  if (mnIsFunItem(k)) return solo.indexOf(k) >= 0 && mnFunCan(k);
+  if (k === 'fun') return mnFunItems().some(function(x){ return solo.indexOf(x.tab) < 0 && mnFunCan(x.tab) });
+  return true;
+}
 /* 存的順序＋沒排過的新分頁 → 完整順序 */
 function mnFullOrder(saved){
   var out = (saved || []).filter(function(k){ return mnDefault.indexOf(k) >= 0 });
@@ -47,7 +61,11 @@ function mnApply(){
   var order = mnFullOrder(mnShared), hide = mnHidden(), btn = document.getElementById('mn-open');
   order.forEach(function(k){ var t = mnTab(k); if (t) box.insertBefore(t, btn) });
   mnDefault.forEach(function(k){ var w = mnNames[k] || mnOrigNames[k]; if (w && w !== mnName(k)) mnSetName(k, w) });
+  var fun = mnTab('fun');
+  if (fun) fun.dataset.sub = mnFunSub.split(' ').filter(function(k){ return k && mnSolo.indexOf(k) < 0 }).join(' ');
   mnTabs().forEach(function(t){
+    var k = t.dataset.tab;
+    if (k === 'fun' || mnIsFunItem(k)) t.classList.toggle('mn-off', t.style.display !== 'none' && !mnShown(k, mnSolo));
     /* 正在看的那頁不藏，免得畫面上找不到自己在哪 */
     t.classList.toggle('mn-hide', hide.indexOf(t.dataset.tab) >= 0 && !t.classList.contains('active'));
   });
@@ -56,8 +74,7 @@ function mnApply(){
 function mnOpen(){
   document.body.classList.remove('side-open');
   var hide = mnHidden();
-  mnDraft = { order:mnFullOrder(mnShared).filter(function(k){ var t = mnTab(k); return t && t.style.display !== 'none' }),
-    hide:hide.slice(), names:Object.assign({}, mnNames) };
+  mnDraft = { order:mnFullOrder(mnShared), hide:hide.slice(), names:Object.assign({}, mnNames), solo:mnSolo.slice() };
   mnDraw();
 }
 function mnDraw(){
@@ -67,21 +84,34 @@ function mnDraw(){
     m.onclick = function(e){ if (e.target === m) mnClose() };
     document.body.appendChild(m);
   }
-  var own = mnIsOwner(), d = mnDraft;
+  var own = mnIsOwner(), d = mnDraft, old = m.querySelector('.mn-sheet'), top = old ? old.scrollTop : 0;
+  var rows = d.order.filter(function(k){ return mnShown(k, d.solo) });
   m.innerHTML = '<div class="mn-sheet"><div class="card-title" style="margin-bottom:6px">⚙️ 整理選單</div>' +
     '<div class="hint" style="margin-bottom:12px">' + (own ? '直接點名字可以改，按住右邊的 ☰ 上下拖曳排順序，按儲存後全店都會一樣。' : '名字和順序由管理員設定。') +
       '取消勾選＝只在你這台手機／電腦藏起來，別人看不到你的設定，權限也不會變。</div>' +
-    d.order.map(function(k, i){
+    rows.map(function(k, i){
       return '<div class="mn-row" data-mnrow="' + mnEsc(k) + '">' +
         '<label class="mn-chk"><input type="checkbox" data-mnk="' + mnEsc(k) + '"' + (d.hide.indexOf(k) < 0 ? ' checked' : '') + '>' + (own ? '' : ' ' + mnEsc(mnName(k))) + '</label>' +
         (own ? '<input class="mn-name" maxlength="20" data-mnname="' + mnEsc(k) + '" value="' + mnEsc(d.names[k] || mnOrigNames[k] || k) + '" aria-label="分頁名字">' : '') +
         (own ? '<span class="mn-drag" data-mndrag title="按住上下拖曳">☰</span>' : '') +
         '</div>';
     }).join('') +
+    (own && mnFunItems().length ? '<div class="mn-sec">🎪 藝術家小活動裡的項目</div>' +
+      '<div class="hint" style="margin-bottom:6px">打勾＝獨立放到左邊選單，上面就會多一列可以排順序；不勾＝收在「藝術家小活動」裡面。全店都一樣。</div>' +
+      mnFunItems().map(function(x){
+        return '<div class="mn-row"><label class="mn-chk"><input type="checkbox" data-mnsolo="' + mnEsc(x.tab) + '"' + (d.solo.indexOf(x.tab) >= 0 ? ' checked' : '') + '> ' + mnEsc(x.ic + ' ' + x.nm) + '</label></div>';
+      }).join('') : '') +
     '<div class="toolbar" style="margin-top:14px"><button class="btn btn-gold" id="mn-save">儲存</button>' +
       '<button class="btn btn-outline" id="mn-x">取消</button>' +
       '<button class="btn btn-outline" id="mn-reset" style="margin-left:auto">回到預設</button></div></div>';
   m.classList.add('on');
+  m.querySelector('.mn-sheet').scrollTop = top;
+  m.querySelectorAll('[data-mnsolo]').forEach(function(x){ x.onchange = function(){
+    var k = x.dataset.mnsolo, i = d.solo.indexOf(k);
+    if (x.checked && i < 0) d.solo.push(k);
+    if (!x.checked && i >= 0) d.solo.splice(i, 1);
+    mnDraw();
+  } });
   m.querySelectorAll('[data-mnk]').forEach(function(x){ x.onchange = function(){
     var k = x.dataset.mnk, i = d.hide.indexOf(k);
     if (x.checked && i >= 0) d.hide.splice(i, 1);
@@ -91,8 +121,8 @@ function mnDraw(){
   m.querySelectorAll('[data-mndrag]').forEach(function(h){ h.onpointerdown = function(e){ mnDragStart(e, h, m, d) } });
   document.getElementById('mn-x').onclick = mnClose;
   document.getElementById('mn-reset').onclick = function(){
-    if (!confirm(own ? '回到程式原本的名字和順序，全店都會變回來；你自己藏起來的分頁也全部打開。' : '你藏起來的分頁全部打開。')) return;
-    d.hide = []; d.names = {}; if (own) d.order = mnDefault.filter(function(k){ return d.order.indexOf(k) >= 0 });
+    if (!confirm(own ? '回到程式原本的名字和順序，獨立出來的小活動也收回「藝術家小活動」，全店都會變回來；你自己藏起來的分頁也全部打開。' : '你藏起來的分頁全部打開。')) return;
+    d.hide = []; d.names = {}; if (own) { d.order = mnDefault.slice(); d.solo = [] }
     mnSave(own ? 'reset' : false);
   };
   document.getElementById('mn-save').onclick = function(){ mnSave(own) };
@@ -128,7 +158,8 @@ function mnDragStart(e, handle, mask, d){
     window.removeEventListener('pointerup', end);
     window.removeEventListener('pointercancel', end);
     row.classList.remove('mn-dragging');
-    d.order = [].map.call(mask.querySelectorAll('[data-mnrow]'), function(x){ return x.dataset.mnrow });
+    /* 畫面上沒列出來的（沒權限、還收在小活動裡的）照原本的相對位置補回去 */
+    d.order = mnFullOrder([].map.call(mask.querySelectorAll('[data-mnrow]'), function(x){ return x.dataset.mnrow }));
   }
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', end);
@@ -138,7 +169,8 @@ function mnDragStart(e, handle, mask, d){
 function mnClose(){ var m = document.getElementById('mn-mask'); if (m) m.classList.remove('on') }
 async function mnSave(shared){
   var d = mnDraft;
-  if (d.order.every(function(k){ return d.hide.indexOf(k) >= 0 })) return alert('至少要留一個分頁');
+  var solo = shared === 'reset' ? [] : shared ? d.solo.filter(mnIsFunItem) : mnSolo;
+  if (d.order.filter(function(k){ return mnShown(k, solo) }).every(function(k){ return d.hide.indexOf(k) >= 0 })) return alert('至少要留一個分頁');
   if (shared){
     /* 沒權限看的分頁不在清單裡，照原本的相對位置補回去，不要被這次存檔弄丟 */
     var order = shared === 'reset' ? null : mnFullOrder(d.order);
@@ -150,17 +182,36 @@ async function mnSave(shared){
     });
     try {
       var r = await fetch(MN_URL, { method:order ? 'PUT' : 'DELETE', headers:{'Content-Type':'application/json'},
-        body:order ? JSON.stringify({ order:order, names:names, by:(window.ME && ME.displayName) || '', at:new Date(Date.now() + 288e5).toISOString().slice(0, 16) }) : undefined });
+        body:order ? JSON.stringify({ order:order, names:names, solo:solo, by:(window.ME && ME.displayName) || '', at:new Date(Date.now() + 288e5).toISOString().slice(0, 16) }) : undefined });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      mnShared = order; mnNames = names;
+      mnShared = order; mnNames = names; mnSolo = solo;
     } catch (e) { return alert('順序存檔失敗：' + e.message + '\n請檢查網路後再按一次。') }
   }
   mnSetHidden(d.hide);
-  mnClose(); mnApply();
+  mnClose(); mnApply(); mnFunRefresh();
+}
+/* 獨立出來的項目變了：小活動卡片和目前這頁上方的切換鈕重畫 */
+function mnFunRefresh(){
+  if (window.renderFun) renderFun();
+  var cur = document.querySelector('.page.active'), k = cur ? String(cur.id).replace('tab-', '') : '';
+  if (window.funNav && mnIsFunItem(k)) funNav(k);
 }
 
 async function mnBoot(){
   var box = document.querySelector('.tabs'); if (!box) return;
+  /* 小活動每一項先在入口後面建好一顆分頁，沒獨立出來的藏著 */
+  var fun = mnTab('fun');
+  if (fun){
+    mnFunSub = fun.dataset.sub || '';
+    var after = fun;
+    mnFunItems().forEach(function(x){
+      if (mnTab(x.tab)) return;
+      var t = document.createElement('div');
+      t.className = 'tab mn-off'; t.dataset.tab = x.tab; t.dataset.solo = '1'; t.textContent = x.ic + ' ' + x.nm;
+      t.onclick = function(){ switchTab(x.tab) };
+      after.after(t); after = t;
+    });
+  }
   mnDefault = mnTabs().map(function(t){ return t.dataset.tab });
   mnDefault.forEach(function(k){ mnOrigNames[k] = mnName(k) });
   var b = document.createElement('div');
@@ -168,7 +219,8 @@ async function mnBoot(){
   b.onclick = mnOpen;
   box.appendChild(b);
   mnApply();
-  try { var j = await (await fetch(MN_URL)).json(); if (j && Array.isArray(j.order)) mnShared = j.order; if (j && j.names) mnNames = j.names } catch (e) {}
-  mnApply();
+  try { var j = await (await fetch(MN_URL)).json(); if (j && Array.isArray(j.order)) mnShared = j.order; if (j && j.names) mnNames = j.names;
+    if (j && Array.isArray(j.solo)) mnSolo = j.solo.filter(mnIsFunItem) } catch (e) {}
+  mnApply(); mnFunRefresh();
 }
 mnBoot();

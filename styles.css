@@ -380,7 +380,8 @@ label.chk.top input{margin-top:3px}
 .fg textarea:focus{border-color:var(--gold)}
 
 /* ── ⚙️ 整理選單（menu.js，2026-10-29）── */
-.tabs .tab.mn-hide{display:none!important}
+.tabs .tab.mn-hide,.tabs .tab.mn-off{display:none!important}
+.mn-sec{margin:16px 0 4px;font-size:var(--fs-md);font-weight:600}
 .mn-open{padding:12px 20px;font-size:13.5px;color:var(--side-text);cursor:pointer;opacity:.75;margin-top:8px;border-top:1px solid rgba(255,255,255,.08)}
 .mn-open:hover{opacity:1;background:var(--side2)}
 .mn-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;display:none;align-items:flex-end;justify-content:center}

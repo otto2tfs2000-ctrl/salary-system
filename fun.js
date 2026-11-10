@@ -20,9 +20,12 @@ function funCan(t){
   var a = Array.isArray(st.tabs) ? st.tabs : [];
   return a.indexOf('fun') >= 0 || a.indexOf(t) >= 0;
 }
-function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) }) }
+/* 2026-11-10 管理員在「整理選單」勾了獨立放到左邊的項目（menu.js mnSolo），這裡的卡片和切換鈕就不再列 */
+function funSolo(t){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(t) >= 0 }
+function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) && !funSolo(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;
+  if (!funItems().length) { el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm)">這裡的項目都已經獨立放到左邊選單了。要收回來請到左下角「⚙️ 整理選單」取消勾選。</div>'; return }
   el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm);margin:-6px 0 14px">客人在遊樂島玩的東西都在這裡。點一個進去設定。</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">' + funItems().map(function(x){
       return '<div class="card" style="margin:0;cursor:pointer;padding:18px" onclick="switchTab(\'' + x.tab + '\')">' +
@@ -34,6 +37,7 @@ function renderFun(){
 function funNav(cur){
   var on = FUN_ITEMS.some(function(x){ return x.tab === cur }); if (!on) return;
   var box = document.querySelector('#tab-' + cur + ' .fun-nav'); if (!box) return;
+  if (funSolo(cur)) { box.innerHTML = ''; return }   /* 已經是左邊獨立的分頁，不用「← 藝術家小活動」 */
   box.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-outline btn-sm" onclick="switchTab(\'fun\')">← 藝術家小活動</button>' +
     funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:var(--fs-sm)" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
