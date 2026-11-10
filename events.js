@@ -200,9 +200,10 @@ function regListHtml(){
   var ok = function(t){ return '<span style="color:var(--green2)">✅ ' + t + '</span>' }, no = function(t){ return '<span style="color:var(--red,#c0392b)">❌ ' + t + '</span>' };
   return rows.map(function(r, i){
     var c = regComp(r), due = regDue(r), short = r.paid ? due - (+r.payAmt || 0) : 0;
+    var pick = '<input type="file" accept="image/*" style="display:none" onchange="regQuickImg(this,\'' + r.rid + '\')">';
     return '<div style="display:flex;gap:12px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;flex-wrap:wrap">' +
       (r.workImg ? '<a href="' + gcEsc(r.workImg) + '" target="_blank" title="看大圖" style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--bg3) center/cover no-repeat;background-image:url(\'' + gcEsc(r.workImg) + '\')"></a>'
-        : '<div style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);color:var(--text3)">沒照片</div>') +
+        : '<label title="點這裡上傳作品照片" style="width:64px;height:64px;border-radius:8px;flex:none;background:var(--bg3);border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:var(--fs-xs);color:var(--text3);cursor:pointer;line-height:1.4"><span style="font-size:18px">📷</span>點我上傳' + pick + '</label>') +
       '<div style="flex:1 1 150px;min-width:0"><div style="font-weight:600">' + (i + 1) + '. ' + gcEsc(r.name) + '</div>' +
       '<div class="muted" style="font-size:var(--fs-sm)">' + gcEsc(r.phone || '（沒填電話）') + '</div>' +
       (r.note ? '<div class="muted" style="font-size:var(--fs-xs)">📌 ' + gcEsc(r.note) + '</div>' : '') + '</div>' +
@@ -211,7 +212,9 @@ function regListHtml(){
       '<div>餐敘：' + (+r.dinner ? '<b>' + r.dinner + ' 位</b>' + (c ? '（攜伴 ' + c + ' 位）' : '') : '<span class="muted">不參加</span>') + '</div>' +
       '<div>DIY：' + (+r.diy ? '<b>' + r.diy + ' 位</b>' : '<span class="muted">不參加</span>') + '</div>' +
       '<div>繳費：' + (r.paid ? ok('$' + (+r.payAmt || 0).toLocaleString() + (r.payWay ? '・' + gcEsc(r.payWay) : '') + (r.paidAt ? '・' + evMd(r.paidAt.slice(0, 10)) : '') + (r.paidBy ? ' ' + gcEsc(r.paidBy) : '')) + (short > 0 ? ' ' + no('還差 $' + short.toLocaleString()) : '') : no('未繳・應收 $' + due.toLocaleString())) + '</div></div>' +
-      '<button class="btn btn-outline btn-sm" onclick="regOpenOne(\'' + r.rid + '\')">編輯</button></div>';
+      '<div style="display:flex;flex-direction:column;gap:6px;align-items:stretch"><label class="btn btn-outline btn-sm" style="cursor:pointer;text-align:center">' + (r.workImg ? '換照片' : '📷 上傳照片') + pick + '</label>' +
+      '<button class="btn btn-outline btn-sm" onclick="regOpenOne(\'' + r.rid + '\')">編輯</button>' +
+      '<div id="reg-qs-' + r.rid + '" class="muted" style="font-size:var(--fs-xs);max-width:110px;text-align:center">' + gcEsc(regQuickSt[r.rid] || '') + '</div></div></div>';
   }).join('');
 }
 function regNew(){ regEdit = { rid:'r' + Date.now().toString(36), name:'', phone:'', workDone:false, workTitle:'', workImg:'', dinner:1, companion:0, diy:0, paid:false, payAmt:regFeeNum(), payWay:'現金', note:'', _new:true }; renderEvents() }
@@ -272,6 +275,34 @@ function regPickImg(inp){
     } catch(e) { st.textContent = '❌ ' + e.message }
   };
   im.onerror = function(){ st.textContent = '❌ 這個檔案打不開' };
+  im.src = url;
+}
+/* 名單上直接點照片／按鈕上傳：傳完自動存進這筆報名，不用進編輯頁 */
+var regQuickSt = {};
+function regQuickSet(rid, t){ regQuickSt[rid] = t; var el = document.getElementById('reg-qs-' + rid); if (el) el.textContent = t }
+function regQuickImg(inp, rid){
+  var f = inp.files && inp.files[0]; if (!f) return;
+  if (!evData.cloudinary) return alert('伺服器還沒設定 Cloudinary，作品照片暫時不能上傳。');
+  var evId = regEv.id;
+  regQuickSet(rid, '處理照片中…');
+  var url = URL.createObjectURL(f), im = new Image();
+  im.onload = async function(){
+    var k = Math.min(1, 1600 / Math.max(im.width, im.height)), cv = document.createElement('canvas');
+    cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+    try {
+      regQuickSet(rid, '上傳中…');
+      var j = await staffApi('/staff/events/reg/img', { id: evId, rid: rid, dataUrl: cv.toDataURL('image/jpeg', .88) });
+      /* 存檔前重抓這一筆最新的內容，免得蓋掉別人剛改的繳費／作品狀態 */
+      var cur = ((await staffApi('/staff/events/reg', { id: evId })).reg || {})[rid];
+      if (!cur) throw new Error('這筆報名已經被刪掉了');
+      cur.workImg = j.url;
+      var s = await staffApi('/staff/events/reg/save', { id: evId, r: cur });
+      regQuickSt[rid] = '';
+      if (regEv && regEv.id === evId){ regList[rid] = s.r; if (!regEdit) regListOnly() }
+    } catch(e) { regQuickSet(rid, '❌ ' + e.message) }
+  };
+  im.onerror = function(){ regQuickSet(rid, '❌ 這個檔案打不開') };
   im.src = url;
 }
 function regClearImg(){
