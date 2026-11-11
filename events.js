@@ -210,7 +210,9 @@ function regFeeNum(){ var m = String(regEv.fee || '').replace(/,/g, '').match(/\
 /* 攜伴、DIY（2026-11-03）：dinner 仍是餐敘總位數（本人＋攜伴）；舊資料沒有 companion，本人以外都算攜伴 */
 var REG_COMP_FEE = 1200, REG_DIY_FEE = 300;
 function regComp(r){ return r.companion != null ? +r.companion || 0 : Math.max(0, (+r.dinner || 0) - 1) }
-function regDue(r){ return regFeeNum() + regComp(r) * REG_COMP_FEE + (+r.diy || 0) * REG_DIY_FEE }
+/* 2026-11-11：會員本人的費用已含 DIY，DIY $300 只收攜伴的，所以 DIY 人數不會超過攜伴人數 */
+function regDiy(r){ return Math.min(regComp(r), +r.diy || 0) }
+function regDue(r){ return regFeeNum() + regComp(r) * REG_COMP_FEE + regDiy(r) * REG_DIY_FEE }
 function regRows(){ return Object.values(regList || {}).sort(function(a, b){ return String(a.createdAt).localeCompare(String(b.createdAt)) }) }
 function regHtml(){
   if (regEdit) return regFormHtml();
@@ -227,7 +229,7 @@ function regHtml(){
     sum = all.reduce(function(t, r){ return t + (r.paid ? +r.payAmt || 0 : 0) }, 0),
     din = all.reduce(function(t, r){ return t + (+r.dinner || 0) }, 0),
     comp = all.reduce(function(t, r){ return t + regComp(r) }, 0),
-    diy = all.reduce(function(t, r){ return t + (+r.diy || 0) }, 0),
+    diy = all.reduce(function(t, r){ return t + regDiy(r) }, 0),
     due = all.reduce(function(t, r){ return t + regDue(r) }, 0),
     noDin = all.filter(function(r){ return !(+r.dinner) }).length;
   var tile = function(lb, v, sub, warn){ return '<div style="flex:1 1 130px;border:1px solid var(--border);border-radius:10px;padding:8px 12px">' +
@@ -237,10 +239,10 @@ function regHtml(){
     tile('報名人數', n + ' 人') +
     tile('作品已交', nWork + ' / ' + n, n - nWork ? '還有 ' + (n - nWork) + ' 人沒交' : (n ? '全部交齊' : ''), n - nWork > 0) +
     tile('餐敘人數', din + ' 位', '含攜伴 ' + comp + ' 位' + (noDin ? '・' + noDin + ' 人不參加' : '')) +
-    tile('DIY', diy + ' 位') +
+    tile('攜伴 DIY', diy + ' 位', '會員本人已含，不另計') +
     tile('已繳費', nPaid + ' / ' + n, '已收 $' + sum.toLocaleString() + '／應收 $' + due.toLocaleString() + (n - nPaid ? '・' + (n - nPaid) + ' 人未繳' : ''), n - nPaid > 0) + '</div>';
   var chip = function(k, lb){ return '<button class="btn btn-sm ' + (regFilter === k ? 'btn-gold' : 'btn-outline') + '" onclick="regFilter=\'' + k + '\';renderEvents()">' + lb + '</button>' };
-  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('all', '全部') + chip('nowork', '作品未交') + chip('nopay', '未繳費') + chip('nodin', '不參加餐敘') + chip('comp', '有攜伴') + chip('diy', '參加DIY') +
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('all', '全部') + chip('nowork', '作品未交') + chip('nopay', '未繳費') + chip('nodin', '不參加餐敘') + chip('comp', '有攜伴') + chip('diy', '攜伴DIY') +
     '<input id="reg-q" value="' + gcEsc(regQ) + '" placeholder="搜尋姓名／電話／作品" oninput="regQ=this.value;regListOnly()" style="margin-left:auto;width:180px;max-width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)"></div>';
   return h + '<div id="reg-list">' + regListHtml() + '</div></div>';
 }
@@ -252,7 +254,7 @@ function regListHtml(){
     if (regFilter === 'nopay' && r.paid) return false;
     if (regFilter === 'nodin' && +r.dinner) return false;
     if (regFilter === 'comp' && !regComp(r)) return false;
-    if (regFilter === 'diy' && !+r.diy) return false;
+    if (regFilter === 'diy' && !regDiy(r)) return false;
     return !q || [r.name, r.phone, r.workTitle, r.note].join(' ').toLowerCase().indexOf(q) >= 0;
   });
   if (!regRows().length) return '<div class="empty">還沒有人報名，按右上角「＋ 新增報名」。</div>';
@@ -270,7 +272,7 @@ function regListHtml(){
       '<div style="flex:1 1 260px;font-size:var(--fs-sm);line-height:1.8">' +
       '<div>作品：' + (r.workDone ? ok('已交' + (r.workTitle ? '《' + gcEsc(r.workTitle) + '》' : '')) : no('未交' + (r.workTitle ? '（' + gcEsc(r.workTitle) + '）' : ''))) + '</div>' +
       '<div>餐敘：' + (+r.dinner ? '<b>' + r.dinner + ' 位</b>' + (c ? '（攜伴 ' + c + ' 位）' : '') : '<span class="muted">不參加</span>') + '</div>' +
-      '<div>DIY：' + (+r.diy ? '<b>' + r.diy + ' 位</b>' : '<span class="muted">不參加</span>') + '</div>' +
+      (c ? '<div>攜伴 DIY：' + (regDiy(r) ? '<b>' + regDiy(r) + ' 位</b>' : '<span class="muted">不參加</span>') + '</div>' : '') +
       '<div>繳費：' + (r.paid ? ok('$' + (+r.payAmt || 0).toLocaleString() + (r.payWay ? '・' + gcEsc(r.payWay) : '') + (r.paidAt ? '・' + evMd(r.paidAt.slice(0, 10)) : '') + (r.paidBy ? ' ' + gcEsc(r.paidBy) : '')) + (short > 0 ? ' ' + no('還差 $' + short.toLocaleString()) : '') : no('未繳・應收 $' + due.toLocaleString())) + '</div></div>' +
       '<div style="display:flex;flex-direction:column;gap:6px;align-items:stretch"><label class="btn btn-outline btn-sm" style="cursor:pointer;text-align:center">' + (r.workImg ? '換照片' : '📷 上傳照片') + pick + '</label>' +
       '<button class="btn btn-outline btn-sm" onclick="regOpenOne(\'' + r.rid + '\')">編輯</button>' +
@@ -280,17 +282,31 @@ function regListHtml(){
 function regNew(){ regEdit = { rid:'r' + Date.now().toString(36), name:'', phone:'', workDone:false, workTitle:'', workImg:'', dinner:1, companion:0, diy:0, paid:false, payAmt:regFeeNum(), payWay:'現金', note:'', _new:true }; renderEvents() }
 function regOpenOne(rid){ regEdit = JSON.parse(JSON.stringify(regList[rid])); if (!regEdit.paid && !regEdit.payAmt) regEdit.payAmt = regDue(regEdit); renderEvents() }
 /* 改攜伴／DIY 時，應收跟著算，金額也帶成應收（櫃檯有折扣再手動改金額） */
-function regDueText(r){ var c = regComp(r), d = +r.diy || 0;
-  return '應收 $' + regDue(r).toLocaleString() + (c || d ? '（本人 $' + regFeeNum().toLocaleString() + (c ? '＋攜伴 $' + REG_COMP_FEE.toLocaleString() + '×' + c : '') + (d ? '＋DIY $' + REG_DIY_FEE + '×' + d : '') + '）' : '') }
+function regDueText(r){ var c = regComp(r), d = regDiy(r);
+  return '應收 $' + regDue(r).toLocaleString() + '（會員本人 $' + regFeeNum().toLocaleString() + ' 已含 DIY' + (c ? '＋攜伴 $' + REG_COMP_FEE.toLocaleString() + '×' + c : '') + (d ? '＋攜伴 DIY $' + REG_DIY_FEE + '×' + d : '') + '）' }
+function regDiyOpts(c, d){ var h = ''; for (var i = 1; i <= c; i++) h += '<option value="' + i + '"' + (d === i ? ' selected' : '') + '>' + (i === c && c > 1 ? '全部 ' + i + ' 位' : i + ' 位') + '</option>'; return h }
+/* 讀表單上的攜伴／攜伴 DIY（沒勾就是 0） */
+function regFormVals(){
+  var g = function(id){ return document.getElementById(id) }, on = g('reg-comp-on').checked, c = on ? +g('reg-comp').value || 1 : 0;
+  return { companion: c, diy: on && g('reg-diy-on').checked ? Math.min(c, +g('reg-diy').value || c) : 0 };
+}
 function regRecalc(){
-  var r = { companion: +document.getElementById('reg-comp').value || 0, diy: +document.getElementById('reg-diy').value || 0 };
-  document.getElementById('reg-amt').value = regDue(r);
-  document.getElementById('reg-due').textContent = regDueText(r);
+  var g = function(id){ return document.getElementById(id) }, on = g('reg-comp-on').checked, c = on ? +g('reg-comp').value || 1 : 0, dOn = g('reg-diy-on'), dSel = g('reg-diy');
+  g('reg-comp').style.display = on ? '' : 'none';
+  g('reg-diy-row').style.display = on ? '' : 'none';
+  if (!on) dOn.checked = false;
+  /* 原本選「全部」的話，攜伴人數改了就跟著變 */
+  var prev = +dSel.value || 0, all = !prev || prev >= dSel.options.length;
+  dSel.innerHTML = regDiyOpts(c, all ? c : Math.min(prev, c));
+  dSel.style.display = dOn.checked && c > 1 ? '' : 'none';
+  var r = regFormVals();
+  g('reg-amt').value = regDue(r);
+  g('reg-due').textContent = regDueText(r);
 }
 function regFormHtml(){
-  var r = regEdit, c = regComp(r), self = (+r.dinner || 0) > c, sel = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)', comps = '', diys = '';
-  for (var i = 0; i <= 5; i++) comps += '<option value="' + i + '"' + (c === i ? ' selected' : '') + '>' + (i ? i + ' 位' : '沒有攜伴') + '</option>';
-  for (var i = 0; i <= 6; i++) diys += '<option value="' + i + '"' + ((+r.diy || 0) === i ? ' selected' : '') + '>' + (i ? '參加 ' + i + ' 位' : '不參加') + '</option>';
+  var r = regEdit, c = regComp(r), self = (+r.dinner || 0) > c, sel = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)', comps = '', d = regDiy(r),
+    box = 'border:1px solid var(--border);border-radius:10px;padding:12px 12px 2px;margin-bottom:12px', boxT = 'font-weight:600;margin-bottom:10px', chk = 'font-size:var(--fs-sm);display:inline-block;padding-top:7px;margin-right:8px';
+  for (var i = 1; i <= 5; i++) comps += '<option value="' + i + '"' + (c === i ? ' selected' : '') + '>' + i + ' 位</option>';
   var ways = REG_WAYS.map(function(w){ return '<option' + (r.payWay === w ? ' selected' : '') + '>' + w + '</option>' }).join('');
   return '<div class="card"><div class="card-title">' + (r._new ? '新增報名' : '編輯報名') + '・' + gcEsc(regEv.title) + '</div>' +
     (evData.cloudinary ? '' : '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm)">伺服器還沒設定 Cloudinary，作品照片暫時不能上傳。</div>') +
@@ -301,13 +317,18 @@ function regFormHtml(){
     '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="regClearImg()">移除</button>' +
     '<div id="reg-st" class="muted" style="font-size:var(--fs-xs);margin-top:4px;max-width:200px"></div></div>' +
     '<div style="flex:1 1 320px">' +
+    '<div style="' + box + '"><div style="' + boxT + '">① 會員本人　<span class="muted" style="font-weight:400;font-size:var(--fs-sm)">$' + regFeeNum().toLocaleString() + '，已含晚餐和 DIY，不用再加錢</span></div>' +
     evRow('姓名', evInp('reg-name', r.name, 'text', 220, '例：王小明'), '空白的話會用電話找會員名字') +
     evRow('電話', evInp('reg-phone', r.phone, 'tel', 220, '09xxxxxxxx'), '同一支電話重複報名會先提醒') +
-    evRow('作品', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="reg-work" ' + (r.workDone ? 'checked' : '') + '> 作品已繳交</label>') +
+    evRow('作品', '<label style="' + chk + '"><input type="checkbox" id="reg-work" ' + (r.workDone ? 'checked' : '') + '> 作品已繳交</label>') +
     evRow('作品名稱', evInp('reg-wtitle', r.workTitle, 'text', 260, '例：盛開的向日葵')) +
-    evRow('本人餐敘', '<select id="reg-din" style="' + sel + '"><option value="1"' + (self ? ' selected' : '') + '>參加</option><option value="0"' + (self ? '' : ' selected') + '>不參加餐敘</option></select>', '只交作品不吃飯就選「不參加餐敘」') +
-    evRow('攜伴', '<select id="reg-comp" onchange="regRecalc()" style="' + sel + '">' + comps + '</select>', '每位 $' + REG_COMP_FEE.toLocaleString() + '，含晚餐、藝術家領結') +
-    evRow('DIY', '<select id="reg-diy" onchange="regRecalc()" style="' + sel + '">' + diys + '</select>', '每位 $' + REG_DIY_FEE) +
+    evRow('餐敘', '<label style="' + chk + '"><input type="checkbox" id="reg-din" ' + (self ? 'checked' : '') + '> 本人參加餐敘</label>', '只交作品不吃飯才取消打勾') + '</div>' +
+    '<div style="' + box + '"><div style="' + boxT + '">② 攜伴　<span class="muted" style="font-weight:400;font-size:var(--fs-sm)">有帶家人朋友才勾，費用另外算</span></div>' +
+    evRow('攜伴', '<label style="' + chk + '"><input type="checkbox" id="reg-comp-on" onchange="regRecalc()" ' + (c ? 'checked' : '') + '> 有攜伴</label>' +
+      '<select id="reg-comp" onchange="regRecalc()" style="' + sel + (c ? '' : ';display:none') + '">' + comps + '</select>', '每位 $' + REG_COMP_FEE.toLocaleString() + '，含晚餐、藝術家領結（不含 DIY）') +
+    '<div id="reg-diy-row"' + (c ? '' : ' style="display:none"') + '>' +
+    evRow('攜伴 DIY', '<label style="' + chk + '"><input type="checkbox" id="reg-diy-on" onchange="regRecalc()" ' + (d ? 'checked' : '') + '> 攜伴也要做 DIY</label>' +
+      '<select id="reg-diy" onchange="regRecalc()" style="' + sel + (d && c > 1 ? '' : ';display:none') + '">' + regDiyOpts(c, d || c) + '</select>', '攜伴每位加 $' + REG_DIY_FEE + '（會員本人的 DIY 已經含在裡面，這裡不用勾）') + '</div></div>' +
     evRow('繳費', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="reg-paid" ' + (r.paid ? 'checked' : '') + '> 已繳費</label>　金額 $' + evInp('reg-amt', r.payAmt || '', 'number', 100) +
       ' <select id="reg-way" style="' + sel + '">' + ways + '</select><div id="reg-due" style="font-size:var(--fs-sm);margin-top:6px;font-weight:600">' + regDueText(r) + '</div>',
       r.paid && r.paidAt ? '已於 ' + evMd(r.paidAt.slice(0, 10)) + ' 由 ' + gcEsc(r.paidBy || '—') + ' 登記收款' : '') +
@@ -371,9 +392,9 @@ function regClearImg(){
   document.getElementById('reg-st').textContent = '照片已移除，記得按「儲存」';
 }
 async function regSave(){
-  var v = function(id){ return document.getElementById(id).value.trim() };
+  var v = function(id){ return document.getElementById(id).value.trim() }, fv = regFormVals();
   var r = { rid: regEdit.rid, name: v('reg-name'), phone: v('reg-phone').replace(/\D/g, ''), workDone: document.getElementById('reg-work').checked, workTitle: v('reg-wtitle'),
-    workImg: v('reg-img'), companion: +v('reg-comp') || 0, diy: +v('reg-diy') || 0, dinner: (+v('reg-din') || 0) + (+v('reg-comp') || 0), paid: document.getElementById('reg-paid').checked, payAmt: +v('reg-amt') || 0, payWay: v('reg-way'), note: v('reg-note') };
+    workImg: v('reg-img'), companion: fv.companion, diy: fv.diy, dinner: (document.getElementById('reg-din').checked ? 1 : 0) + fv.companion, paid: document.getElementById('reg-paid').checked, payAmt: +v('reg-amt') || 0, payWay: v('reg-way'), note: v('reg-note') };
   if (!r.name && !r.phone) return alert('請填姓名或電話');
   if (r.phone && !/^09\d{8}$/.test(r.phone)) return alert('電話要 09 開頭 10 碼');
   if (r.paid && !r.payAmt && !confirm('勾了已繳費但金額是 0，確定嗎？')) return;
@@ -392,9 +413,9 @@ async function regDel(){
 /* 下載名單（Excel 打得開的 CSV，前面加 BOM 中文才不會亂碼） */
 function regCsv(){
   var cell = function(x){ x = String(x == null ? '' : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x };
-  var lines = [['#', '姓名', '電話', '作品已交', '作品名稱', '作品照片', '餐敘人數', '攜伴人數', 'DIY人數', '應收', '已繳費', '金額', '方式', '收款日', '備註'].join(',')];
+  var lines = [['#', '姓名', '電話', '作品已交', '作品名稱', '作品照片', '餐敘人數', '攜伴人數', '攜伴DIY人數', '應收', '已繳費', '金額', '方式', '收款日', '備註'].join(',')];
   regRows().forEach(function(r, i){
-    lines.push([i + 1, r.name, r.phone ? "'" + r.phone : '', r.workDone ? '是' : '否', r.workTitle, r.workImg, +r.dinner || 0, regComp(r), +r.diy || 0, regDue(r), r.paid ? '是' : '否', r.paid ? r.payAmt : '', r.payWay, (r.paidAt || '').slice(0, 10), r.note].map(cell).join(','));
+    lines.push([i + 1, r.name, r.phone ? "'" + r.phone : '', r.workDone ? '是' : '否', r.workTitle, r.workImg, +r.dinner || 0, regComp(r), regDiy(r), regDue(r), r.paid ? '是' : '否', r.paid ? r.payAmt : '', r.payWay, (r.paidAt || '').slice(0, 10), r.note].map(cell).join(','));
   });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
