@@ -41,11 +41,11 @@ function mnIsOwner(){ return !!(window.ME && ME.staff && ME.staff.role === 'owne
 
 function mnFunItems(){ return window.FUN_ITEMS || [] }
 function mnIsFunItem(k){ return mnFunItems().some(function(x){ return x.tab === k }) }
-function mnFunCan(k){ return window.funCan ? funCan(k) : true }
+function mnFunCan(k, left){ return window.funPerm ? funPerm(k, !!left) : true }
 /* 這個人的選單上該不該有這一顆（solo＝目前或草稿裡左邊有分頁的項目，both＝其中小活動裡也留著的） */
 function mnShown(k, solo, both){
   var t = mnTab(k); if (!t || t.style.display === 'none') return false;
-  if (mnIsFunItem(k)) return solo.indexOf(k) >= 0 && mnFunCan(k);
+  if (mnIsFunItem(k)) return solo.indexOf(k) >= 0 && mnFunCan(k, true);
   if (k === 'fun') return mnFunItems().some(function(x){ return (solo.indexOf(x.tab) < 0 || both.indexOf(x.tab) >= 0) && mnFunCan(x.tab) });
   return true;
 }

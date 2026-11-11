@@ -10,7 +10,13 @@ var evData = null, evEdit = null, evShowWant = {};
 /* 2026-11-11 大熊：左邊「活動公告」只放現場會發生的事（報名、繳費），島上那一面（倒數、開花、我想去、熱氣球）留在「藝術家小活動」裡。
    整理選單把活動公告設「兩邊都放」時才分：live＝左邊那顆、park＝從小活動進來；只放一邊（all）就照舊全部列在同一頁，免得有一半找不到 */
 var evSide = 'live';
-function evMode(){ return Array.isArray(window.mnBoth) && mnBoth.indexOf('events') >= 0 ? evSide : 'all' }
+function evMode(){
+  if (!(Array.isArray(window.mnBoth) && mnBoth.indexOf('events') >= 0)) return 'all';
+  /* 只有其中一邊權限的人，不管從哪進來都只看得到他那一邊 */
+  if (window.funCanLeft && !funCanLeft('events')) return 'park';
+  if (window.funCanIn && !funCanIn('events')) return 'live';
+  return evSide;
+}
 function evGo(side){ if (side !== evSide) { evEdit = null; balEdit = null; regEv = null; regEdit = null } evSide = side }
 async function evLoad(){ evData = await staffApi('/staff/events', {}) }
 async function renderEvents(){

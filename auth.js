@@ -256,8 +256,8 @@ function authApplyTabs(){
   document.querySelectorAll(".tabs .tab").forEach(function(el){
     var k = el.dataset.tab;
     var subs = (el.dataset.sub || "").split(" ").filter(Boolean);
-    var ok = allowed.indexOf(k) >= 0 || (st && subs.length && window.funCan && subs.some(function(x){ return funCan(x) }));   /* 藝術家小活動入口：底下任何一項看得到就顯示 */
-    if (!ok && el.dataset.solo && st && window.funCan && funCan(k)) ok = true;   /* 2026-11-10 從小活動獨立出來的分頁：權限照 funCan，顯不顯示交給 menu.js */
+    var ok = allowed.indexOf(k) >= 0 || (st && subs.length && window.funCan && subs.some(function(x){ return (window.funCanIn || funCan)(x) }));   /* 藝術家小活動入口：底下任何一項看得到就顯示 */
+    if (el.dataset.solo && st && window.funCanLeft) ok = funCanLeft(k);   /* 2026-11-10 從小活動獨立出來的分頁：權限照 funCan，顯不顯示交給 menu.js */
     if (!ok) el.style.display = "none";
     else if (!first && !el.classList.contains("mn-off")) first = k;
   });

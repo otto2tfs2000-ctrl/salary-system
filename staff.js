@@ -59,11 +59,40 @@ var STAFF_ACTS = [
 var STAFF_ROLES = {
   teacher: { n:"老師",   tabs:["today","monthly","recipe"], acts:[] },
   admin:   { n:"行政／業務",
-             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe","baoban"],
+             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe","baoban","fun","events"],   /* 行政本來就一律看得到小活動，預設勾起來 */
              acts:["checkout","void","sellPlan"] },
   owner:   { n:"管理員", tabs:STAFF_TABS.map(function(t){ return t.k }),
              acts:STAFF_ACTS.map(function(a){ return a.k }) }
 };
+
+/* 2026-11-11 大熊：勾選清單看不懂（名字跟左邊對不上、小活動還拆成一堆小項）。
+   改成跟左邊選單一模一樣：順序、名字（含整理選單改過的）都跟著左邊；小活動只有一格大標題，
+   裡面的項目不再各自一格，除非它被獨立放到左邊（那它就是左邊的一格）。
+   存檔時 tabs 會帶 '_v2'，代表之後完全照勾選（fun.js funPerm）。 */
+function stFunKeys(){ return (window.FUN_ITEMS || []).map(function(x){ return x.tab }) }
+function stOnLeft(k){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(k) >= 0 }
+function stTabList(){
+  var fk = stFunKeys(), base = {}, out = [];
+  STAFF_TABS.forEach(function(t){ base[t.k] = t.n });
+  var order = [].slice.call(document.querySelectorAll('.tabs .tab[data-tab]')).map(function(t){ return t.dataset.tab });
+  STAFF_TABS.forEach(function(t){ if (order.indexOf(t.k) < 0) order.push(t.k) });
+  order.forEach(function(k){
+    if (!base[k]) return;
+    if (fk.indexOf(k) >= 0 && !stOnLeft(k)) return;                                   /* 收在小活動裡的小項：不列 */
+    if (k === 'fun' && fk.length && fk.every(function(x){ return window.funSolo && funSolo(x) })) return;   /* 全部都搬到左邊了，入口沒東西 */
+    var n = (window.mnName && document.querySelector('.tabs .tab[data-tab="' + k + '"]') && mnName(k)) || base[k];
+    out.push({ k:k, n:n.replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, '').trim() || base[k] });
+  });
+  return out;
+}
+function stFunInside(){ return (window.FUN_ITEMS || []).filter(function(x){ return !(window.funSolo && funSolo(x.tab)) }).map(function(x){ return x.nm + (stOnLeft(x.tab) ? '的島上設定' : '') }) }
+/* 這個人這一格算不算有：存過新版的照 tabs；舊帳號把舊規則換算過來 */
+function stHas(s, k){
+  var a = s.tabs || [], fk = stFunKeys();
+  if (a.indexOf('_v2') >= 0 || (k !== 'fun' && fk.indexOf(k) < 0)) return a.indexOf(k) >= 0;
+  if (s.role === 'admin' || s.role === 'owner' || a.indexOf('fun') >= 0) return true;
+  return k === 'fun' ? fk.some(function(x){ return a.indexOf(x) >= 0 && !(window.funSolo && funSolo(x)) }) : a.indexOf(k) >= 0;
+}
 
 var stList = null, stInvites = null, stLoading = false, stErr = "";
 
@@ -149,9 +178,8 @@ async function renderStaff(){
          '<th>看得到的分頁</th><th style="width:150px">可執行動作</th><th style="width:60px">狀態</th>' +
          '<th style="width:150px"></th></tr></thead><tbody>';
     stList.forEach(function(s, i){
-      var tabs = s.tabs || [];
-      var names = STAFF_TABS.filter(function(t){ return tabs.indexOf(t.k) >= 0 })
-                            .map(function(t){ return t.n });
+      var names = stTabList().filter(function(t){ return stHas(s, t.k) })
+                             .map(function(t){ return t.n });
       h += '<tr>' +
         '<td>' + stEsc(s.name || "（未命名）") +
           (ME && s.uid === ME.userId ? '<span class="muted" style="font-size:var(--fs-xs)">（你）</span>' : '') + '</td>' +
@@ -251,13 +279,17 @@ function stEdit(i){
   h += '</select></div>';
   h += '<div class="fg"><label>看得到的分頁</label><div id="st-e-tabs" style="display:grid;' +
        'grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:6px">';
-  STAFF_TABS.forEach(function(t){
+  stTabList().forEach(function(t){
     h += '<label style="display:flex;align-items:center;gap:8px;font-size:var(--fs-md);cursor:pointer">' +
-         '<input type="checkbox" value="' + t.k + '"' + (tabs.indexOf(t.k) >= 0 ? " checked" : "") +
+         '<input type="checkbox" value="' + t.k + '"' + (stHas(s, t.k) ? " checked" : "") +
          ' style="width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0">' +
-         '<span style="white-space:nowrap">' + t.n + '</span></label>';
+         '<span style="white-space:nowrap">' + stEsc(t.n) + '</span></label>';
   });
-  h += '</div></div>';
+  h += '</div>';
+  var inside = stFunInside();
+  h += '<div class="muted" style="font-size:var(--fs-xs);line-height:1.7;margin-top:10px">這裡的名字和順序跟左邊選單一樣。' +
+       (inside.length ? '<br>「藝術家小活動」打勾＝裡面全部看得到：' + stEsc(inside.join('、')) + '。' : '') + '</div>';
+  h += '</div>';
   h += '<div class="fg" style="margin-top:16px"><label>可執行的動作</label>' +
        '<div id="st-e-acts" style="margin-top:6px">';
   STAFF_ACTS.forEach(function(a){
@@ -349,6 +381,7 @@ async function stSaveEdit(i){
   var tabs = [], acts = [];
   document.querySelectorAll("#st-e-tabs input:checked").forEach(function(c){ tabs.push(c.value) });
   document.querySelectorAll("#st-e-acts input:checked").forEach(function(c){ acts.push(c.value) });
+  tabs.push("_v2");   /* 之後這個帳號完全照這次的勾選（fun.js funPerm） */
   var obj = Object.assign({}, s, {
     name: document.getElementById("st-e-name").value.trim() || s.name || "",
     role: document.getElementById("st-e-role").value,

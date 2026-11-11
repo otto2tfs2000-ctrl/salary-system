@@ -14,12 +14,20 @@ var FUN_ITEMS = [
 ];
 /* 誰看得到「藝術家小活動」：管理員、行政／業務一律看得到；老師要在「員工帳號」勾「藝術家小活動」（整組）或單項（扭蛋活動、聖誕走格子、選品館、活動公告）。
    2026-10-12 修：10/10 把四頁收成一個入口後，入口的 data-tab 是 fun，舊的帳號權限只有 gacha／xmas／shop，沒人勾得到 fun，非管理員的入口整個被藏掉 */
-function funCan(t){
+/* 2026-11-11 員工帳號的勾選改成跟左邊選單一樣：小活動只有一格「藝術家小活動」（整組），獨立到左邊的項目（例如活動公告）才有自己的一格。
+   用新視窗存過的帳號 tabs 裡會帶 '_v2'，之後完全照勾選；還沒存過的舊帳號照舊規則（行政一律看得到、勾整組或單項都算），才不會一上線就有人少了分頁。
+   funCanIn＝從小活動裡面進去看不看得到；funCanLeft＝左邊獨立的那顆看不看得到 */
+function funPerm(t, left){
   var st = window.ME && ME.staff; if (!st) return true;
-  if (st.role === 'owner' || st.role === 'admin') return true;
+  if (st.role === 'owner') return true;
   var a = Array.isArray(st.tabs) ? st.tabs : [];
+  if (a.indexOf('_v2') >= 0) return a.indexOf(left ? t : 'fun') >= 0;
+  if (st.role === 'admin') return true;
   return a.indexOf('fun') >= 0 || a.indexOf(t) >= 0;
 }
+function funCanIn(t){ return funPerm(t, false) }
+function funCanLeft(t){ return funPerm(t, true) }
+function funCan(t){ return funCanIn(t) || funCanLeft(t) }
 /* 2026-11-10 管理員在「整理選單」勾了獨立放到左邊的項目（menu.js mnSolo），這裡的卡片和切換鈕就不再列 */
 function funSolo(t){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(t) >= 0 && !(Array.isArray(window.mnBoth) && mnBoth.indexOf(t) >= 0) }   /* 兩邊都放的不算 */
 /* 2026-11-11 活動公告「兩邊都放」時兩邊看到的不一樣：左邊那顆只看現場（報名、繳費），從小活動進來只看島上那一面（events.js evMode）。
@@ -35,7 +43,7 @@ function funLight(cur){
     if (t.dataset.tab === 'fun') t.classList.toggle('active', park);
   });
 }
-function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) && !funSolo(x.tab) }) }
+function funItems(){ return FUN_ITEMS.filter(function(x){ return funCanIn(x.tab) && !funSolo(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;
   if (!funItems().length) { el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm)">這裡的項目都已經獨立放到左邊選單了。要收回來請到左下角「⚙️ 整理選單」取消勾選。</div>'; return }
