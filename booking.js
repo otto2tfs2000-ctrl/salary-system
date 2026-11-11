@@ -1165,6 +1165,91 @@ function bkShipBind(root){
   } });
 }
 
+/* ══ 作品備忘（2026-11-11）══════════════════════════════
+   學生畫到一半的作品、或在 LINE 說下次想畫什麼：拍照／截圖＋一句話，掛在這位學生（電話）身上。
+   下次不管約哪天、哪位老師，卡片上都看得到；按「已完成」連照片一起刪掉。
+   資料跟照片都走伺服器（/staff/memos，照片放 Cloudinary），不直接讀寫資料庫。
+   整包很小，一分鐘最多問一次；問不到就留著上次的，不要讓備忘整塊消失。 */
+var bkMemos={}, bkMemoAt=0, bkMemoCld=true;
+async function bkLoadMemos(force){
+  if(!force&&bkMemoAt&&Date.now()-bkMemoAt<60000)return;
+  try{
+    var j=await staffApi("/staff/memos",{});
+    if(j&&j.ok){ bkMemos=j.memos||{}; bkMemoCld=j.cloudinary!==false; bkMemoAt=Date.now() }
+  }catch(e){}
+}
+function bkMemoPhone(b){ return String(bkResolvedPhone(b)||"").replace(/\D/g,"") }
+function bkMemoList(phone){
+  var o=bkMemos[phone]||{};
+  return Object.keys(o).map(function(k){ var m=o[k]||{}; return {id:k,url:m.url||"",text:m.text||"",name:m.name||"",at:m.at||"",by:m.by||""} })
+    .sort(function(a,c){ return String(c.at).localeCompare(String(a.at)) });
+}
+function bkMemoThumb(url){ return String(url).replace("/image/upload/f_auto,q_auto/","/image/upload/f_auto,q_auto,w_200,h_200,c_fill/") }
+function bkMemoHtml(b){
+  var ph=bkMemoPhone(b); if(!ph)return "";
+  var list=bkMemoList(ph); if(!list.length)return "";
+  return '<div class="bk-memo"><div class="bk-memo-h">📌 作品備忘</div>'+list.map(function(m){
+    return '<div class="bk-memo-i">'+
+      (m.url?'<img src="'+esc(bkMemoThumb(m.url))+'" data-mmv="'+esc(m.url)+'" alt="作品備忘照片" loading="lazy">':'')+
+      '<div class="bk-memo-t">'+(m.name?'<b>'+esc(m.name)+'</b>　':'')+esc(m.text||"（只有照片）")+
+        '<span>'+esc(String(m.at).slice(5,10).replace("-","/"))+(m.by?'・'+esc(m.by):'')+'</span></div>'+
+      '<button class="bk-memo-x" data-mmd="'+esc(ph)+'|'+esc(m.id)+'">已完成</button></div>' }).join("")+'</div>';
+}
+function bkMemoBind(root){
+  root.querySelectorAll("[data-mm]").forEach(function(el){ el.onclick=function(){ bkMemoSheet(el.dataset.mm) } });
+  root.querySelectorAll("[data-mmv]").forEach(function(el){ el.onclick=function(){
+    bkSheet('<h3>作品備忘</h3><img src="'+esc(el.dataset.mmv)+'" alt="作品備忘照片" style="width:100%;border-radius:10px;display:block">'+
+      '<div class="bk-act"><button class="bk-cancel" id="mmVX">關閉</button></div>');
+    document.getElementById("mmVX").onclick=bkClose;
+  } });
+  root.querySelectorAll("[data-mmd]").forEach(function(el){ el.onclick=async function(){
+    var a=el.dataset.mmd.split("|");
+    if(!confirm("這則備忘已經處理完了嗎？\n按確定會連照片一起刪掉，不能復原。"))return;
+    el.disabled=true; el.textContent="處理中…";
+    try{
+      var j=await staffApi("/staff/memos/done",{phone:a[0],id:a[1]});
+      if(!j||!j.ok)throw new Error((j&&j.error)||"沒有刪成功");
+      if(bkMemos[a[0]])delete bkMemos[a[0]][a[1]];
+      bkRender(true);
+    }catch(e){ alert("備忘沒有刪成功："+e.message); el.disabled=false; el.textContent="已完成" }
+  } });
+}
+function bkMemoSheet(bid){
+  var b=bkList.filter(function(x){ return x.id===bid })[0]; if(!b)return;
+  var ph=bkMemoPhone(b);
+  if(!ph){ alert("這筆預約沒有電話，備忘沒辦法掛到學生身上。\n請先按「修改」補上電話。"); return }
+  var who=(b.customer&&(b.customer.childName||b.customer.name))||"";
+  var data="";
+  bkSheet('<h3>作品備忘</h3><div class="bk-sh2">'+esc(who)+'　下次來上課時，卡片上會看到這則備忘</div>'+
+    (bkMemoCld?'<label class="bk-memo-pick" id="mmPick"><input type="file" id="mmFile" accept="image/*" style="display:none">'+
+      '<span id="mmPickT">📷 拍照或選一張圖（作品照、LINE 對話截圖都可以）</span></label>'
+      :'<div class="bk-memo-warn">伺服器還沒設定圖片空間，暫時只能存文字。</div>')+
+    '<textarea id="mmText" class="bk-memo-ta" rows="3" maxlength="300" placeholder="例如：畫到一半，背景還沒上色／下次想畫自家的貓"></textarea>'+
+    '<div class="bk-act"><button class="bk-cancel" id="mmX">取消</button><button class="bk-save" id="mmOK">存備忘</button></div>');
+  document.getElementById("mmX").onclick=bkClose;
+  var f=document.getElementById("mmFile");
+  if(f)f.onchange=async function(){
+    if(!f.files||!f.files[0])return;
+    var t=document.getElementById("mmPickT");
+    try{
+      data=await shipCompress(f.files[0]);
+      t.innerHTML='<img src="'+data+'" alt="" style="max-width:100%;max-height:220px;border-radius:8px;display:block;margin:0 auto 6px">點一下可以換一張';
+    }catch(e){ data=""; alert(e.message) }
+  };
+  document.getElementById("mmOK").onclick=async function(){
+    var btn=this, text=document.getElementById("mmText").value.trim();
+    if(!data&&!text){ alert("照片和文字至少要有一樣"); return }
+    btn.disabled=true; btn.textContent="上傳中…";
+    try{
+      var j=await staffApi("/staff/memos/add",{phone:ph,name:who,text:text,dataUrl:data||undefined});
+      if(!j||!j.ok)throw new Error((j&&j.error)||"沒有存成功");
+      if(!bkMemos[ph])bkMemos[ph]={};
+      bkMemos[ph][j.id]=j.memo;
+      bkClose(); bkRender(true);
+    }catch(e){ alert("備忘沒有存成功："+e.message); btn.disabled=false; btn.textContent="存備忘" }
+  };
+}
+
 /* 照片壓到長邊 1000px、JPEG 0.7，一張大約 80~150KB。
    要看得出是哪一幅畫、託運單上的字，不用到原圖畫質。 */
 function shipCompress(file){
@@ -2315,7 +2400,7 @@ async function bkRender(noReload){
        同時發出去，只要等最慢的那一個，開「今日排課」明顯變快。 */
     var loadErr=null, loadTm=null;
     try{ await Promise.race([
-      Promise.all([bkLoad(true), bkLoadIndexSoft(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds(), bkLoadShips()]),
+      Promise.all([bkLoad(true), bkLoadIndexSoft(), bkLoadSched(Date.now()-bkSchedAt>30000), bkLoadCourses(), bkLoadHolds(), bkLoadShips(), bkLoadMemos()]),
       new Promise(function(_,no){ loadTm=setTimeout(function(){ no(new Error("等太久沒有回應")) },BK_LOAD_TIMEOUT) })
     ]); }
     catch(e){ loadErr=e||new Error("讀取失敗") }
@@ -2475,7 +2560,7 @@ async function bkRender(noReload){
   var bbBtn=document.getElementById("bkAddBb"); if(bbBtn)bbBtn.onclick=function(){ bbNew(dsNow.replace(/\//g,"-")) };
   root.querySelectorAll("[data-hded]").forEach(function(el){ el.onclick=function(){ bkHoldSheet(el.dataset.hded) } });
   root.querySelectorAll("[data-hdgo]").forEach(function(el){ el.onclick=function(){ bkManual(null,null,el.dataset.hdgo) } });
-  bkShipBind(root);
+  bkShipBind(root); bkMemoBind(root);
   root.querySelectorAll("[data-slk]").forEach(function(el){ el.onclick=function(){
     var k=el.dataset.slk;
     bkSlotClosed[k]=bkSlotClosed[k]!==true; bkRender(true);
@@ -2889,6 +2974,7 @@ function bkCard(b){
     (b.customer&&b.customer.note?'<div class="bk-note">備註：'+esc(b.customer.note)+'</div>':'')+
     (b.fixed&&b.attend==="no"&&!c?'<div class="bk-warn">固定時段沒事先取消、未到：請按「核銷」扣 '+
       (+b.fixed.pts||FIXED_PTS)+' 點</div>':'')+
+    bkMemoHtml(b)+
     doneHtml+
     '<div class="bk-btns">'+
       '<button class="bk-b'+(b.attend==="in"?" on":"")+'" data-at="'+b.id+'" data-v="in">已報到</button>'+
@@ -2918,6 +3004,8 @@ function bkCard(b){
       (function(){ var sh=bkShipOfBooking(b.id);
         return '<button class="bk-b shp'+(sh?" on":"")+'" data-sh="'+b.id+'">'+
           (!sh?"寄送":(sh.status==="pending"?"📦 待寄":(sh.status==="done"?"寄送 ✓":"🚚 已寄")))+'</button>' })()+
+      /* 畫到一半的作品、下次想畫什麼：拍照或截圖留給下次的老師看 */
+      '<button class="bk-b mm" data-mm="'+b.id+'">作品備忘</button>'+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
@@ -5142,6 +5230,18 @@ css.textContent=
 ".bk-shedit{background:#fff;color:#3E7C74;border:1px solid #9CC9C1}"+
 ".bk-b.shp{background:#fff;border-color:#9CC9C1;color:#2F6B63;font-weight:600}"+
 ".bk-b.shp.on{background:#EAF4F2;border-color:#3E7C74;color:#1F5A52}"+
+".bk-b.mm{background:#fff;border-color:#D9C48A;color:#7A5A12;font-weight:600}"+
+".bk-memo{margin-top:10px;background:#FFF9E8;border:1px solid #EBDDB0;border-radius:10px;padding:10px 12px}"+
+".bk-memo-h{font-size:13px;font-weight:700;color:#7A5A12;margin-bottom:6px}"+
+".bk-memo-i{display:flex;gap:10px;align-items:center;padding:6px 0}"+
+".bk-memo-i+.bk-memo-i{border-top:1px dashed #EBDDB0}"+
+".bk-memo-i img{width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none;background:#f0ece2}"+
+".bk-memo-t{flex:1;min-width:0;font-size:14.5px;color:#2b2926;line-height:1.5;word-break:break-word}"+
+".bk-memo-t span{display:block;font-size:12.5px;color:#948e83;margin-top:2px}"+
+".bk-memo-x{flex:none;background:#fff;border:1px solid #d0c9ba;border-radius:8px;padding:8px 10px;font-size:13px;color:#6b665e;cursor:pointer}"+
+".bk-memo-pick{display:block;border:1.5px dashed #d0c9ba;border-radius:10px;padding:16px 12px;text-align:center;font-size:14.5px;color:#6b665e;cursor:pointer;margin-bottom:12px}"+
+".bk-memo-ta{width:100%;box-sizing:border-box;border:1px solid #d0c9ba;border-radius:8px;padding:11px 12px;font:inherit;font-size:16px;color:#2b2926;resize:vertical}"+
+".bk-memo-warn{background:#FBF6E8;border:1px solid #EBDDB0;border-radius:8px;padding:10px 12px;font-size:13.5px;color:#7A5A12;margin-bottom:12px}"+
 ".bk-shocr{display:block;text-align:center;padding:11px;border:1.5px dashed #9CC9C1;border-radius:10px;"+
   "color:#2F6B63;background:#F4FAF9;cursor:pointer;font-size:14.5px;margin-bottom:6px}"+
 ".bk-shmsg{font-size:12.5px;color:#948e83;min-height:4px;margin-bottom:10px}"+
