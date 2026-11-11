@@ -7,6 +7,11 @@
    資料在 otto2-booking-f9ef7 的 events/，透過伺服器 /staff/events* 讀寫。
    ══════════════════════════════════════════════════════════ */
 var evData = null, evEdit = null, evShowWant = {};
+/* 2026-11-11 大熊：左邊「活動公告」只放現場會發生的事（報名、繳費），島上那一面（倒數、開花、我想去、熱氣球）留在「藝術家小活動」裡。
+   整理選單把活動公告設「兩邊都放」時才分：live＝左邊那顆、park＝從小活動進來；只放一邊（all）就照舊全部列在同一頁，免得有一半找不到 */
+var evSide = 'live';
+function evMode(){ return Array.isArray(window.mnBoth) && mnBoth.indexOf('events') >= 0 ? evSide : 'all' }
+function evGo(side){ if (side !== evSide) { evEdit = null; balEdit = null; regEv = null; regEdit = null } evSide = side }
 async function evLoad(){ evData = await staffApi('/staff/events', {}) }
 async function renderEvents(){
   var el = document.getElementById('events-body'); if (!el) return;
@@ -50,11 +55,15 @@ function evHtml(){
   if (evEdit) return evFormHtml();
   if (balEdit) return balFormHtml();
   var list = Object.values(evData.list || {}).sort(function(a, b){ return String(b.date).localeCompare(String(a.date)) });
-  var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">活動公告' +
-    '<button class="btn btn-outline btn-sm" style="margin-left:auto;margin-right:8px" onclick="evData=null;evCnt={};renderEvents()">↻ 重新讀取</button>' +
-    '<button class="btn btn-gold btn-sm" onclick="evNew()">＋ 新增活動</button></div>' +
-    '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px">每場活動分兩半看：🏠 現場是真的要辦的那一面（報名、繳費），🏝️ 遊樂島是島上跟著動的那一面。<br>放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
-    '「💐 我想去」花牆，活動前幾天島上開始開花，越接近開越多。活動當天過完就自動收掉。<br>報名一律在櫃檯，「我想去」只是讓大家看得到人氣，不是報名。</div>';
+  var m = evMode(), tip = 'font-size:var(--fs-xs);line-height:1.8;margin-bottom:10px';
+  var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center">' + (m === 'park' ? '📣 活動公告・遊樂島這一面' : '活動公告') +
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto' + (m === 'park' ? '' : ';margin-right:8px') + '" onclick="evData=null;evCnt={};renderEvents()">↻ 重新讀取</button>' +
+    (m === 'park' ? '' : '<button class="btn btn-gold btn-sm" onclick="evNew()">＋ 新增活動</button>') + '</div>' +
+    (m === 'live' ? '<div class="muted" style="' + tip + '">這裡只放現場要辦的事：誰報名了、誰繳費了。報名一律在櫃檯。<br>島上的倒數看板、開花、「我想去」、熱氣球在「🎪 藝術家小活動」→「📣 活動公告」。</div>' :
+    '<div class="muted" style="' + tip + '">' + (m === 'all' ? '每場活動分兩半看：🏠 現場是真的要辦的那一面（報名、繳費），🏝️ 遊樂島是島上跟著動的那一面。<br>' : '') +
+    '放上去的活動，遊樂島會自動：進島後在「藝術問答」上面輪播倒數看板、客人進島時跳一次通知、' +
+    '「💐 我想去」花牆，活動前幾天島上開始開花，越接近開越多。活動當天過完就自動收掉。<br>' +
+    (m === 'park' ? '「我想去」只是讓大家看得到人氣，不是報名。新增活動、報名登記、改海報日期在左邊「活動公告」。' : '報名一律在櫃檯，「我想去」只是讓大家看得到人氣，不是報名。') + '</div>');
   if (!list.length) h += '<div class="empty">還沒有活動，按右上角「＋ 新增活動」。</div>';
   list.forEach(function(e){
     var w = (evData.want || {})[e.id] || {}, ws = Object.keys(w).map(function(k){ return w[k] }).sort(function(a, b){ return String(b.at).localeCompare(String(a.at)) });
@@ -67,14 +76,14 @@ function evHtml(){
       '<div style="flex:1;min-width:0">' +
       '<div style="font-size:16px;font-weight:600">' + gcEsc(e.title) + '</div>' +
       '<div style="font-size:var(--fs-sm);margin:4px 0">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.sub ? '<br><span class="muted">' + gcEsc(e.sub) + '</span>' : '') + '</div>' +
-      '</div><button class="btn btn-outline btn-sm" style="flex:none" onclick="evOpen(\'' + e.id + '\')">編輯</button></div>' +
+      '</div><button class="btn btn-outline btn-sm" style="flex:none" onclick="evOpen(\'' + e.id + '\')">' + (m === 'park' ? '島上設定' : '編輯') + '</button></div>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       /* 左半：現場真的辦的那一面 */
-      '<div class="ev-half"><div class="ev-half-t">🏠 現場</div>' +
+      (m === 'park' ? '' : '<div class="ev-half"><div class="ev-half-t">🏠 現場</div>' +
       '<div style="font-size:var(--fs-sm);line-height:1.8">' + evCntHtml(e.id) + (e.fee ? '<br><span class="muted">費用：' + gcEsc(e.fee) + '</span>' : '') + '</div>' +
-      '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="regOpen(\'' + e.id + '\')">📝 報名登記</button></div>' +
+      '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="regOpen(\'' + e.id + '\')">📝 報名登記</button></div>') +
       /* 右半：遊樂島上跟著動的那一面 */
-      '<div class="ev-half"><div class="ev-half-t">🏝️ 遊樂島</div>' +
+      (m === 'live' ? '' : '<div class="ev-half"><div class="ev-half-t">🏝️ 遊樂島</div>' +
       '<div style="font-size:var(--fs-sm);line-height:1.8">' + st +
       (e.on !== false && dt >= 0 ? '<br><span class="muted">🌸 ' + (e.bloomFrom ? evMd(e.bloomFrom) + ' 起' : '活動前 ' + (e.bloomDays || 14) + ' 天') + '開始開花</span>' : '') +
       '<br><span style="cursor:pointer" onclick="evShowWant[\'' + e.id + '\']=!evShowWant[\'' + e.id + '\'];renderEvents()">💐 我想去 <b>' + ws.length + '</b> 人 ' + (ws.length ? (evShowWant[e.id] ? '▴' : '▾ 點我看是誰') : '') + '</span>' +
@@ -82,10 +91,10 @@ function evHtml(){
       '</div>' +
       (evShowWant[e.id] && ws.length ? '<div style="font-size:var(--fs-xs);margin-top:6px;line-height:1.9">' + ws.map(function(x){
         return gcEsc(x.name || x.nm) + ' <span class="muted">' + gcEsc(x.phone || '（沒綁電話）') + '・' + String(x.at).slice(5, 10).replace('-', '/') + '</span>' }).join('<br>') + '</div>' : '') +
-      '</div></div></div>';
+      '</div>') + '</div></div>';
   });
-  evCntLoad(list);
-  return h + '</div>' + balListHtml();
+  if (m !== 'park') evCntLoad(list);
+  return h + '</div>' + (m === 'live' ? '' : balListHtml());
 }
 function evNew(){ evEdit = { id:'ev' + Date.now().toString(36), title:'', sub:'', date:'', time:'', poster:'', poster2:'', showFrom:evData.today, bloomDays:14, bloomFrom:'', on:true, _new:true }; renderEvents() }
 function evOpen(id){ evEdit = JSON.parse(JSON.stringify(evData.list[id])); renderEvents() }
@@ -94,11 +103,12 @@ function evInp(id, v, type, w, ph){ return '<input id="' + id + '" type="' + (ty
 function evRow(lb, inner, tip){ return '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap"><label style="width:110px;color:var(--text2);font-size:var(--fs-sm);padding-top:7px">' + lb + '</label><div style="flex:1 1 240px">' + inner +
   (tip ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:3px">' + tip + '</div>' : '') + '</div></div>' }
 function evFormHtml(){
-  var e = evEdit;
-  return '<div class="card"><div class="card-title">' + (e._new ? '新增活動' : '編輯活動') + '</div>' +
+  var e = evEdit, m = evMode(), L = m === 'park' ? ' style="display:none"' : '', P = m === 'live' ? ' style="display:none"' : '';   /* 另一面的欄位藏著不拿掉，存檔才不會把它清空 */
+  return '<div class="card"><div class="card-title">' + (m === 'park' ? '島上設定：' + gcEsc(e.title) : e._new ? '新增活動' : '編輯活動') + '</div>' +
+    (m === 'park' ? '<div class="muted" style="font-size:var(--fs-xs);margin:-4px 0 12px">' + gcEsc(String(e.date).replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + '。海報、名稱、日期、費用在左邊「活動公告」改。</div>' : '') +
     (evData.cloudinary ? '' : '<div class="card" style="background:#fbf6e8;border-color:var(--gold-line);font-size:var(--fs-sm)">伺服器還沒設定 Cloudinary，海報暫時不能上傳。</div>') +
     '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
-    '<div><div style="display:flex;gap:10px">' +
+    '<div' + L + '><div style="display:flex;gap:10px">' +
     '<div><div class="muted" style="font-size:var(--fs-xs);margin-bottom:4px">第 1 張（先看到）</div><div id="ev-pv" style="width:150px;height:212px;border-radius:10px;background:var(--bg3) center/cover no-repeat;border:1px solid var(--border)' + (e.poster ? ";background-image:url('" + gcEsc(e.poster) + "')" : '') + '"></div>' +
     '<label class="btn btn-outline btn-sm" style="margin-top:8px;display:inline-block;cursor:pointer">上傳海報<input type="file" accept="image/*" style="display:none" onchange="evPickImg(this,1)"></label></div>' +
     '<div><div class="muted" style="font-size:var(--fs-xs);margin-bottom:4px">第 2 張（選填，左右滑）</div><div id="ev-pv2" style="width:150px;height:212px;border-radius:10px;background:var(--bg3) center/cover no-repeat;border:1px solid var(--border)' + (e.poster2 ? ";background-image:url('" + gcEsc(e.poster2) + "')" : '') + '"></div>' +
@@ -106,6 +116,7 @@ function evFormHtml(){
     '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="evClearPoster2()">移除</button></div></div>' +
     '<div id="ev-st" class="muted" style="font-size:var(--fs-xs);margin-top:4px;max-width:320px"></div></div>' +
     '<div style="flex:1 1 320px">' +
+    '<div' + L + '>' +
     evRow('活動名稱', evInp('ev-title', e.title, 'text', 300, '例：坐下，聊花'), '島上通知和布條會用到，短一點比較好') +
     evRow('一句話說明', evInp('ev-sub', e.sub, 'text', 300, '例：五週年藝術交流餐敘')) +
     evRow('費用', evInp('ev-fee', e.fee || '', 'text', 300, '例：每人 800 元（含餐點）；免費就寫「免費」'), '會用醒目的方式放在「詳細資訊」最上面') +
@@ -113,14 +124,16 @@ function evFormHtml(){
     evRow('詳細說明', '<textarea id="ev-detail" rows="6" placeholder="例：流程、要帶什麼、報名截止日、退費方式…（最多 1200 字）" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm);line-height:1.6;font-family:inherit">' + gcEsc(e.detail || '') + '</textarea>', '家長在海報上按「詳細資訊」才看得到；有填任何一項，「＋1 我想去」就會放在詳細資訊裡面，讓家長先看完再按') +
     evRow('活動日期', evInp('ev-date', e.date, 'date', 170), '改日期就改這裡，島上的倒數和開花會跟著新日期走（海報上的日期要記得換新海報）') +
     evRow('時間', evInp('ev-time', e.time, 'text', 170, '例：晚間 18:30')) +
+    '</div><div' + P + '>' +
     evRow('島上開始露出', evInp('ev-from', e.showFrom, 'date', 170), '從這天起倒數看板、進島通知才出現') +
     evRow('開花開始日', evInp('ev-bloomfrom', e.bloomFrom || '', 'date', 170), '從這天起花苞開始慢慢打開，活動當天全開。填了這個就以日期為準；不填就用下面的「開花天數」') +
     evRow('開花天數', evInp('ev-bloom', e.bloomDays, 'number', 80) + ' 天', '沒填開花開始日時才用：活動前幾天開始開花（最多 60）；0＝不開花') +
     evRow('開關', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="ev-on" ' + (e.on !== false ? 'checked' : '') + '> 在島上顯示</label>') +
+    '</div>' +
     '<input type="hidden" id="ev-poster" value="' + gcEsc(e.poster) + '">' +
     '<input type="hidden" id="ev-poster2" value="' + gcEsc(e.poster2 || '') + '">' +
     '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-gold" onclick="evSave()">儲存</button><button class="btn btn-outline" onclick="evEdit=null;renderEvents()">取消</button>' +
-    (e._new ? '' : '<button class="btn btn-del" style="margin-left:auto" onclick="evDel()">刪除活動</button>') + '</div>' +
+    (e._new || m === 'park' ? '' : '<button class="btn btn-del" style="margin-left:auto" onclick="evDel()">刪除活動</button>') + '</div>' +
     '</div></div></div>';
 }
 /* 海報：縮到最長邊 1400px（島上點開要看得清楚字）、轉 JPEG 再傳 Cloudinary */

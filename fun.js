@@ -22,23 +22,38 @@ function funCan(t){
 }
 /* 2026-11-10 管理員在「整理選單」勾了獨立放到左邊的項目（menu.js mnSolo），這裡的卡片和切換鈕就不再列 */
 function funSolo(t){ return Array.isArray(window.mnSolo) && mnSolo.indexOf(t) >= 0 && !(Array.isArray(window.mnBoth) && mnBoth.indexOf(t) >= 0) }   /* 兩邊都放的不算 */
+/* 2026-11-11 活動公告「兩邊都放」時兩邊看到的不一樣：左邊那顆只看現場（報名、繳費），從小活動進來只看島上那一面（events.js evMode）。
+   funGo＝從小活動這邊進去；左邊那顆在 menu.js 設 live */
+function funGo(t){ if (t === 'events' && window.evGo) evGo('park'); switchTab(t) }
+function funEvPark(t){ return t === 'events' && window.evMode && evMode() === 'park' }
+/* 從小活動進活動公告時，左邊該亮的是「藝術家小活動」不是「活動公告」 */
+function funLight(cur){
+  if (cur !== 'events' || !window.evMode || evMode() === 'all') return;
+  var park = evMode() === 'park';
+  document.querySelectorAll('.tab').forEach(function(t){
+    if (t.dataset.tab === 'events') t.classList.toggle('active', !park);
+    if (t.dataset.tab === 'fun') t.classList.toggle('active', park);
+  });
+}
 function funItems(){ return FUN_ITEMS.filter(function(x){ return funCan(x.tab) && !funSolo(x.tab) }) }
 function renderFun(){
   var el = document.getElementById('fun-body'); if (!el) return;
   if (!funItems().length) { el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm)">這裡的項目都已經獨立放到左邊選單了。要收回來請到左下角「⚙️ 整理選單」取消勾選。</div>'; return }
   el.innerHTML = '<div class="muted" style="font-size:var(--fs-sm);margin:-6px 0 14px">客人在遊樂島玩的東西都在這裡。點一個進去設定。</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">' + funItems().map(function(x){
-      return '<div class="card" style="margin:0;cursor:pointer;padding:18px" onclick="switchTab(\'' + x.tab + '\')">' +
+      var d = x.tab === 'events' && window.evMode && evMode() !== 'all' ? '島上跟著活動動的那一面：倒數看板、「我想去」花牆、開花、熱氣球。報名和繳費在左邊「活動公告」' : x.d;
+      return '<div class="card" style="margin:0;cursor:pointer;padding:18px" onclick="funGo(\'' + x.tab + '\')">' +
         '<div style="font-size:30px;line-height:1">' + x.ic + '</div>' +
         '<div style="font-size:17px;font-weight:600;margin:10px 0 4px">' + x.nm + '</div>' +
-        '<div class="muted" style="font-size:var(--fs-xs);line-height:1.6">' + x.d + '</div></div>' }).join('') + '</div>';
+        '<div class="muted" style="font-size:var(--fs-xs);line-height:1.6">' + d + '</div></div>' }).join('') + '</div>';
 }
 /* 每個小活動頁最上面：「← 藝術家小活動」＋切到其他小活動的按鈕 */
 function funNav(cur){
   var on = FUN_ITEMS.some(function(x){ return x.tab === cur }); if (!on) return;
   var box = document.querySelector('#tab-' + cur + ' .fun-nav'); if (!box) return;
-  if (funSolo(cur)) { box.innerHTML = ''; return }   /* 已經是左邊獨立的分頁，不用「← 藝術家小活動」 */
+  funLight(cur);
+  if (funSolo(cur) || (cur === 'events' && window.evMode && evMode() === 'live')) { box.innerHTML = ''; return }   /* 已經是左邊獨立的分頁，不用「← 藝術家小活動」 */
   box.innerHTML = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-outline btn-sm" onclick="switchTab(\'fun\')">← 藝術家小活動</button>' +
-    funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:var(--fs-sm)" onclick="switchTab(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
+    funItems().map(function(x){ return '<button class="store-btn' + (x.tab === cur ? ' active' : '') + '" style="padding:6px 12px;font-size:var(--fs-sm)" onclick="funGo(\'' + x.tab + '\')">' + x.ic + ' ' + x.nm + '</button>' }).join('') + '</div>';
 }

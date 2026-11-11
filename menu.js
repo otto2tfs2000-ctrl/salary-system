@@ -207,6 +207,8 @@ function mnFunRefresh(){
   if (window.funNav && mnIsFunItem(k)) funNav(k);
   /* 哪一顆該亮跟 app.js doSwitchTab 同一條規則：入口的 data-sub 剛變過，重算一次 */
   if (k) mnTabs().forEach(function(t){ t.classList.toggle('active', t.dataset.tab === k || (t.dataset.sub || '').split(' ').indexOf(k) >= 0) });
+  if (k && window.funLight) funLight(k);
+  if (k === 'events' && window.renderEvents) renderEvents();   /* 放哪裡改了，現場／島上要顯示的也跟著變 */
   mnApply();
 }
 
@@ -221,7 +223,7 @@ async function mnBoot(){
       if (mnTab(x.tab)) return;
       var t = document.createElement('div');
       t.className = 'tab mn-off'; t.dataset.tab = x.tab; t.dataset.solo = '1'; t.textContent = x.ic + ' ' + x.nm;
-      t.onclick = function(){ switchTab(x.tab) };
+      t.onclick = function(){ if (x.tab === 'events' && window.evGo) evGo('live'); switchTab(x.tab) };
       after.after(t); after = t;
     });
   }
