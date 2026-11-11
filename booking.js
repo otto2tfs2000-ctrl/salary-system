@@ -5021,12 +5021,17 @@ async function bkManual(editId,repeatId,holdId){
            只是改備註、金額這種不影響時間的，不動 actualTime。 */
         if(d!==eb.date||useSlots.join(",")!==bkSortSlots(bkSlotsOf(eb)).join(","))
           rec.actualTime=null;
-        await bkPatch("/bookings/"+editId+".json",rec);
+        /* 2026-11-11：以前沒看資料庫有沒有收下，被拒絕（額度用完、規則改了、伺服器出錯）
+           表單照樣關掉、看起來像存好了，其實沒存。沒成功就丟錯，讓下面跳「儲存失敗」、表單留著。 */
+        var er=await bkPatch("/bookings/"+editId+".json",rec);
+        if(!er.ok)throw new Error("資料庫沒有收下（"+er.status+"），這次修改沒有存進去");
       }else{
         bkMir.force=true;
-        var rr=await (await fetch(bkf("/bookings.json"),{method:"POST",
-          headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)})).json();
+        var pr0=await fetch(bkf("/bookings.json"),{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify(rec)});
+        var rr=null; try{ rr=await pr0.json() }catch(pe){}
         newId=rr&&rr.name;
+        if(!pr0.ok||!newId)throw new Error("資料庫沒有收下（"+pr0.status+"），這筆預約沒有登記進去");
         if(hd&&newId){
           /* 把待約訂金掛到這筆預約上。預約本身已經存好了，這段失敗
              不能讓人以為整筆登記失敗，單獨警告、講清楚要手動補什麼。 */
