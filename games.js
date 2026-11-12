@@ -47,14 +47,17 @@ async function renderGames(keep){
       '<b>玩完送什麼</b><ul style="margin:4px 0;padding-left:18px">' + g.give.map(function(x){ return '<li>' + mgEsc(x) + '</li>' }).join('') + '</ul></div></div>';
     if (g.special) {
       h += '<div style="font-weight:600;margin:6px 0">✨ 特別獎（一局 ' + g.special.n + ' 個禮物，前 ' + g.special.slots + ' 位會員）</div>' +
-        mgTable(['順序','名字','電話','分數','時間'], g.special.winners.map(function(w, i){ return [(i + 1), mgEsc(w.nm || '（沒有名字）'), mgEsc(w.ph), w.s, mgTime(w.at)] }));
+        mgTable(['順序','名字','電話','分數','時間','獎品選擇'], g.special.winners.map(function(w, i){
+          var c = w.choice ? (w.choice.c === 'pts' ? '✅ 入儲值點 1111（' + mgEsc(w.choice.exp) + ' 前用）' + (w.choice.auto ? '・逾期自動' : '') : '✅ 展延 5 個月（' + mgEsc(w.choice.from) + ' → ' + mgEsc(w.choice.to) + '）')
+            : w.notified === 'noLine' ? '⚠️ 沒有 LINE，要手動聯絡' : w.notified === 'fail' ? '⚠️ LINE 傳送失敗，要手動聯絡' : w.notified ? '已傳 LINE，等他選' : '明早 9 點傳 LINE';
+          return [(i + 1), mgEsc(w.nm || '（沒有名字）'), mgEsc(w.ph), w.s, mgTime(w.at), c] }));
       var miss = g.special.reached.filter(function(r){ return !g.special.winners.some(function(w){ return w.ph === r.ph }) });
       if (miss.length) h += '<div class="muted" style="font-size:var(--fs-xs);margin:8px 0 4px">也達成但沒拿到（非會員或名額滿了）：</div>' +
         mgTable(['名字','電話','分數','會員','時間'], miss.map(function(r){ return [mgEsc(r.nm || '（沒有名字）'), mgEsc(r.ph), r.s, r.mem ? '是' : '否', mgTime(r.at)] }));
       h += '<div style="height:14px"></div>';
     }
     h += '<div style="font-weight:600;margin:6px 0">🏆 排行榜（' + g.stats.board + ' 人上榜，前 30 名）</div>' +
-      mgTable(['名次','名字','電話','禮物','送出時間'], g.rank.map(function(r, i){ return [(i < 3 ? ['🥇','🥈','🥉'][i] : i + 1), mgEsc(r.nm || '（沒有名字）'), mgEsc(r.ph), r.s, mgTime(r.at)] }));
+      mgTable(['名次','名字','電話','禮物','送出時間'], g.rank.map(function(r, i){ return [(r.sp ? '✨ 特別獎' : r.pl ? ['🥇','🥈','🥉'][r.pl - 1] : i + 1), mgEsc(r.nm || '（沒有名字）'), mgEsc(r.ph), r.s, mgTime(r.at)] })) + (g.special ? '<div class="muted" style="font-size:var(--fs-xs);margin-top:4px">✨＝特別獎得主，不列入前三名，🥇🥈🥉往下遞補</div>' : '');
     h += '<div style="font-weight:600;margin:16px 0 6px">👥 每個人玩的情形（' + g.list.length + ' 人，最好的一局排前面）</div>' +
       mgTable(['名字','電話','玩了幾局','最好一局','拿到禮物','拿到紅利'], g.list.map(function(p){ return [mgEsc(p.nm || '（沒有名字）'), mgEsc(p.ph), p.plays, p.hi, p.best, p.bbest] }));
     h += '</div>';
