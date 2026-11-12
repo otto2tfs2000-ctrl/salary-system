@@ -44,8 +44,39 @@ var SLOT_BASE = {
   "16:00-18:00":"16:00-18:00","16:30-18:30":"16:00-18:00",
   "18:30-21:00":"18:30-21:00","19:00-21:00":"18:30-21:00"
 };
-/* 這個時段算在哪一場。對不到就回空字串，歸「其他」 */
-function bkBase(sl){ return SLOT_BASE[String(sl||"").trim()] || "" }
+/* 這個時段算在哪一場。
+   2026-11-12：自訂的特殊時間（例如 11:00-13:00）以前對不到表，整筆掉到最下面
+   「其他」那一區，排課板上看不到就容易忘記。現在照「幾點開始」歸到最近的表定
+   時段，卡片和座位表上另外標出實際時間。完全看不出幾點的才回空字串，歸「其他」。 */
+function bkSlotStartMin(sl){
+  var t=String(sl||"").replace(/[０-９]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)-65248) })
+    .replace(/：/g,":");
+  var h,mi,m=t.match(/(\d{1,2})\s*:\s*(\d{2})/);
+  if(m){ h=+m[1]; mi=+m[2] }
+  else if((m=t.match(/(\d{1,2})\s*[點点時](半)?/))){ h=+m[1]; mi=m[2]?30:0 }
+  else if((m=t.match(/(^|\D)(\d{2})(\d{2})(\D|$)/))){ h=+m[2]; mi=+m[3] }
+  else return -1;
+  if(h>23||mi>59)return -1;
+  /* 「下午 2 點」「2:00」這種沒寫 24 小時制的，教室不會清晨上課，一律當下午 */
+  if(h<8)h+=12;
+  return h*60+mi;
+}
+function bkBase(sl){
+  var k=String(sl||"").trim();
+  if(SLOT_BASE[k])return SLOT_BASE[k];
+  var st=bkSlotStartMin(k);
+  if(st<0)return "";
+  /* 分界跟 SLOT_BASE 那張表一致：15:00 算 14:00 那場、15:30 算 16:00 那場 */
+  if(st<13*60)return "10:00-12:00";
+  if(st<15*60+30)return "14:00-16:00";
+  if(st<18*60+15)return "16:00-18:00";
+  return EVE_SLOT;
+}
+/* 不是表定整點的時段（加開或自訂），要另外標出實際時間 */
+function bkOddSlot(b){
+  var sl=String(b&&b.slot||"").trim(), base=bkBase(sl);
+  return base&&base!==sl?sl:"";
+}
 /* 舊的寫死名單，只在「老師設定」還沒載入時當備援用 */
 var TEACHERS_FALLBACK = ["大熊","羊羊","Ethan","77","蓁蓁","米雪","米妮"];
 /* 老師名單一律讀「老師設定」（旗艦店＝四樓），
@@ -2836,6 +2867,7 @@ function bkSeatBoardHtml(dsNow,sl,g){
             esc(b.customer&&b.customer.name||"—")+
             (b.customer&&b.customer.childName?'（'+esc(b.customer.childName)+'）':'')+
             '　<b class="bk-seat-ppl">'+ppl+(isSplit?'/'+totalPpl:'')+'位</b>'+
+            (bkOddSlot(b)?'<span class="bk-seat-odd">⏰ '+esc(bkOddSlot(b))+'</span>':'')+
             '<small>'+esc(bkSeatItemsName(b))+'</small></div>';
         }).join("")+
         '</div>'+
@@ -2977,8 +3009,10 @@ function bkCard(b){
       depTag+
       (b.fixed?'<span class="bk-tag fx" title="'+esc((b.fixed.dates||[]).join("、"))+'">固定 '+
         (+b.fixed.i||1)+'/'+(+b.fixed.n||1)+'・預扣 '+(+b.fixed.pts||FIXED_PTS)+' 點</span>':'')+
-      (bkBase(b.slot)&&bkBase(b.slot)!==b.slot
-        ?'<span class="bk-tag t">'+esc(b.slot)+'</span>':'')+
+      (bkOddSlot(b)
+        ?(SLOT_BASE[bkOddSlot(b)]
+          ?'<span class="bk-tag t">'+esc(b.slot)+'</span>'
+          :'<span class="bk-tag sp">⏰ 特殊時間 '+esc(b.slot)+'</span>'):'')+
       (b.source==="manual"?'<span class="bk-tag s">現場登記</span>':'')+
       (b.source==="ai-chat"?'<span class="bk-tag ai">AI待確認</span>':'')+'</div>'+
     '<div class="bk-sub">'+esc(b.customer&&b.customer.phone||"")+(items?"　"+items:"")+
@@ -5405,6 +5439,8 @@ css.textContent=
 ".bk-fxinfo{font-size:13.5px;color:#3B4A8C;background:#F6F7FD;border-radius:10px;padding:10px 12px}"+
 /* 加開時段的實際時間。同一區裡混著 9:30 和 10:00 的人，要看得出來 */
 ".bk-tag.t{background:#f3efe6;color:#6b665e;font-variant-numeric:tabular-nums}"+
+".bk-tag.sp{background:#FBE3D0;color:#A8480F;font-weight:700;font-variant-numeric:tabular-nums}"+
+".bk-seat-odd{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;background:#FBE3D0;color:#A8480F;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}"+
 ".bk-mgrp{margin-bottom:11px}"+
 ".bk-mgh{font-size:13.5px;font-weight:600;color:var(--bkInk);margin-bottom:6px;"+
   "display:flex;align-items:baseline;gap:7px}"+
