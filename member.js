@@ -105,6 +105,7 @@ async function mbLoad(force){
                ledger: m.ledger || {}, createdAt: m.createdAt || '',
                tickets: Array.isArray(m.tickets) ? m.tickets : null,
                lineUserId: m.lineUserId || '',
+               gifts: m.gifts || null,   /* 🎁 贈送金（另外記，不在 ledger 裡），算法在 booking.js bkGiftInfo */
                islandOk: !!m.islandOk,
                expiry: m.expiry || '', expiryAt: m.expiryAt || '', pause: m.pause || null, extUsed: +m.extUsed || 0,
                archived: m.archived || null };
@@ -614,6 +615,20 @@ function mbDetail(phone){
     '<div><div class="muted" style="font-size:var(--fs-sm)">紅利</div><div style="font-size:var(--fs-xl)">' + sum.bonus + '</div></div>' +
     (sum.voucher ? '<div><div class="muted" style="font-size:var(--fs-sm)">表框折價金</div><div style="font-size:var(--fs-xl)">$' + sum.voucher.toLocaleString() + '</div></div>' : '') +
     '</div>';
+  /* 🎁 贈送金（2026-11-13）：活動送的，另外記、不併進可用點數；過期自動失效 */
+  if (m.gifts && typeof bkGiftInfo === 'function') {
+    var gi = bkGiftInfo(m);
+    var gRow = function(r, dead){
+      return '<div style="margin-top:4px' + (dead ? ';color:#999;text-decoration:line-through' : '') + '">🎁 ' + mbEsc(r.name) +
+        '　剩 <b>$' + r.left.toLocaleString() + '</b>／$' + r.amt.toLocaleString() +
+        (r.exp ? '　' + r.exp + (dead ? ' 已過期' : ' 到期') : '') + '</div>';
+    };
+    if (gi.list.length || gi.expired.length)
+      h += '<div style="margin-top:10px;padding:8px 12px;background:#FFF6D6;border:1.5px solid #D9A520;border-radius:10px;color:#7A4B00">' +
+        '<b>贈送金 $' + gi.bal.toLocaleString() + '</b>　<span style="font-size:var(--fs-sm)">活動送的，不算在可用點數裡；核銷時在「贈送金折抵」那格用</span>' +
+        gi.list.map(function(r){ return gRow(r, false) }).join('') +
+        gi.expired.map(function(r){ return gRow(r, true) }).join('') + '</div>';
+  }
   if (sum.points !== m.points || sum.sessions !== m.sessions || sum.bonus !== m.bonus) {
     h += '<div class="info-box" style="margin-top:10px;border-color:var(--red)">' +
       '⚠ 明細加總與系統顯示的餘額不同（顯示 ' + m.points + ' 點／明細 ' + sum.points + ' 點）。' +

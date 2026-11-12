@@ -102,6 +102,27 @@ var PAYWAYS  = [
   {k:"culture", n:"文化幣",   member:false}
 ];
 var bkf  = function(p){ return BK_URL.replace(/\/$/,"")+p };
+/* ── 🎁 贈送金（2026-11-13）──
+   活動送的錢（例如雪地跳跳特別獎 1111），大熊要求「不可以併進儲值金」：
+   另外放在 members/{電話}/gifts/{id} = {name, amt, exp, at, uses:{key:{amt,at,by,bookingId,voided}}}。
+   餘額＝amt − 沒作廢的 uses；過了 exp 就當 0，不用刪、也不會動到儲值點。
+   寫入一律走伺服器 /staff/gift（op use／undo），這裡只負責算和顯示。 */
+function bkGiftInfo(m){
+  var today=ds(new Date()).replace(/\//g,"-"), g=(m&&m.gifts)||{}, list=[], dead=[];
+  Object.keys(g).forEach(function(id){
+    var x=g[id]; if(!x||x.voided)return;
+    var used=0, u=x.uses||{};
+    Object.keys(u).forEach(function(k){ if(u[k]&&!u[k].voided)used+=(+u[k].amt||0) });
+    var e=String(x.exp||"").replace(/\//g,"-");
+    var row={id:id,name:x.name||"贈送金",amt:+x.amt||0,left:Math.max(0,(+x.amt||0)-used),exp:e};
+    if(e&&e<today)dead.push(row); else if(row.left>0)list.push(row);
+  });
+  list.sort(function(a,b){ return (a.exp||"9999").localeCompare(b.exp||"9999") });
+  return {bal:list.reduce(function(s,r){return s+r.left},0),list:list,expired:dead,exp:list[0]?list[0].exp:""};
+}
+function bkGiftText(gi){
+  return "$"+gi.bal.toLocaleString()+(gi.exp?"・"+gi.exp.slice(5).replace("-","/")+" 前":"");
+}
 /* 會員以電話為主鍵，+886 開頭要轉回 0 才找得到 */
 function mbPhone(p){
   var d=String(p==null?"":p).replace(/\D/g,"");
@@ -128,6 +149,7 @@ function bkDepWay(m){
   return "";
 }
 function bkWayName(k){
+  if(k==="gift")return "贈送金";
   var p=PAYWAYS.filter(function(x){return x.k===k})[0];
   return p?p.n:"未指定";
 }
@@ -2052,7 +2074,8 @@ function bkBuildIndex(j){
       if(typeof mbPauseOn==="function"&&mbPauseOn(m))pz=m.pause.until;
       if(typeof mbExpEff==="function"){ var ee=mbExpEff(m); if(ee.date&&ee.date<today)ex=ee.date }
     }catch(e){}
-    bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt,pz:pz,ex:ex};
+    var gi=m.gifts?bkGiftInfo(m):null;
+    bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt,pz:pz,ex:ex,gift:gi&&gi.bal>0?bkGiftText(gi):""};
   });
   bkIndexReady=true; bkIndexAt=Date.now();
 }
@@ -2965,6 +2988,8 @@ function bkCard(b){
     if(+c.depositAmt)
       lines+='<div class="bk-dline"><span>已收訂金・'+esc(bkWayName(c.depositWay))+'</span><b>−$'+
         (+c.depositAmt).toLocaleString()+'</b></div>';
+    if(+c.useGift)
+      lines+='<div class="bk-dline"><span>🎁 贈送金折抵</span><b>−$'+(+c.useGift).toLocaleString()+'</b></div>';
     lines+='<div class="bk-dline tot"><span>'+(+c.depositAmt?"當日應收":"合計")+'</span><b>$'+
       ((+c.depositAmt)?(+c.due||0):(+c.total||0)).toLocaleString()+'</b></div>';
     doneHtml='<div class="bk-done"><div class="bk-dhead">已核銷'+
@@ -2981,6 +3006,11 @@ function bkCard(b){
       ' '+bkPplText(b)+
       /* 卡片上不再標 NEW（2026-09-23 老闆要求），分頁旁的紅點提醒照舊 */
       (!bkIndexReady?'':bkIsMember(b)?'<span class="bk-tag m">會員</span>':'<span class="bk-tag nc">新客</span>')+
+      /* 🎁 贈送金（2026-11-13）：還有沒用完、沒過期的就掛金色標籤，核銷時記得問要不要用 */
+      (function(){
+        var x=bkIndexReady&&bkMemBal[bkResolvedPhone(b)];
+        return x&&x.gift?'<span class="bk-tag" style="background:#FFE9A8;color:#7A4B00;border:1.5px solid #D9A520;font-weight:700">🎁 贈送金 '+esc(x.gift)+'</span>':"";
+      })()+
       /* 暫停中／會員期限已過（2026-11-12）：只提醒，不擋核銷 */
       (function(){
         var x=bkIndexReady&&bkMemBal[bkResolvedPhone(b)]; if(!x)return "";
@@ -3476,6 +3506,11 @@ async function bkCheckout(id){
    '<div class="bk-f"><label style="display:flex;align-items:center;gap:7px">'+
      '<input type="checkbox" id="ckProxy" style="width:16px;height:16px"> 用其他會員的點數（朋友代扣）</label>'+
      '<div id="ckProxyBox"></div></div>'+
+   '<div class="bk-f" id="ckGiftBox" style="display:none;background:#FFF6D6;border:1.5px solid #D9A520;border-radius:10px;padding:10px 12px">'+
+     '<label>🎁 贈送金折抵（活動送的，不是儲值點；沒要用就空著）</label>'+
+     '<input id="ckGift" inputmode="numeric" placeholder="這次要用多少" value="'+((old&&+old.useGift)||"")+'">'+
+     '<button class="bk-mini" id="ckGiftAll" style="margin-top:6px">能折多少折多少</button>'+
+     '<div class="bk-left" id="ckGiftHint"></div></div>'+
    '<div class="bk-f"><label>上課老師（可複選）</label><div class="bk-ways" id="ckTs"></div>'+
      '<div class="bk-left" id="ckTHint"></div></div>'+
    '<div id="ckMats"></div>'+
@@ -3578,7 +3613,10 @@ async function bkCheckout(id){
       w.innerHTML='<div class="bk-info"><b>'+esc(payer.name||"（未填姓名）")+'</b> '+payer.phone+
         (autoMatched?'<span class="bk-tag m" style="margin-left:6px">電話自動比對</span>':'')+
         '<div>可用點數 <b>'+(+c.points||0).toLocaleString()+'</b>　堂數 <b>'+(+c.sessions||0)+
-        '</b>　紅利 <b>'+(+c.bonus||0)+'</b></div></div>'; }
+        '</b>　紅利 <b>'+(+c.bonus||0)+'</b></div>'+
+        (function(){ var gi=bkGiftInfo(payer); return gi.bal>0
+          ?'<div style="margin-top:4px;color:#7A4B00;font-weight:700">🎁 贈送金 '+esc(bkGiftText(gi))+'（另外記，不在點數裡）</div>':"" })()+
+        '</div>'; }
   }
   function drawWays(){
     document.getElementById("ckWays").innerHTML=PAYWAYS.map(function(p){
@@ -3676,6 +3714,34 @@ async function bkCheckout(id){
     }
     return Math.max(0,+useSeN||0);
   }
+  /* ── 🎁 贈送金折抵（2026-11-13）──
+     不是一種付款方式，是先折掉一部分、剩下的照原本選的方式付（可以只用一部分）。
+     折抵順序：課程（堂數扣抵那部分沒收錢，跳過）→ 另一部分 → 加價項目。 */
+  var giftIn=old?(+old.useGift||0):0;
+  function ckGiftAvail(){
+    if(!payer)return 0;
+    var same=old&&old.payerPhone===payer.phone;   /* 修正核銷：上次用掉的會先退回來 */
+    return bkGiftInfo(payer).bal+(same?(+old.useGift||0):0);
+  }
+  function ckGiftSplit(){
+    var p2=ckPart2(), left=Math.min(Math.max(0,Math.round(+giftIn||0)),ckGiftAvail());
+    var out={total:0,course:0,p2:0,addons:[]};
+    function take(n){ var t=Math.min(left,Math.max(0,+n||0)); left-=t; out.total+=t; return t }
+    if(course.way!=="sessions")out.course=take((+course.amt||0)-depAmt);
+    if(p2)out.p2=take(p2.due);
+    addons.forEach(function(a){ out.addons.push(take(+a.amt||0)) });
+    return out;
+  }
+  function drawGift(){
+    var box=document.getElementById("ckGiftBox"); if(!box)return;
+    var av=ckGiftAvail();
+    box.style.display=av>0?"":"none";
+    if(!(av>0))return;
+    var gi=bkGiftInfo(payer);
+    document.getElementById("ckGiftHint").innerHTML="可用 <b>$"+av.toLocaleString()+"</b>"+
+      (gi.exp?"，"+esc(gi.exp)+" 到期（過期自動失效）":"")+
+      (gi.list.length?"　"+gi.list.map(function(r){ return esc(r.name) }).join("、"):"");
+  }
   /* 第二部分付款：只有堂數扣抵、有填金額、有選方式才算數。
      訂金先抵課程費用，抵不完的再抵這一部分。 */
   function ckPart2(){
@@ -3741,8 +3807,10 @@ async function bkCheckout(id){
     }
     var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
     var p2=ckPart2();
+    drawGift();
+    var gs=ckGiftSplit();
     var total=course.amt+(p2?p2.amt:0)+addTotal;
-    var bonus=bonusOf(course.amt), su=null; /* 加價項目不算紅利 */
+    var bonus=bonusOf(course.amt-gs.course), su=null; /* 加價項目不算紅利；贈送金折掉的也不算 */
     var h="課程 <b>$"+course.amt.toLocaleString()+"</b>";
     if(p2)h+="　另一部分 <b>$"+p2.amt.toLocaleString()+"</b>（"+esc(bkWayName(p2.way))+"）";
     if(course.way==="sessions"&&+course.amt2>0&&!course.way2)
@@ -3755,9 +3823,16 @@ async function bkCheckout(id){
       if(total-depAmt<0)
         h+='<div class="bk-err">訂金比總金額還多，請先確認課程費用有沒有填錯</div>';
     }
+    if(gs.total||(+giftIn>0&&payer)){
+      if(gs.total)h+='<span style="color:#7A4B00">🎁 贈送金折抵 <b>−$'+gs.total.toLocaleString()+'</b>，贈送金剩 <b>$'+
+        (ckGiftAvail()-gs.total).toLocaleString()+'</b>　其餘 <b>$'+Math.max(0,total-depAmt-gs.total).toLocaleString()+
+        '</b> 照下面的方式付</span><br>';
+      if(Math.round(+giftIn||0)>gs.total)
+        h+='<div class="bk-err">贈送金這次最多只能折 $'+gs.total.toLocaleString()+'（填了 $'+Math.round(+giftIn).toLocaleString()+'），會照 $'+gs.total.toLocaleString()+' 算</div>';
+    }
     if(payer){
-      var usePt=(course.way==="points"?course.amt:0)+(p2&&p2.way==="points"?p2.due:0)+
-        addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
+      var usePt=(course.way==="points"?Math.max(0,course.amt-gs.course):0)+(p2&&p2.way==="points"?p2.due-gs.p2:0)+
+        addons.reduce(function(s,a,i){return s+(a.way==="points"?(+a.amt||0)-(gs.addons[i]||0):0)},0);
       var useSe=(course.way==="sessions")?ckSeNow():0;
       /* 修正核銷時，payer.cache 是「上一次核銷扣完」的餘額，存檔當下
          會先把舊的扣法加回去、再扣新的（沖銷再重扣），淨影響通常只有
@@ -3801,18 +3876,22 @@ async function bkCheckout(id){
       /* 堂數扣抵是用會員自己的堂數卡上課，不是這次花新的錢，不算紅利。
          紅利只在真的收到錢（現金／點數／LINE Pay 等）時才給。 */
       if(course.way==="sessions"){
-        bonus=p2?bonusOf(p2.amt):0;
+        bonus=p2?bonusOf(p2.amt-gs.p2):0;
         h+=p2?("堂數那部分不累積紅利，另一部分紅利 <b>+"+bonus+"</b> 點（"+p2.amt.toLocaleString()+" ÷ 500）")
              :"堂數扣抵不累積紅利";
       }else{
-        bonus=bonusOf(course.amt);
-        h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+course.amt.toLocaleString()+" ÷ 500，加價不計）";
+        bonus=bonusOf(course.amt-gs.course);
+        h+="紅利回饋 <b>+"+bonus+"</b> 點（課程 "+(course.amt-gs.course).toLocaleString()+" ÷ 500，加價"+(gs.course?"和贈送金折抵":"")+"不計）";
       }
     } else h+="未綁會員，不累積紅利";
     document.getElementById("ckCalc").innerHTML=h;
   }
   document.getElementById("ckAmt").oninput=function(){ ckAmtTouched=true; calc() };
   document.getElementById("ckAmt2").oninput=function(){ course.amt2=+this.value||0; calc() };
+  document.getElementById("ckGift").oninput=function(){ giftIn=+this.value||0; calc() };
+  document.getElementById("ckGiftAll").onclick=function(){
+    giftIn=ckGiftAvail(); giftIn=ckGiftSplit().total;
+    document.getElementById("ckGift").value=giftIn||""; calc() };
   document.getElementById("ckSe").oninput=function(){
     seTouched=true; useSeN=+this.value||0; calc() };
   function drawTeachers(){
@@ -3938,8 +4017,9 @@ async function bkCheckout(id){
     }
     var courseDue=Math.max(0,course.amt-depAmt);
     var p2=ckPart2();
-    var usePt=(course.way==="points"?courseDue:0)+(p2&&p2.way==="points"?p2.due:0)+
-      addons.reduce(function(s,a){return s+(a.way==="points"?(+a.amt||0):0)},0);
+    var gs=ckGiftSplit();
+    var usePt=(course.way==="points"?courseDue-gs.course:0)+(p2&&p2.way==="points"?p2.due-gs.p2:0)+
+      addons.reduce(function(s,a,i){return s+(a.way==="points"?(+a.amt||0)-(gs.addons[i]||0):0)},0);
     if(payer&&usePt>(payer.cache&&payer.cache.points||0)&&
        !confirm("點數不足，扣完會變成負數。確定嗎？"))return;
 
@@ -3958,6 +4038,18 @@ async function bkCheckout(id){
         }
         if(old.logId)await fetch(salf("/deductions/"+old.logId+".json"),{method:"PATCH",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({voided:true,voidAt:now})});
+        if(old.payerPhone&&old.giftUses&&old.giftUses.length){
+          var gu=await staffApi("/staff/gift",{op:"undo",phone:old.payerPhone,uses:old.giftUses,reason:"核銷修正沖銷"});
+          if(!gu||!gu.ok)throw new Error((gu&&gu.error)||"贈送金退回失敗");
+        }
+      }
+      /* 🎁 贈送金：伺服器扣（最快到期的先扣），不夠會直接擋下來，不會扣成負的 */
+      var giftUses=[];
+      if(payer&&gs.total){
+        var gj=await staffApi("/staff/gift",{op:"use",phone:payer.phone,amt:gs.total,bookingId:id,
+          by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin"});
+        if(!gj||!gj.ok)throw new Error((gj&&gj.error)||"贈送金扣除失敗");
+        giftUses=gj.uses||[];
       }
       var proxy=payer&&b.memberPhone&&payer.phone!==b.memberPhone;
       var tail=proxy?"（代 "+(b.customer&&b.customer.name||"")+" 扣課）":"";
@@ -3976,7 +4068,7 @@ async function bkCheckout(id){
         :course.amt;
       /* 堂數扣抵不算紅利（用堂數卡上課，沒有新收錢），跟畫面預覽算法要一致，
          不然客人看到的跟實際入帳的會不一樣 */
-      var bonus=useSe?(p2?bonusOf(p2.amt):0):bonusOf(course.amt);
+      var bonus=useSe?(p2?bonusOf(p2.amt-gs.p2):0):bonusOf(course.amt-gs.course);
       if(payer){
         if(usePt){ await bkLedger(payer.phone,{type:"points",delta:-usePt,
           reason:"扣課"+tail,bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now}); await bkCache(payer.phone,"points",-usePt); }
@@ -3988,9 +4080,10 @@ async function bkCheckout(id){
       /* 拆付款：每一種方式各記一筆金額，方便每日登記分流。
          訂金不寫在這裡——它已經在收款那天記過一筆 deposits，
          寫兩次現金流就會多算一筆。 */
-      var byWay={}; if(courseDue)byWay[course.way]=(byWay[course.way]||0)+courseDue;
-      if(p2&&p2.due)byWay[p2.way]=(byWay[p2.way]||0)+p2.due;
-      addons.forEach(function(a){ byWay[a.way]=(byWay[a.way]||0)+(+a.amt||0) });
+      var byWay={}; if(courseDue-gs.course)byWay[course.way]=(byWay[course.way]||0)+courseDue-gs.course;
+      if(p2&&p2.due-gs.p2)byWay[p2.way]=(byWay[p2.way]||0)+p2.due-gs.p2;
+      addons.forEach(function(a,i){ var n=(+a.amt||0)-(gs.addons[i]||0); if(n||!gs.total)byWay[a.way]=(byWay[a.way]||0)+n });
+      if(gs.total)byWay.gift=gs.total;   /* 贈送金不是收錢，現金流不算（finance.js FN_NONCASH） */
       var addTotal=addons.reduce(function(s,a){return s+(+a.amt||0)},0);
       var total=course.amt+p2Amt+addTotal;
       var due=Math.max(0,total-depAmt);
@@ -4004,7 +4097,7 @@ async function bkCheckout(id){
         courseAmt:course.amt,coursePay:course.way,
         courseAmt2:p2Amt,coursePay2:p2?p2.way:"",
         addons:addons,addonTotal:addTotal,addonText:addonTxt,
-        total:total,byWay:byWay,bonus:bonus,
+        total:total,byWay:byWay,bonus:bonus,useGift:gs.total,
         depositAmt:depAmt,depositWay:depWay,due:due,
         courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
         /* 課程排行要按課名分組，所以拆成陣列存，不要只存一串文字 */
@@ -4020,6 +4113,7 @@ async function bkCheckout(id){
 
       var sumTxt=PAYWAYS.filter(function(p){return byWay[p.k]}).map(function(p){
         return p.n+" $"+byWay[p.k].toLocaleString() }).join("＋");
+      if(gs.total)sumTxt=(sumTxt?sumTxt+"＋":"")+"🎁贈送金 $"+gs.total.toLocaleString();
       if(depAmt)sumTxt=(sumTxt?sumTxt+"　·　":"")+"訂金 "+bkWayName(depWay)+" $"+depAmt.toLocaleString();
       var patch={attend:"in",status:"done",adults:nAdult,kids:nKid,people:nAdult+nKid,
         /* 核銷時改過課程就寫回預約單，卡片、月報、用料才會一致 */
@@ -4027,6 +4121,7 @@ async function bkCheckout(id){
         checkout:{courseAmt:course.amt,coursePay:course.way,
           courseAmt2:p2Amt,coursePay2:p2?p2.way:"",addons:addons,addonTotal:addTotal,
           addonText:addonTxt,total:total,byWay:byWay,usePoints:usePt,useSessions:useSe,bonus:bonus,
+          useGift:gs.total,giftUses:giftUses,
           depositAmt:depAmt,depositWay:depWay,due:due,matPicks:picks,
           courseRev:courseRev,sessionUnit:sUnit?sUnit.unit:0,sessionPlan:sUnit?sUnit.plan:"",
           adults:nAdult,kids:nKid,
@@ -4087,6 +4182,7 @@ async function bkVoid(id){
     if(+c.usePoints)  lines.push("・回補點數 "+(+c.usePoints).toLocaleString());
     if(+c.useSessions)lines.push("・回補堂數 "+(+c.useSessions));
     if(+c.bonus)      lines.push("・收回紅利 "+(+c.bonus));
+    if(+c.useGift)    lines.push("・退回贈送金 $"+(+c.useGift).toLocaleString());
   }
   lines.push("・已扣的材料整筆退回庫存");
   lines.push("・每日登記那筆標成作廢，不再計入營收與人次");
@@ -4104,6 +4200,10 @@ async function bkVoid(id){
       if(+c.bonus){ await bkLedger(c.payerPhone,{type:"bonus",delta:-c.bonus,
         reason:"核銷作廢",bookingId:id,by:(typeof ME!=="undefined"&&ME&&ME.displayName)||"admin",at:now});
         await bkCache(c.payerPhone,"bonus",-c.bonus) }
+      if(c.giftUses&&c.giftUses.length){
+        var gu=await staffApi("/staff/gift",{op:"undo",phone:c.payerPhone,uses:c.giftUses,reason:"核銷作廢"});
+        if(!gu||!gu.ok)throw new Error((gu&&gu.error)||"贈送金退回失敗");
+      }
     }
     if(c.logId)await fetch(salf("/deductions/"+c.logId+".json"),{method:"PATCH",
       headers:{"Content-Type":"application/json"},

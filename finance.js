@@ -36,7 +36,7 @@ var FN_WAYS = [
 var FN_CULTURE = "culture";   /* 文化幣 */
 var FN_PLANPAY = {"現金":"cash","刷卡":"card","信用卡":"card","LINE Pay":"linepay","匯款":"transfer","文化幣":"culture"};
 /* 這幾種是扣既有餘額，不是收錢，現金流完全不算 */
-var FN_NONCASH = ["points","sessions","voucher"];
+var FN_NONCASH = ["points","sessions","voucher","gift"];   /* gift＝🎁 贈送金折抵（2026-11-13） */
 
 /* 手動補登可以選的類別。前兩個算販售，後兩個算預收 */
 /* 補登的類別。預收（賣方案）不在這裡——那不是當日營業收入，只進現金流 */
@@ -70,7 +70,7 @@ function fnEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c] }) }
 function fnMoney(n){ return "$"+Math.round(+n||0).toLocaleString() }
 var FN_PAYNAME={points:"點數",sessions:"堂數",cash:"現金",card:"刷卡",
-  linepay:"LINE Pay",transfer:"匯款",culture:"文化幣"};
+  linepay:"LINE Pay",transfer:"匯款",culture:"文化幣",gift:"贈送金"};
 function fnWayName(k){ return FN_PAYNAME[k]||k||"—" }
 
 /* 這個日期在不在目前選的範圍內 */
