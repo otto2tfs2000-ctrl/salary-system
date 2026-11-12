@@ -2015,7 +2015,13 @@ function bkBuildIndex(j){
     /* 扭蛋活動抽到的券（src:"gacha"）不算——新客抽到一張折價券不代表他是會員 */
     var tkt=t.filter(function(x){ return x&&x.src!=="gacha"&&+x.qty>0&&!(x.expiry&&x.expiry<today) })
       .reduce(function(s,x){ return s+(+x.qty||0) },0);
-    bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt};
+    /* 會員暫停／期限（2026-11-12）：規則寫在 member.js，這裡只借來用 */
+    var pz="", ex="";
+    try{
+      if(typeof mbPauseOn==="function"&&mbPauseOn(m))pz=m.pause.until;
+      if(typeof mbExpEff==="function"){ var ee=mbExpEff(m); if(ee.date&&ee.date<today)ex=ee.date }
+    }catch(e){}
+    bkMemBal[p]={points:+c.points||0,sessions:+c.sessions||0,tkt:tkt,pz:pz,ex:ex};
   });
   bkIndexReady=true; bkIndexAt=Date.now();
 }
@@ -2943,6 +2949,12 @@ function bkCard(b){
       ' '+bkPplText(b)+
       /* 卡片上不再標 NEW（2026-09-23 老闆要求），分頁旁的紅點提醒照舊 */
       (!bkIndexReady?'':bkIsMember(b)?'<span class="bk-tag m">會員</span>':'<span class="bk-tag nc">新客</span>')+
+      /* 暫停中／會員期限已過（2026-11-12）：只提醒，不擋核銷 */
+      (function(){
+        var x=bkIndexReady&&bkMemBal[bkResolvedPhone(b)]; if(!x)return "";
+        return (x.pz?'<span class="bk-tag" style="background:#E4E9F2;color:#3D5A80;font-weight:600" title="會員暫停到 '+esc(x.pz)+'">⏸ 暫停中</span>':'')+
+          (x.ex&&bkIsMember(b)?'<span class="bk-tag" style="background:#C9453B;color:#fff;font-weight:700" title="會員期限 '+esc(x.ex)+' 已過">已過期 '+esc(x.ex.slice(5).replace("-","/"))+'</span>':'');
+      })()+
       /* 二次體驗（2026-09-23 老闆定的規則）：沒有方案（點、券、堂都沒有）但之前來過的，
          一律標出上次來的日期跟上了什麼。灰色＝上次上繪畫課，黃色＝上次上多媒材。
          有方案的會員不用看這個，不顯示。這次又約體驗價的，後面加註「收原價」。 */

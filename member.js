@@ -106,6 +106,7 @@ async function mbLoad(force){
                tickets: Array.isArray(m.tickets) ? m.tickets : null,
                lineUserId: m.lineUserId || '',
                islandOk: !!m.islandOk,
+               expiry: m.expiry || '', expiryAt: m.expiryAt || '', pause: m.pause || null, extUsed: +m.extUsed || 0,
                archived: m.archived || null };
     });
   } catch(e) { mbList = []; }
@@ -248,6 +249,80 @@ function mbExpiry(months){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+/* ══ 會員期限＋暫停（2026-11-12）══════════════════════════
+   會員期限：members/{phone}/expiry（手動填，匯入的老會員原本沒有）＋ expiryAt（什麼時候填的）。
+   方案賣出時的效期還是寫在 ledger（expiry／expiryNew）。兩邊並存，看的時候取一個：
+   手動填的為準；但填完之後又賣了新方案／又展延、而且日期更晚，就用新的那個。
+   沒手動填過的，取所有方案效期裡最晚的。
+   暫停：members/{phone}/pause = { from, until, months, extended, expFrom, expTo, at, by, reason }
+   規則（大熊 2026-11-12 定案）：每位會員「暫停＋展延」總共 6 個月額度（members/{phone}/extUsed 記已用幾個月）。
+   停 3 個月，期限順延 3 個月，之後還能再展延（或再停）3 個月；
+   直接停 6 個月，期限順延 6 個月，額度一次用完，之後不能再暫停、不能再展延，到期沒用完就過期。
+   「編輯資料」直接改日期是更正用的，不算額度。
+   過期只標紅提醒，不擋核銷、不動點數。暫停中的人後端不發提醒類 LINE（server.js pausedSet）。
+   今日排課的卡片（booking.js）也是呼叫這裡的 mbExpEff／mbPauseOn，規則只寫這一份。 */
+function mbAddMonths(ymd, n){
+  var d = new Date(ymd + 'T00:00:00');
+  if (isNaN(d.getTime())) return '';
+  var day = d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth() + n);
+  /* 1/31 加三個月沒有 4/31，取當月最後一天（4/30），不要跳到 5/1 */
+  d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function mbExpEff(m){
+  var man = (m && m.expiry) || '', manAt = (m && m.expiryAt) || '', best = '';
+  var l = (m && m.ledger) || {};
+  Object.keys(l).forEach(function(k){
+    var r = l[k]; if (!r) return;
+    var d = String(r.expiryNew || r.expiry || '').replace(/\//g, '-');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (man){
+      var at = String(r.at || ''), ex = r.extends;
+      if (ex && ex.length && String(ex[ex.length - 1].at || '') > at) at = String(ex[ex.length - 1].at);
+      if (!(at > manAt)) return;
+    }
+    if (d > best) best = d;
+  });
+  if (man && !(best > man)) return { date: man, src: 'manual' };
+  return { date: best, src: best ? 'plan' : '' };
+}
+function mbExpLeft(date){
+  return Math.floor((Date.parse(date + 'T23:59:59') - Date.now()) / 86400000);
+}
+var MB_EXT_MAX = 6;
+function mbExtLeft(m){ return Math.max(0, MB_EXT_MAX - (+(m && m.extUsed) || 0)) }
+function mbPauseOn(m){
+  var p = m && m.pause;
+  return !!(p && p.until && !p.endedAt && p.until >= mbTktToday());
+}
+/* 名字旁邊的小標籤：暫停中／已過期 */
+function mbStateChips(m){
+  var h = '';
+  if (mbPauseOn(m)) h += ' <span style="font-size:var(--fs-xs);background:#E4E9F2;color:#3D5A80;padding:1px 7px;border-radius:99px;white-space:nowrap">⏸ 暫停中・到 ' + m.pause.until.slice(5).replace('-', '/') + '</span>';
+  var e = mbExpEff(m);
+  if (e.date && e.date < mbTktToday()) h += ' <span style="font-size:var(--fs-xs);background:#C9453B;color:#fff;padding:1px 7px;border-radius:99px;white-space:nowrap">已過期 ' + e.date + '</span>';
+  return h;
+}
+/* 明細上方那一行期限說明 */
+function mbExpLine(m){
+  var e = mbExpEff(m), h = '會員期限：';
+  if (!e.date) h += '<span style="color:var(--text3)">未設定</span>（按「編輯資料」可以填）';
+  else {
+    var left = mbExpLeft(e.date);
+    h += '<b style="color:' + (left < 0 ? 'var(--red)' : left <= 30 ? 'var(--red2)' : 'var(--text)') + '">' + e.date + '</b>' +
+         (left < 0 ? '　<span style="color:var(--red);font-weight:700">已過期 ' + (-left) + ' 天</span>' : '　剩 ' + left + ' 天') +
+         '<span class="muted">（' + (e.src === 'manual' ? '手動設定' : '依方案效期') + '）</span>';
+  }
+  var p = m.pause;
+  if (mbPauseOn(m)) h += '<br><span style="color:#3D5A80;font-weight:700">⏸ 暫停中：' + p.from + ' ～ ' + p.until + '</span>' +
+    '<span class="muted">（' + (p.extended ? '期限已順延 ' + p.months + ' 個月' : '期限不順延') + (p.reason ? '・' + mbEsc(p.reason) : '') + '）</span>';
+  if (m.extUsed) h += '<br><span class="muted">暫停／展延額度：已用 ' + m.extUsed + ' 個月，</span>' +
+    (mbExtLeft(m) ? '<span class="muted">還能再延 ' + mbExtLeft(m) + ' 個月</span>'
+                  : '<span style="color:var(--red);font-weight:700">已用完，不能再暫停或展延</span>');
+  return h;
+}
+
 /* ══ 經營數字 ══════════════════════════════════════════
    全部從 members 的 ledger 算出來，不新增任何欄位。
    ledger 每筆有 at（時間）、type、delta、planName、price。
@@ -310,12 +385,15 @@ function mbStats(){
       var mk = String(r.at || '').slice(0, 7);
       if (mk === tm) s.saleThis += +r.price;
       else if (mk === lm) s.saleLast += +r.price;
-      /* 效期到期日已經寫在 ledger 上，30 天內到期就撈出來 */
-      if (r.expiry && (pts > 0 || ses > 0)){
-        var left = Math.floor((Date.parse(r.expiry + 'T23:59:59') - Date.now()) / 86400000);
-        if (left >= 0 && left <= 30) s.expiring.push({ m: m, expiry: r.expiry, left: left });
-      }
     });
+    /* 30 天內到期：用「會員期限」（手動填的或方案效期，展延、暫停順延都算進去），一人一筆 */
+    if (pts > 0 || ses > 0){
+      var ee = mbExpEff(m);
+      if (ee.date){
+        var left = mbExpLeft(ee.date);
+        if (left >= 0 && left <= 30) s.expiring.push({ m: m, expiry: ee.date, left: left });
+      }
+    }
 
     if (pts > 0 || ses > 0){
       var d = mbDaysSince(mbLastAt(m));
@@ -429,7 +507,7 @@ function mbShowList(kind){
     note = '依最久沒來排序。這些人的錢已經在我們這裡，回訪成本最低。';
   } else if (kind === 'expiring'){
     rows = s.expiring; title = '點數 30 天內到期';
-    note = '依到期日排序。到期日來自賣方案時寫入的效期。';
+    note = '依到期日排序。到期日＝會員期限（手動填的，或賣方案時寫入的效期）。';
   } else {
     rows = s.nearlyEmpty; title = '餘額剩不到一堂課';
     note = '依最近來過排序。這些人下次進門就是開口續購的時機。';
@@ -446,7 +524,7 @@ function mbShowList(kind){
       ? '<span style="color:' + (r.left <= 7 ? 'var(--red2)' : 'var(--text2)') + '">' + r.expiry + '<br><span class="muted" style="font-size:var(--fs-xs)">剩 ' + r.left + ' 天</span></span>'
       : '<span class="muted">' + (r.days >= 9999 ? '無紀錄' : r.days + ' 天前') + '</span>';
     h += '<tr>' +
-      '<td>' + mbEsc(m.name || '（未填姓名）') + '</td>' +
+      '<td>' + mbEsc(m.name || '（未填姓名）') + mbStateChips(m) + '</td>' +
       '<td class="muted">' + m.phone + '</td>' +
       '<td style="text-align:right;color:var(--gold2)">' + (+m.points || 0).toLocaleString() + '</td>' +
       '<td style="text-align:right">' + (+m.sessions || 0) + '</td>' +
@@ -492,7 +570,7 @@ function mbDrawHits(){
           '<th style="width:150px"></th></tr></thead><tbody>';
   r.forEach(function(m){
     h += '<tr>' +
-      '<td>' + mbEsc(m.name || '（未填姓名）') + '</td>' +
+      '<td>' + mbEsc(m.name || '（未填姓名）') + mbStateChips(m) + '</td>' +
       '<td class="muted">' + m.phone + '</td>' +
       '<td style="text-align:right;color:' + (m.points > 0 ? 'var(--gold2)' : 'var(--text3)') + '">' + m.points.toLocaleString() + '</td>' +
       '<td style="text-align:right">' + m.sessions + '</td>' +
@@ -516,11 +594,12 @@ function mbDetail(phone){
     return Object.assign({ _k: k }, m.ledger[k]);
   }).sort(function(a, b){ return String(b.at || '') < String(a.at || '') ? -1 : 1 });
 
-  var TYPE = { points: '點數', sessions: '堂數', bonus: '紅利', voucher: '折價金' };
+  var TYPE = { points: '點數', sessions: '堂數', bonus: '紅利', voucher: '折價金', expiry: '期限' };
   var h = '<h3 style="margin:0 0 2px">' + mbEsc(m.name || '（未填姓名）') + '</h3>' +
     '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:2px">' + m.phone + (m.note ? '　' + mbEsc(m.note) : '') +
     (m.islandOk ? '　<span style="font-size:var(--fs-xs);background:#DCEFE0;color:#2E6B3A;padding:1px 7px;border-radius:99px">🏝 可進作品島</span>' : '') + '</div>';
   var lastSellD = mbLastSell(m);
+  h += '<div style="font-size:var(--fs-sm);margin:6px 0;line-height:1.7">' + mbExpLine(m) + '</div>';
   h += '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:14px">' +
     (m.createdAt ? '入會 ' + mbFmtAt(m.createdAt) : '') +
     (lastSellD ? (m.createdAt ? '　・　' : '') +
@@ -580,6 +659,7 @@ function mbDetail(phone){
        '<button class="btn" style="flex:1;min-width:100px" onclick="mbAdjust(\'' + phone + '\')">調整餘額</button>' +
        '<button class="btn" style="flex:1;min-width:100px" onclick="mbEditInfo(\'' + phone + '\')">編輯資料</button>' +
        '<button class="btn" style="flex:1;min-width:100px" onclick="mbExtend(\'' + phone + '\')">展延效期</button>' +
+       '<button class="btn" style="flex:1;min-width:100px" onclick="mbPause(\'' + phone + '\')">' + (mbPauseOn(m) ? '⏸ 暫停中' : '⏸ 暫停') + '</button>' +
        '<button class="btn" style="flex:1;min-width:80px" onclick="mbClose()">關閉</button></div>';
   h += '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);text-align:right">' +
        '<button class="btn btn-del btn-sm" ' +
@@ -2210,6 +2290,13 @@ function mbEditInfo(phone){
        '<input id="mb-e-name" value="' + mbEsc(m.name || '') + '"></div>';
   h += '<div class="fg" style="margin-bottom:12px"><label>備註</label>' +
        '<input id="mb-e-note" value="' + mbEsc(m.note || '') + '"></div>';
+  /* 會員期限（2026-11-12）：匯入的老會員沒有期限，在這裡手動填 */
+  var ee = mbExpEff(m);
+  h += '<div class="fg" style="margin-bottom:12px"><label>會員期限（不填＝不設期限）</label>' +
+       '<input id="mb-e-exp" type="date" value="' + (ee.date || '') + '">' +
+       '<div class="muted" style="font-size:var(--fs-xs);margin-top:6px;line-height:1.7">' +
+       (ee.src === 'plan' ? '現在這個日期是照賣方案的效期帶出來的，改了就以你填的為準。' : '過期只會標紅提醒，不會擋核銷、不會動點數。') +
+       '</div></div>';
   /* 作品島只開放給會員；沒有點數堂數的固定學員，勾這個也能搬進去（2026-10-05） */
   h += '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px;font-size:var(--fs-sm);cursor:pointer">' +
        '<input type="checkbox" id="mb-e-isl"' + (m.islandOk ? ' checked' : '') + ' style="margin-top:3px">' +
@@ -2238,6 +2325,12 @@ async function mbSaveInfo(phone){
   var np   = mbNorm((document.getElementById('mb-e-phone') || {}).value || '');
   var isl  = !!(document.getElementById('mb-e-isl') || {}).checked;
   name = name.trim(); note = note.trim();
+  var expIn = (document.getElementById('mb-e-exp') || {}).value || '';
+  var expOld = mbExpEff(m);
+  var expChg = expIn !== (expOld.date || '');
+  if (expChg && !expIn && expOld.src === 'plan'){
+    err.textContent = '這個期限是方案效期帶出來的，不能清空；要改請直接填新的日期。'; return;
+  }
 
   if (np){
     if (np.length < 8) { err.textContent = '新手機號碼看起來不完整。'; return }
@@ -2264,6 +2357,7 @@ async function mbSaveInfo(phone){
       if (isl !== !!m.islandOk)
         await fetch(mbf('/members/' + phone + '/islandOk.json'), { method:'PUT',
           headers:{'Content-Type':'application/json'}, body: JSON.stringify(isl ? { by: mbWho(), at: mbNow() } : null) });
+      if (expChg) await mbExpWrite(m, expIn, '手動設定');
       m.name = name; m.note = note; m.islandOk = isl;
     } else {
       /* 整包搬家：先把原始資料抓下來，改掉 phone，寫到新 key */
@@ -2271,6 +2365,7 @@ async function mbSaveInfo(phone){
       if (!full) throw new Error('讀不到原本的會員資料，先不搬家');
       full.phone = np; full.name = name; full.note = note;
       if (isl) full.islandOk = full.islandOk || { by: mbWho(), at: mbNow() }; else delete full.islandOk;
+      if (expChg){ full.expiry = expIn || null; full.expiryAt = mbNow(); full.expiryBy = mbWho(); }
       full.phoneHistory = (full.phoneHistory || []).concat([
         { from: phone, to: np, at: mbNow(), by: mbWho() }
       ]);
@@ -2427,11 +2522,35 @@ function mbExtend(phone){
   var m = mbList.find(function(x){ return x.phone === phone });
   if (!m) return;
   if (!mbCanEdit()) { alert('沒有展延權限'); return }
+  /* 暫停＋展延共 6 個月額度（2026-11-12）。用完就鎖，要更正日期走「編輯資料」。 */
+  var left = mbExtLeft(m);
+  if (left < 1){
+    alert('這位會員的暫停／展延額度（共 ' + MB_EXT_MAX + ' 個月）已經用完，不能再展延。\n期限到了沒用完就過期。');
+    return;
+  }
+  var eff = mbExpEff(m);
+  if (!eff.date){ alert('這位會員還沒有期限。\n請先按「編輯資料」填會員期限。'); return }
+  var mon0 = Math.min(3, left);
+  var h0 = '<h3 style="margin:0 0 2px">展延效期</h3>' +
+    '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:14px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>' +
+    '<div class="info-box" style="margin-bottom:12px;line-height:1.8">會員期限：' + eff.date + ' → <b>' + mbAddMonths(eff.date, mon0) + '</b>（展延 ' + mon0 + ' 個月）<br>' +
+    '<span class="muted" style="font-size:var(--fs-xs)">暫停＋展延共 ' + MB_EXT_MAX + ' 個月額度，已用 ' + (+m.extUsed || 0) + ' 個月。' +
+    (left - mon0 > 0 ? '這次之後還能再延 ' + (left - mon0) + ' 個月。' : '這次之後就不能再暫停、不能再展延。') + '</span></div>' +
+    '<div class="fg" style="margin-bottom:12px"><label>原因（必填）</label>' +
+    '<input id="mb-x-why" placeholder="例：客人懷孕停課三個月"></div>' +
+    '<div id="mb-x-err" style="color:var(--red);font-size:var(--fs-sm);margin-bottom:10px"></div>' +
+    '<div class="row" style="gap:8px">' +
+    '<button class="btn" style="flex:1" onclick="mbDetail(\'' + phone + '\')">取消</button>' +
+    '<button class="btn btn-gold" style="flex:2" id="mb-x-ok" onclick="mbExtendMember(\'' + phone + '\',' + mon0 + ')">確認展延 ' + mon0 + ' 個月</button></div>';
+  mbModal(h0);
+  return;
 
+  /* ↓ 舊的「挑一筆方案紀錄來延」做法，改成上面的會員期限展延後不再走到這裡，先留著備查 */
   var rows = Object.keys(m.ledger || {}).map(function(k){
     return Object.assign({ _k: k }, m.ledger[k]);
   }).filter(function(r){ return r.expiry || r.expiryNew });
-  if (!rows.length){ alert('這位會員沒有帶效期的紀錄，不用展延。'); return }
+  if (!rows.length){ alert('這位會員沒有方案效期的紀錄。\n要改會員期限，請按「編輯資料」直接填日期。'); return }
   rows.sort(function(a, b){ return String(b.at || '') < String(a.at || '') ? -1 : 1 });
 
   var h = '<h3 style="margin:0 0 2px">展延效期</h3>' +
@@ -2458,6 +2577,34 @@ function mbExtend(phone){
        '<button class="btn" style="flex:1" onclick="mbClose()">取消</button>' +
        '<button class="btn btn-gold" style="flex:2" id="mb-x-ok" onclick="mbExtendSave(\'' + phone + '\')">確認展延</button></div>';
   mbModal(h);
+}
+
+async function mbExtendMember(phone, mon){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err = document.getElementById('mb-x-err');
+  var why = ((document.getElementById('mb-x-why') || {}).value || '').trim();
+  if (!why) { err.textContent = '請填展延原因。'; return }
+  if (mon > mbExtLeft(m)) { err.textContent = '額度不夠，不能再展延。'; return }
+  var cur = mbExpEff(m).date, next = mbAddMonths(cur, mon), used = (+m.extUsed || 0) + mon;
+  if (!next) { err.textContent = '原本的期限格式怪怪的（' + cur + '），請到「編輯資料」重填。'; return }
+  if (!confirm('確認展延？\n\n' + (m.name || phone) + '\n會員期限：' + cur + ' → ' + next + '\n\n原因：' + why +
+               (used >= MB_EXT_MAX ? '\n\n⚠ 額度用完，之後不能再暫停、不能再展延。' : ''))) return;
+  var btn = document.getElementById('mb-x-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '處理中…'; }
+  try {
+    var now = mbNow();
+    await mbPatch(phone, { expiry: next, expiryAt: now, expiryBy: mbWho(), extUsed: used });
+    m.expiry = next; m.expiryAt = now; m.extUsed = used;
+    await mbNoteEntry(m, 'extend', '效期展延 ' + mon + ' 個月：' + cur + ' → ' + next +
+      (used >= MB_EXT_MAX ? '，額度用完不能再延' : '') + '（' + why + '）');
+  } catch(e){
+    if (err) err.textContent = '展延失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '確認展延 ' + mon + ' 個月' }
+    return;
+  }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
 }
 
 async function mbExtendSave(phone){
@@ -2513,6 +2660,161 @@ async function mbExtendSave(phone){
     return;
   }
   mbDetail(phone);
+}
+
+/* ══ 3-2. 會員期限寫入＋暫停（2026-11-12）════════════════
+   期限一律寫 members/{phone}/expiry，同時補一筆 delta:0 的紀錄，
+   點數明細和客人端都看得到「誰、什麼時候、改成哪一天」。 */
+async function mbPatch(phone, obj){
+  var r = await fetch(mbf('/members/' + phone + '.json'), { method:'PATCH',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+}
+async function mbNoteEntry(m, prefix, reason){
+  var now = mbNow(), key = prefix + '_' + now.replace(/[-:.TZ]/g, '').slice(0, 14);
+  var e = { at: now, by: mbWho(), type: 'expiry', delta: 0, reason: reason };
+  var r = await fetch(mbf('/members/' + m.phone + '/ledger/' + key + '.json'), { method:'PUT',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(e) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  m.ledger = m.ledger || {}; m.ledger[key] = e;
+}
+async function mbExpWrite(m, date, why){
+  var old = mbExpEff(m).date, now = mbNow();
+  await mbPatch(m.phone, { expiry: date || null, expiryAt: date ? now : null, expiryBy: date ? mbWho() : null });
+  m.expiry = date || ''; m.expiryAt = date ? now : '';
+  await mbNoteEntry(m, 'exp', '會員期限：' + (old || '未設定') + ' → ' + (date || '不設期限') + '（' + why + '）');
+}
+
+var mbPausePhone = '';
+function mbPause(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  mbPausePhone = phone;
+  if (!mbCanEdit()) { alert('沒有暫停會員的權限'); return }
+  var h = '<h3 style="margin:0 0 2px">會員暫停</h3>' +
+    '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:14px">' +
+    mbEsc(m.name || '（未填姓名）') + '　' + m.phone + '</div>';
+
+  if (mbPauseOn(m)){
+    var p = m.pause;
+    h += '<div class="info-box" style="margin-bottom:14px;line-height:1.8">⏸ 目前暫停中：' + p.from + ' ～ ' + p.until +
+         '（' + p.months + ' 個月）<br>' +
+         (p.extended ? '期限已經順延：' + (p.expFrom || '—') + ' → ' + (p.expTo || '—') : '期限不順延，維持 ' + (mbExpEff(m).date || '未設定')) +
+         (p.reason ? '<br>原因：' + mbEsc(p.reason) : '') +
+         '<br><span class="muted" style="font-size:var(--fs-xs)">' + mbEsc(p.by || '') + '　' + mbFmtAt(p.at) + '</span></div>' +
+         '<div class="muted" style="font-size:var(--fs-xs);margin-bottom:12px;line-height:1.7">' +
+         '客人提早回來就按「解除暫停」。已經順延的期限不會收回，要改請到「編輯資料」。' +
+         '時間到了會自動解除，不用特別來按。</div>' +
+         '<div id="mb-p-err" style="color:var(--red);font-size:var(--fs-sm);margin-bottom:10px"></div>' +
+         '<div class="row" style="gap:8px">' +
+         '<button class="btn" style="flex:1" onclick="mbDetail(\'' + phone + '\')">返回</button>' +
+         '<button class="btn btn-gold" style="flex:2" id="mb-p-ok" onclick="mbPauseEnd(\'' + phone + '\')">解除暫停</button></div>';
+    mbModal(h); return;
+  }
+
+  var cur = mbExpEff(m).date, left = mbExtLeft(m);
+  if (left < 3){
+    alert('這位會員的暫停／展延額度（共 ' + MB_EXT_MAX + ' 個月）已經用完，不能再暫停。\n期限到了沒用完就過期。');
+    return;
+  }
+  h += '<div class="fg" style="margin-bottom:12px"><label>暫停多久</label>' +
+       '<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointer">' +
+       '<input type="radio" name="mb-p-mon" value="3" checked onchange="mbPausePreview()" style="margin-top:4px">' +
+       '<span>暫停 3 個月<br><span class="muted" style="font-size:var(--fs-xs)">會員期限順延 3 個月' +
+       (left >= 6 ? '，之後還可以再展延 3 個月' : '（這是最後 3 個月額度，之後不能再延）') + '</span></span></label>' +
+       '<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:' + (left >= 6 ? 'pointer' : 'not-allowed') + (left >= 6 ? '' : ';opacity:.5') + '">' +
+       '<input type="radio" name="mb-p-mon" value="6"' + (left >= 6 ? '' : ' disabled') + ' onchange="mbPausePreview()" style="margin-top:4px">' +
+       '<span>暫停 6 個月<br><span class="muted" style="font-size:var(--fs-xs)">' +
+       (left >= 6 ? '會員期限順延 6 個月，之後不能再暫停、不能再展延，到期沒用完就過期'
+                  : '已經用過 ' + m.extUsed + ' 個月額度，不能選 6 個月') + '</span></span></label></div>';
+  h += '<div class="form-grid" style="margin-bottom:12px">' +
+       '<div class="fg"><label>從哪一天開始停</label><input id="mb-p-from" type="date" value="' + mbTktToday() + '" oninput="mbPausePreview()"></div>' +
+       '<div class="fg"><label>目前的會員期限' + (cur ? '' : '（還沒設定，請填）') + '</label><input id="mb-p-exp" type="date" value="' + (cur || '') + '" oninput="mbPausePreview()"></div>' +
+       '</div>';
+  h += '<div class="fg" style="margin-bottom:12px"><label>原因（選填）</label>' +
+       '<input id="mb-p-why" placeholder="例：出國三個月"></div>';
+  h += '<div id="mb-p-pre" class="info-box" style="margin-bottom:10px;line-height:1.8"></div>';
+  h += '<div id="mb-p-err" style="color:var(--red);font-size:var(--fs-sm);margin-bottom:10px"></div>';
+  h += '<div class="row" style="gap:8px">' +
+       '<button class="btn" style="flex:1" onclick="mbDetail(\'' + phone + '\')">取消</button>' +
+       '<button class="btn btn-gold" style="flex:2" id="mb-p-ok" onclick="mbPauseSave(\'' + phone + '\')">確認暫停</button></div>';
+  mbModal(h);
+  mbPausePreview();
+}
+/* 讀表單、算出暫停到哪天和新的期限。有問題回 { err } */
+function mbPauseCalc(){
+  var r = document.querySelector('input[name="mb-p-mon"]:checked');
+  var mon = r ? +r.value : 3;
+  var from = (document.getElementById('mb-p-from') || {}).value || '';
+  var exp  = (document.getElementById('mb-p-exp') || {}).value || '';
+  if (!from) return { err: '請填從哪一天開始停。' };
+  var until = mbAddMonths(from, mon);
+  if (!exp) return { err: '這位會員還沒有期限。請先填「目前的會員期限」，才知道要順延到哪一天。' };
+  return { mon: mon, from: from, until: until, exp: exp, extended: true, expTo: mbAddMonths(exp, mon) };
+}
+function mbPausePreview(){
+  var box = document.getElementById('mb-p-pre'); if (!box) return;
+  var c = mbPauseCalc();
+  if (!c.err){ var pm = mbList.find(function(x){ return x.phone === mbPausePhone }); c.left = pm ? mbExtLeft(pm) - c.mon : 0; }
+  if (c.err){ box.innerHTML = '<span class="muted">' + c.err + '</span>'; return }
+  box.innerHTML = '暫停期間：<b>' + c.from + ' ～ ' + c.until + '</b><br>' +
+    '會員期限：' + c.exp + ' → <b>' + c.expTo + '</b>' +
+    (c.left ? '<br>之後還可以再展延 ' + c.left + ' 個月'
+            : '<br><span style="color:var(--red);font-weight:700">⚠ 額度用完，之後不能再暫停、不能再展延。</span>') +
+    '<br><span class="muted" style="font-size:var(--fs-xs)">暫停期間不會收到寵物餓了、聖誕樹亮燈這類提醒；預約、核銷照常可以做。</span>';
+}
+async function mbPauseSave(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m) return;
+  var err = document.getElementById('mb-p-err');
+  var c = mbPauseCalc();
+  if (c.err){ err.textContent = c.err; return }
+  if (c.mon > mbExtLeft(m)){ err.textContent = '額度只剩 ' + mbExtLeft(m) + ' 個月，不能停 ' + c.mon + ' 個月。'; return }
+  var why = ((document.getElementById('mb-p-why') || {}).value || '').trim();
+  var old = mbExpEff(m).date, used = (+m.extUsed || 0) + c.mon;
+  if (!confirm('確認暫停？\n\n' + (m.name || phone) + '\n暫停 ' + c.mon + ' 個月：' + c.from + ' ～ ' + c.until + '\n' +
+               '會員期限：' + c.exp + ' → ' + c.expTo + '\n' +
+               (used >= MB_EXT_MAX ? '\n⚠ 額度用完，之後不能再暫停、不能再展延。' : '\n之後還可以再展延 ' + (MB_EXT_MAX - used) + ' 個月。'))) return;
+  var btn = document.getElementById('mb-p-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '處理中…'; }
+  try {
+    var now = mbNow();
+    var p = { from: c.from, until: c.until, months: c.mon, extended: c.extended,
+              expFrom: c.exp || '', expTo: c.expTo || '', at: now, by: mbWho(), reason: why };
+    var patch = { pause: p, extUsed: used };
+    if (c.expTo && c.expTo !== old){ patch.expiry = c.expTo; patch.expiryAt = now; patch.expiryBy = mbWho(); }
+    await mbPatch(phone, patch);
+    m.pause = p; m.extUsed = used;
+    if (patch.expiry){ m.expiry = c.expTo; m.expiryAt = now; }
+    await mbNoteEntry(m, 'pause', '會員暫停 ' + c.mon + ' 個月（' + c.from + ' ～ ' + c.until + '）：期限 ' +
+      c.exp + ' → ' + c.expTo + (used >= MB_EXT_MAX ? '，額度用完不能再延' : '') + (why ? '（' + why + '）' : ''));
+  } catch(e){
+    if (err) err.textContent = '暫停失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '確認暫停' }
+    return;
+  }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
+}
+async function mbPauseEnd(phone){
+  var m = mbList.find(function(x){ return x.phone === phone });
+  if (!m || !m.pause) return;
+  var err = document.getElementById('mb-p-err');
+  if (!confirm('確認解除暫停？\n\n' + (m.name || phone) + ' 會恢復成一般會員，期限維持 ' + (mbExpEff(m).date || '未設定') + '。')) return;
+  var btn = document.getElementById('mb-p-ok');
+  if (btn) { btn.disabled = true; btn.textContent = '處理中…'; }
+  try {
+    var now = mbNow();
+    await mbPatch(phone, { 'pause/endedAt': now, 'pause/endedBy': mbWho() });
+    m.pause.endedAt = now; m.pause.endedBy = mbWho();
+    await mbNoteEntry(m, 'resume', '解除會員暫停（原訂停到 ' + m.pause.until + '）');
+  } catch(e){
+    if (err) err.textContent = '解除失敗：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '解除暫停' }
+    return;
+  }
+  mbDetail(phone);
+  if (typeof mbDrawHits === 'function') mbDrawHits();
 }
 
 /* ══ 4. 刪掉單筆紀錄 ════════════════════════════════════
