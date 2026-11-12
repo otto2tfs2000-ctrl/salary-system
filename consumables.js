@@ -263,7 +263,7 @@ function editConsumable(id) {
   var isForeign = !!(x.currency && x.currency !== 'TWD');
 
   var td = document.createElement('td');
-  td.colSpan = 9;
+  td.colSpan = 10;
   td.innerHTML =
     '<div class="form-grid" style="margin-bottom:10px">'+
       '<div class="fg"><label>日期</label><input id="cme-date-'+id+'" type="date" value="'+x.date+'"></div>'+
@@ -543,6 +543,24 @@ function renderConsumables() {
     listEl.innerHTML = '<div class="empty">這個月份已經沒有「未撥款」的項目了，都處理完了。</div>';
     return;
   }
+  // 關鍵字篩選（品項／備註／購買人），方便一次找出「停車費」這種要整批處理的
+  var kwEl = document.getElementById('cm-kw');
+  var kw = kwEl ? kwEl.value.trim().toLowerCase() : '';
+  if (kw) {
+    listItems = listItems.filter(function(x){
+      return ((x.name||'')+' '+(x.note||'')+' '+(x.buyer||'')).toLowerCase().indexOf(kw) !== -1;
+    });
+    if (listItems.length === 0) {
+      listEl.innerHTML = '<div class="empty">找不到含「'+escAttr(kw)+'」的項目。</div>';
+      return;
+    }
+  }
+  // 勾選狀態：換月份／換樓層後，不在這張表上的勾選一律清掉，避免搬到看不見的東西
+  var visIds = {}; listItems.forEach(function(x){ visIds[x.id] = true; });
+  Object.keys(cmSel).forEach(function(id){ if (!visIds[id]) delete cmSel[id]; });
+  cmVisibleIds = listItems.map(function(x){ return x.id; });
+  var selCount = Object.keys(cmSel).length;
+  var selTotal = 0; listItems.forEach(function(x){ if (cmSel[x.id]) selTotal += x.amount; });
 
   // 依日期排序（新→舊）
   var sorted = listItems.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || b.id-a.id; });
@@ -558,7 +576,8 @@ function renderConsumables() {
       '<option value="paid"'+(isPaid?' selected':'')+'>已撥款</option>'+
       '<option value="unpaid"'+(!isPaid?' selected':'')+'>未撥款</option>'+
       '</select>';
-    return '<tr id="cm-row-'+x.id+'">'+
+    return '<tr id="cm-row-'+x.id+'"'+(cmSel[x.id]?' style="background:rgba(201,168,76,0.10)"':'')+'>'+
+      '<td style="width:28px"><input type="checkbox" style="width:17px;height:17px;cursor:pointer"'+(cmSel[x.id]?' checked':'')+' onchange="cmToggleSel('+x.id+',this.checked)"></td>'+
       '<td style="font-size:var(--fs-sm);color:var(--text3)">'+x.date.slice(5)+'</td>'+
       '<td><span class="badge '+badgeClass+'">'+icon+' '+x.cat+'</span></td>'+
       '<td style="font-weight:500"'+(x.enteredBy?' title="登記人：'+escAttr(x.enteredBy)+'"':'')+'>'+x.name+'</td>'+
@@ -571,9 +590,82 @@ function renderConsumables() {
       '</tr>';
   }).join('');
 
-  listEl.innerHTML = '<table><thead><tr>'+
+  // 批次改歸屬工具列：勾了才出現
+  var moveBar = '';
+  if (selCount > 0) {
+    var targets = Object.keys(CM_STORE_NAMES).filter(function(c){ return c !== store && c !== 'camp'; });
+    var tOpts = targets.map(function(c){
+      return '<option value="'+c+'"'+(c===cmMoveTarget?' selected':'')+'>'+CM_STORE_NAMES[c]+'</option>';
+    }).join('');
+    moveBar = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:#fff7e0;border:1px solid #e0c36a;color:#5b4a1c">'+
+      '<span style="font-weight:600">已勾 '+selCount+' 筆，共 $'+selTotal.toLocaleString()+'</span>'+
+      '<span>→ 改歸到</span>'+
+      '<select id="cm-move-target" onchange="cmMoveTarget=this.value" style="padding:6px 10px;border-radius:6px;border:1px solid #c9a84c;background:#fff;color:#3a2f12;font-family:inherit;font-size:var(--fs-md)">'+tOpts+'</select>'+
+      '<button class="btn btn-gold btn-sm" onclick="cmMoveSelected()">搬過去</button>'+
+      '<button class="btn btn-outline btn-sm" onclick="cmClearSel()">取消勾選</button>'+
+      '</div>';
+  }
+  var allChecked = selCount > 0 && selCount === listItems.length;
+
+  listEl.innerHTML = moveBar + '<table><thead><tr>'+
+    '<th style="width:28px"><input type="checkbox" title="全選／全不選" style="width:17px;height:17px;cursor:pointer"'+(allChecked?' checked':'')+' onchange="cmToggleAll(this.checked)"></th>'+
     '<th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>來源</th><th>購買人</th><th>零用金</th><th>備註</th><th></th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+// ── 批次改歸屬（登記錯樓層時，勾起來整批搬到對的樓層）────────────────
+/* 2026-11-12 大熊：一整串停車費記在四樓、其實是二樓的，一筆一筆刪掉重打太累。
+   搬的作法＝從這個月這層樓的清單拿掉（留墓碑，不然存檔前補缺會從雲端補回來）、
+   放進同一個月另一層樓的清單。搬過去的那筆換一個新 id：同一個 id 在原樓層已經
+   有墓碑，之後如果又搬回來，舊分頁存檔時會因為墓碑把它當成「刻意刪掉的」而弄丟。
+   其他欄位（日期、金額、購買人、撥款狀態、登記人）原封不動。 */
+var cmSel = {};           // { id: true } 本月明細目前勾選的
+var cmVisibleIds = [];    // 目前表上看得到的 id（全選用）
+var cmMoveTarget = '2f';
+
+function cmToggleSel(id, on) {
+  if (on) cmSel[id] = true; else delete cmSel[id];
+  renderConsumables();
+}
+function cmToggleAll(on) {
+  cmSel = {};
+  if (on) cmVisibleIds.forEach(function(id){ cmSel[id] = true; });
+  renderConsumables();
+}
+function cmClearSel() { cmSel = {}; renderConsumables(); }
+
+async function cmMoveSelected() {
+  var from = curStore.consumables;
+  var selEl = document.getElementById('cm-move-target');
+  var to = selEl ? selEl.value : cmMoveTarget;
+  if (!to || to === from || !CM_STORE_NAMES[to]) { alert('請選要搬去哪一層'); return; }
+  var mKey = getCMMonthKey();
+  var fromKey = mKey + '_' + from, toKey = mKey + '_' + to;
+  if (!S.consumables || !S.consumables[fromKey]) return;
+  var moving = S.consumables[fromKey].filter(function(x){ return cmSel[x.id]; });
+  if (moving.length === 0) { alert('還沒勾選任何項目'); return; }
+  var sum = moving.reduce(function(a,x){ return a + (x.amount||0); }, 0);
+  var fromName = CM_STORE_NAMES[from] || from;
+  if (!confirm('把勾選的 '+moving.length+' 筆（共 $'+sum.toLocaleString()+'）從「'+fromName+'」改歸到「'+CM_STORE_NAMES[to]+'」？\n\n搬過去之後，這 '+moving.length+' 筆會從'+fromName+'的明細、統計、匯出消失，改出現在'+CM_STORE_NAMES[to]+'。')) return;
+
+  if (!S.consumables[toKey]) S.consumables[toKey] = [];
+  var used = {}; S.consumables[toKey].forEach(function(x){ used[x.id] = true; });
+  var nid = Date.now();
+  moving.forEach(function(x){
+    tombstoneMark('consumables.' + fromKey, { id: x.id });
+    while (used[nid]) nid++;
+    var copy = JSON.parse(JSON.stringify(x));
+    copy.id = nid; used[nid] = true; nid++;
+    copy.movedFrom = from;
+    copy.movedBy = (typeof ME !== 'undefined' && ME && ME.displayName) || '';
+    S.consumables[toKey].push(copy);
+  });
+  S.consumables[fromKey] = S.consumables[fromKey].filter(function(x){ return !cmSel[x.id]; });
+  cmSel = {};
+  renderConsumables();
+  var ok = await saveNow();
+  if (ok) alert('✅ 已把 '+moving.length+' 筆改歸到「'+CM_STORE_NAMES[to]+'」，並確認存到雲端。\n\n切到'+CM_STORE_NAMES[to]+'就看得到。');
+  else alert('⚠️ 已經搬好，但還沒存上雲端（只留在這台電腦）。\n\n請先不要關閉或重新整理這個分頁，按右上角「立即存檔」再試一次。');
 }
 
 // ── 購買人彙整（點名字看明細，方便對帳撥款）────────────────────

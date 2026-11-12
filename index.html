@@ -287,6 +287,10 @@
     <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--text2);margin-bottom:12px;cursor:pointer">
       <input type="checkbox" id="cm-unpaid-only" onchange="renderConsumables()"> 只顯示未撥款（匯出也只會匯出這裡看得到的）
     </label>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:var(--fs-sm);color:var(--text2)">
+      <input id="cm-kw" type="text" placeholder="🔍 找品項／備註／購買人（例：停車費）" oninput="renderConsumables()" style="max-width:280px">
+      <span style="color:var(--text3)">登記錯樓層？勾起來就能整批改歸到別層（最左邊可全選）</span>
+    </div>
     <div id="cm-debug" style="display:none;margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
     <div id="cm-list-area"></div>
   </div>
@@ -525,7 +529,7 @@
 
 <script src="auth.js?v=20261111b"></script>
 <script src="app.js?v=20261112a"></script>
-<script src="consumables.js?v=20261105a"></script>
+<script src="consumables.js?v=20261112a"></script>
 <script src="inventory.js?v=20261110a"></script>
 <script src="booking.js?v=20261111b"></script>
 <script src="member.js?v=20261105e"></script>
