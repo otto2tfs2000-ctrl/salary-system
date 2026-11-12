@@ -816,6 +816,7 @@ function doSwitchTab(tab) {
   if (tab==='xmas' && window.renderXmas) renderXmas();
   if (tab==='pets' && window.renderPets) renderPets();
   if (tab==='hallstats' && window.renderHallStats) renderHallStats();
+  if (tab==='games' && window.renderGames) renderGames();
   if (tab==='shop' && window.renderShop) renderShop();
   if (tab==='catalog' && window.renderCatalog) renderCatalog();
   if (tab==='recipe') { rcCourses = null; renderRecipe(); }   /* 每次點開都重新讀課程，課程管理剛新增的課才會出現 */

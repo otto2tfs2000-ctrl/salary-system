@@ -35,6 +35,7 @@ var STAFF_TABS = [
   { k:"events",      n:"活動公告" },
   { k:"pets",        n:"寵物離家出走" },
   { k:"hallstats",   n:"講堂收聽紀錄" },
+  { k:"games",       n:"小遊戲成績" },
   { k:"fun",         n:"藝術家小活動（整組）" },
   { k:"monthly",     n:"月報總覽" },
   { k:"finance",     n:"報表" },
