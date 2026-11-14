@@ -2520,6 +2520,7 @@ async function bkRender(noReload){
    '<div class="bk-addrow"><button class="bk-add bk-add-top" id="bkAdd">＋ 手動登記</button>'+
      '<button class="bk-add bk-add-top bk-add-hold" id="bkAddHold">＋ 先收訂金（還沒約時間）</button>'+
      '<button class="bk-add bk-add-top bk-add-ship" id="bkAddShip">📦 寄送</button>'+
+     '<button class="bk-add bk-add-top bk-add-ship" id="bkFindBtn">🔍 查有沒有來上課</button>'+
      (window.bbNew&&bkTabAllowed("baoban")?'<button class="bk-add bk-add-top bk-add-bb" id="bkAddBb">🏫 包班</button>':'')+'</div>'+
    (function(){ var ci=0;
     /* 晚上沒排的日子，就算有人被登記到晚上時段也要看得到——
@@ -2616,6 +2617,7 @@ async function bkRender(noReload){
      被當成「要修改的預約 id」，找不到就整個結束，按了沒反應。 */
   document.getElementById("bkAdd").onclick=function(){ bkManual() };
   document.getElementById("bkAddHold").onclick=function(){ bkHoldSheet() };
+  var fb=document.getElementById("bkFindBtn"); if(fb)fb.onclick=function(){ bkFindSheet() };
   /* 包班在自己的分頁填，日期先帶這一天 */
   var bbBtn=document.getElementById("bkAddBb"); if(bbBtn)bbBtn.onclick=function(){ bbNew(dsNow.replace(/\//g,"-")) };
   root.querySelectorAll("[data-hded]").forEach(function(el){ el.onclick=function(){ bkHoldSheet(el.dataset.hded) } });
@@ -3247,6 +3249,124 @@ function bkSchedPick(k){
   };
 }
 window.bkSchedRender=bkSchedRender;
+
+/* ══ 查有沒有來上課 ══
+   打名字或電話，把這個人「所有」預約列出來，取消的、沒核銷的也列，
+   一眼看出每一筆到底有沒有來。會員明細的核銷紀錄只列有來的那幾筆，
+   查不到取消或沒到的，也查不到不是會員的客人，所以另外做這個。
+   彈窗不在 #bkRoot 裡，顏色一律寫死色碼。 */
+function bkFindState(b,today){
+  var c=b.checkout||null;
+  if(c)return {k:"yes",t:"✅ 有來・已核銷",bg:"#E6F4EA",fg:"#1E7B3A"};
+  if(b.status==="cancelled"){
+    var by=b.cancelledBy==="customer"?"客人自己取消":"已取消";
+    return {k:"cancel",t:"❌ "+by+(b.attend==="in"?"（曾按過報到）":""),bg:"#FDECEC",fg:"#B3261E"};
+  }
+  if(b.status==="expired")return {k:"cancel",t:"❌ 已失效（逾期沒付訂金）",bg:"#FDECEC",fg:"#B3261E"};
+  if(b.attend==="in")return {k:"yes",t:"✅ 有報到・還沒核銷",bg:"#E6F4EA",fg:"#1E7B3A"};
+  if(b.attend==="no")return {k:"no",t:"❌ 沒來（已標記未到）",bg:"#FDECEC",fg:"#B3261E"};
+  var d=String(b.date||"");
+  if(d>today)return {k:"future",t:"🗓 還沒到（之後的預約）",bg:"#EEF2F7",fg:"#44566C"};
+  if(d===today)return {k:"future",t:"🗓 今天的預約・還沒核銷",bg:"#EEF2F7",fg:"#44566C"};
+  return {k:"unknown",t:"⚠️ 沒有核銷紀錄（可能沒來，或來了沒核銷）",bg:"#FFF4DB",fg:"#8A5A00"};
+}
+function bkFindRows(all,q){
+  q=String(q||"").trim().toLowerCase();
+  var qd=q.replace(/\D/g,"");
+  var rows=[];
+  Object.keys(all||{}).forEach(function(id){
+    var b=all[id]; if(!b||typeof b!=="object")return;
+    var cu=b.customer||{}, c=b.checkout||{};
+    var names=[cu.name,cu.childName].map(function(x){return String(x||"").toLowerCase()});
+    var phones=[cu.phone,b.memberPhone,c.payerPhone].map(function(x){return String(x||"").replace(/\D/g,"")});
+    var hit=names.some(function(n){return n&&n.indexOf(q)>=0})||
+      (qd.length>=4&&phones.some(function(p){return p&&p.indexOf(qd)>=0}));
+    if(hit)rows.push({id:id,b:b});
+  });
+  return rows.sort(function(x,y){ return String(y.b.date+y.b.slot).localeCompare(String(x.b.date+x.b.slot)) });
+}
+function bkFindHtml(rows){
+  var today=ds(new Date());
+  if(!rows.length)return '<div style="padding:16px 2px;color:#8a8580;font-size:14px">找不到這個名字或電話的預約。'+
+    '<br>預約系統 2026/07/30 才開始用，更早的查不到；名字可以只打其中兩個字試試。</div>';
+  var n={yes:0,cancel:0,no:0,unknown:0,future:0};
+  var html=rows.map(function(r){
+    var b=r.b, st=bkFindState(b,today), c=b.checkout||null, cu=b.customer||{};
+    n[st.k]++;
+    var items=(b.items||[]).filter(Boolean).map(function(i){
+      return (i.name||"")+(i.spec?"（"+i.spec+"）":"")+(+i.qty>1?" ×"+i.qty:"") }).join("、")||"（沒有課程資料）";
+    var sub=[];
+    if(c){
+      var ts=(c.teachers&&c.teachers.length?c.teachers:(c.teacher?[c.teacher]:[])).filter(Boolean);
+      if(ts.length)sub.push("老師 "+ts.join("、"));
+      if(c.summary)sub.push(c.summary);
+      sub.push("$"+(+c.total||0).toLocaleString());
+    }
+    if(b.status==="cancelled"&&b.cancelledAt){
+      var ca=new Date(b.cancelledAt), cds=ds(ca);
+      sub.push(cds+" 取消"+(b.cancelReason?"・"+b.cancelReason:"")+(cds>String(b.date||"")?"（上課日過了才取消）":""));
+    }
+    return '<div data-findgo="'+esc(b.date||"")+'" style="padding:10px 4px;border-bottom:1px solid #ece8e1;cursor:pointer">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">'+
+        '<b style="font-size:15px;color:#2b2926">'+esc(b.date||"")+'　'+esc(b.slot||"")+'</b>'+
+        '<span style="background:'+st.bg+';color:'+st.fg+';border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600">'+esc(st.t)+'</span></div>'+
+      '<div style="margin-top:3px;font-size:14px;color:#2b2926">'+esc(cu.name||"（沒名字）")+
+        (cu.childName?'（'+esc(cu.childName)+'）':'')+'　'+esc(cu.phone||b.memberPhone||"")+
+        '　・　'+(+b.people||1)+' 位</div>'+
+      '<div style="margin-top:2px;font-size:14px;color:#55504a">'+esc(items)+'</div>'+
+      (sub.length?'<div style="margin-top:2px;font-size:12.5px;color:#8a8580">'+esc(sub.join("　・　"))+'</div>':'')+
+    '</div>';
+  }).join("");
+  var chip=function(v,l,fg){ return '<div><div style="font-size:20px;font-weight:700;color:'+fg+'">'+v+'</div><div style="font-size:12px;color:#8a8580">'+l+'</div></div>' };
+  return '<div style="display:flex;gap:22px;flex-wrap:wrap;margin:4px 0 8px">'+
+      chip(n.yes,"有來","#1E7B3A")+chip(n.cancel+n.no,"取消／沒來","#B3261E")+
+      chip(n.unknown,"沒核銷紀錄","#8A5A00")+chip(n.future,"還沒到","#44566C")+'</div>'+
+    '<div style="font-size:12px;color:#8a8580;margin-bottom:4px">共 '+rows.length+' 筆預約，點任何一筆可以跳到那一天的排課。</div>'+
+    '<div style="border-top:1px solid #ece8e1">'+html+'</div>';
+}
+async function bkFindSheet(){
+  bkSheet('<h3>查有沒有來上課</h3>'+
+    '<div style="font-size:13px;color:#8a8580;margin-bottom:10px">打名字（兩個字以上）或電話（四碼以上），取消的、沒核銷的也會列出來。</div>'+
+    '<input id="bkFindQ" type="search" autocomplete="off" placeholder="名字或電話" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:16px;border:1px solid #d8d2c8;border-radius:10px;font-family:inherit">'+
+    '<div id="bkFindOut" style="margin-top:10px"><div style="padding:14px 2px;color:#8a8580;font-size:14px">讀取預約資料中…</div></div>'+
+    '<div style="margin-top:14px;text-align:right"><button type="button" id="bkFindClose" '+
+      'style="background:#fff;color:#55504a;border:1px solid #d8d2c8;border-radius:10px;padding:9px 18px;font-size:14px;cursor:pointer;font-family:inherit">關閉</button></div>');
+  document.getElementById("bkFindClose").onclick=bkClose;
+  var qEl=document.getElementById("bkFindQ"), out=document.getElementById("bkFindOut");
+  var all=null;
+  var draw=function(){
+    if(!document.getElementById("bkFindOut"))return;
+    var q=qEl.value.trim(), qd=q.replace(/\D/g,"");
+    if(!all){ return }
+    if(q.length<2||(/^[\d\s-]+$/.test(q)&&qd.length<4)){
+      out.innerHTML='<div style="padding:14px 2px;color:#8a8580;font-size:14px">請打名字或電話。</div>'; return }
+    out.innerHTML=bkFindHtml(bkFindRows(all,q));
+    out.querySelectorAll("[data-findgo]").forEach(function(el){ el.onclick=function(){
+      var p=String(el.dataset.findgo).split("/"); if(p.length!==3)return;
+      bkDate=new Date(+p[0],+p[1]-1,+p[2]); bkTellMonth(bkDate.getFullYear(),bkDate.getMonth()+1);
+      bkClose(); bkRender();
+    } });
+  };
+  qEl.oninput=draw; qEl.focus();
+  var load=async function(){
+    try{
+      var snap=window.bkBookingsSnap;
+      all=(snap&&snap.all&&Date.now()-snap.at<300000)?snap.all:await bkFetchAll();
+      if(all&&!(snap&&snap.all===all))window.bkBookingsSnap={at:Date.now(),all:all};
+    }catch(e){ all=null }
+    if(!document.getElementById("bkFindOut")||out!==document.getElementById("bkFindOut"))return;
+    if(!all){
+      /* 讀失敗不能畫成「找不到」，看起來會像這個人沒約過 */
+      out.innerHTML='<div style="padding:12px 2px;color:#B3261E;font-size:14px">⚠️ 連不上伺服器，預約資料沒讀到。 '+
+        '<button type="button" id="bkFindRetry" style="background:#fff;color:#B3261E;border:1px solid #B3261E;border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;font-family:inherit">重新讀取</button></div>';
+      document.getElementById("bkFindRetry").onclick=load; return;
+    }
+    out.innerHTML='<div style="padding:14px 2px;color:#8a8580;font-size:14px">請打名字或電話。</div>';
+    draw();
+  };
+  load();
+}
 
 /* ── 彈窗 ── */
 function bkSheet(html){
