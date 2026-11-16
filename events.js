@@ -17,7 +17,7 @@ function evMode(){
   if (window.funCanIn && !funCanIn('events')) return 'live';
   return evSide;
 }
-function evGo(side){ if (side !== evSide) { evEdit = null; balEdit = null; regEv = null; regEdit = null } evSide = side }
+function evGo(side){ if (side !== evSide) { evEdit = null; balEdit = null; regEv = null; regEdit = null; regView = 'list' } evSide = side }
 async function evLoad(){ evData = await staffApi('/staff/events', {}) }
 async function renderEvents(){
   var el = document.getElementById('events-body'); if (!el) return;
@@ -127,6 +127,8 @@ function evFormHtml(){
     evRow('一句話說明', evInp('ev-sub', e.sub, 'text', 300, '例：五週年藝術交流餐敘')) +
     evRow('費用', evInp('ev-fee', e.fee || '', 'text', 300, '例：每人 800 元（含餐點）；免費就寫「免費」'), '會用醒目的方式放在「詳細資訊」最上面') +
     evRow('地點', evInp('ev-place', e.place || '', 'text', 300, '例：Otto2 工作室')) +
+    evRow('餐敘主餐', [0,1,2,3,4,5].map(function(i){ return evInp('ev-meal' + i, (e.meals || [])[i] || '', 'text', 140, i < 4 ? '主餐 ' + (i + 1) : '（選填）') }).join(' '),
+      '報名登記時每位用餐的人（含攜伴）從這幾款選一款；座位表會顯示每個人點什麼。沒有餐敘就全部空白') +
     evRow('詳細說明', '<textarea id="ev-detail" rows="6" placeholder="例：流程、要帶什麼、報名截止日、退費方式…（最多 1200 字）" style="width:300px;max-width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm);line-height:1.6;font-family:inherit">' + gcEsc(e.detail || '') + '</textarea>', '家長在海報上按「詳細資訊」才看得到；有填任何一項，「＋1 我想去」就會放在詳細資訊裡面，讓家長先看完再按') +
     evRow('活動日期', evInp('ev-date', e.date, 'date', 170), '改日期就改這裡，島上的倒數和開花會跟著新日期走（海報上的日期要記得換新海報）') +
     evRow('時間', evInp('ev-time', e.time, 'text', 170, '例：晚間 18:30')) +
@@ -175,7 +177,8 @@ function evClearPoster2(){
 async function evSave(){
   var v = function(id){ return document.getElementById(id).value.trim() };
   var ev = { id: evEdit.id, title: v('ev-title'), sub: v('ev-sub'), date: v('ev-date'), time: v('ev-time'), showFrom: v('ev-from'),
-    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), fee: v('ev-fee'), place: v('ev-place'), detail: v('ev-detail'), poster: v('ev-poster'), poster2: v('ev-poster2'), on: document.getElementById('ev-on').checked };
+    bloomDays: +v('ev-bloom') || 0, bloomFrom: v('ev-bloomfrom'), fee: v('ev-fee'), place: v('ev-place'), detail: v('ev-detail'), poster: v('ev-poster'), poster2: v('ev-poster2'), on: document.getElementById('ev-on').checked,
+    meals: [0,1,2,3,4,5].map(function(i){ return v('ev-meal' + i) }).filter(Boolean) };
   if (!ev.title) return alert('請填活動名稱');
   if (!ev.date) return alert('請填活動日期');
   if (ev.bloomFrom && ev.bloomFrom > ev.date) return alert('開花開始日不能比活動日晚');
@@ -197,7 +200,7 @@ async function evDel(){
 var regEv = null, regList = null, regEdit = null, regFilter = 'all', regQ = '';
 var REG_WAYS = ['現金', '轉帳', '刷卡', 'LINE Pay', '其他'];
 async function regOpen(id){
-  regEv = evData.list[id]; regList = null; regEdit = null; regFilter = 'all'; regQ = '';
+  regEv = evData.list[id]; regList = null; regEdit = null; regFilter = 'all'; regQ = ''; regView = 'list';
   await regReload();
 }
 async function regReload(){
@@ -213,14 +216,30 @@ function regComp(r){ return r.companion != null ? +r.companion || 0 : Math.max(0
 /* 2026-11-11：會員本人的費用已含 DIY，DIY $300 只收攜伴的，所以 DIY 人數不會超過攜伴人數 */
 function regDiy(r){ return Math.min(regComp(r), +r.diy || 0) }
 function regDue(r){ return regFeeNum() + regComp(r) * REG_COMP_FEE + regDiy(r) * REG_DIY_FEE }
+/* 🍽️ 主餐（2026-11-16）：活動設定的 meals 是選項；報名 meal＝會員本人、comps[i]＝第 i+1 位攜伴 { n 名字, m 主餐 } */
+function regMeals(){ return (regEv && Array.isArray(regEv.meals)) ? regEv.meals.filter(Boolean) : [] }
+var REG_MEAL_COL = ['#d9534f', '#3d8fd0', '#e0952e', '#4f9a3c', '#9b6fd0', '#7a7a7a'];
+function regMealCol(m){ var i = regMeals().indexOf(m); return i >= 0 ? REG_MEAL_COL[i] : '#9a9a9a' }
+function regMealTag(m){ return m ? '<span style="color:' + regMealCol(m) + ';font-weight:600">● ' + gcEsc(m) + '</span>' : '<span style="color:#c0392b">未選主餐</span>' }
+function regSelf(r){ return (+r.dinner || 0) > regComp(r) }
+/* 這筆報名每一位用餐的人：key 是座位表用的「rid.s」（本人）／「rid.c1」（第 1 位攜伴）… */
+function regDiners(r){
+  var out = [], c = regComp(r), cs = Array.isArray(r.comps) ? r.comps : Object.values(r.comps || {});
+  if (regSelf(r)) out.push({ key: r.rid + '.s', rid: r.rid, name: r.name, short: r.name, who: '本人', meal: r.meal || '' });
+  for (var i = 0; i < c; i++){ var x = cs[i] || {};
+    out.push({ key: r.rid + '.c' + (i + 1), rid: r.rid, name: x.n || (r.name + '的攜伴' + (c > 1 ? (i + 1) : '')), short: x.n || (r.name + '+' + (i + 1)), who: '攜伴' + (c > 1 ? (i + 1) : ''), meal: x.m || '' }) }
+  return out;
+}
+function regMealOpts(cur){ return '<option value="">（請選主餐）</option>' + regMeals().map(function(m){ return '<option' + (m === cur ? ' selected' : '') + '>' + gcEsc(m) + '</option>' }).join('') }
 function regRows(){ return Object.values(regList || {}).sort(function(a, b){ return String(a.createdAt).localeCompare(String(b.createdAt)) }) }
 function regHtml(){
   if (regEdit) return regFormHtml();
+  if (regView === 'seat') return seatHtml();
   var e = regEv, h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">' +
     '<button class="btn btn-outline btn-sm" onclick="evRegBack()">← 活動公告</button>' +
     '<span>📝 報名登記・' + gcEsc(e.title) + '</span>' +
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="regReload()">↻ 重新讀取</button>' +
-    (regList ? '<button class="btn btn-outline btn-sm" onclick="regCsv()">⬇ 下載名單</button><button class="btn btn-gold btn-sm" onclick="regNew()">＋ 新增報名</button>' : '') + '</div>' +
+    (regList ? '<button class="btn btn-outline btn-sm" onclick="seatOpen()">🍽️ 餐敘座位表</button><button class="btn btn-outline btn-sm" onclick="regCsv()">⬇ 下載名單</button><button class="btn btn-gold btn-sm" onclick="regNew()">＋ 新增報名</button>' : '') + '</div>' +
     '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:10px">' + gcEsc(e.date.replace(/-/g, '/')) + (e.time ? '　' + gcEsc(e.time) : '') + (e.fee ? '　費用：' + gcEsc(e.fee) : '') + '</div>';
   if (!regList) return h + '<div class="empty">載入報名名單中…</div></div>';
   var all = regRows(), n = all.length,
@@ -240,11 +259,18 @@ function regHtml(){
     tile('作品已交', nWork + ' / ' + n, n - nWork ? '還有 ' + (n - nWork) + ' 人沒交' : (n ? '全部交齊' : ''), n - nWork > 0) +
     tile('餐敘人數', din + ' 位', '含攜伴 ' + comp + ' 位' + (noDin ? '・' + noDin + ' 人不參加' : '')) +
     tile('攜伴 DIY', diy + ' 位', '會員本人已含，不另計') +
+    (regMeals().length ? regMealTile(all) : '') +
     tile('已繳費', nPaid + ' / ' + n, '已收 $' + sum.toLocaleString() + '／應收 $' + due.toLocaleString() + (n - nPaid ? '・' + (n - nPaid) + ' 人未繳' : ''), n - nPaid > 0) + '</div>';
   var chip = function(k, lb){ return '<button class="btn btn-sm ' + (regFilter === k ? 'btn-gold' : 'btn-outline') + '" onclick="regFilter=\'' + k + '\';renderEvents()">' + lb + '</button>' };
-  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('all', '全部') + chip('nowork', '作品未交') + chip('nopay', '未繳費') + chip('nodin', '不參加餐敘') + chip('comp', '有攜伴') + chip('diy', '攜伴DIY') +
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('all', '全部') + chip('nowork', '作品未交') + chip('nopay', '未繳費') + chip('nodin', '不參加餐敘') + chip('comp', '有攜伴') + chip('diy', '攜伴DIY') + (regMeals().length ? chip('nomeal', '主餐未選') : '') +
     '<input id="reg-q" value="' + gcEsc(regQ) + '" placeholder="搜尋姓名／電話／作品" oninput="regQ=this.value;regListOnly()" style="margin-left:auto;width:180px;max-width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)"></div>';
   return h + '<div id="reg-list">' + regListHtml() + '</div></div>';
+}
+function regMealTile(all){
+  var ds = [].concat.apply([], all.map(regDiners)), none = ds.filter(function(d){ return !d.meal }).length;
+  return '<div style="flex:2 1 220px;border:1px solid var(--border);border-radius:10px;padding:8px 12px"><div class="muted" style="font-size:var(--fs-xs)">主餐（給廚房對數量）</div><div style="font-size:var(--fs-sm);line-height:1.7">' +
+    regMeals().map(function(m){ return regMealTag(m) + ' <b>' + ds.filter(function(d){ return d.meal === m }).length + '</b>' }).join('　') +
+    (none ? '<br><span style="color:#c0392b">還有 ' + none + ' 位沒選</span>' : '') + '</div></div>';
 }
 function regListOnly(){ var el = document.getElementById('reg-list'); if (el) el.innerHTML = regListHtml() }
 function regListHtml(){
@@ -255,6 +281,7 @@ function regListHtml(){
     if (regFilter === 'nodin' && +r.dinner) return false;
     if (regFilter === 'comp' && !regComp(r)) return false;
     if (regFilter === 'diy' && !regDiy(r)) return false;
+    if (regFilter === 'nomeal' && !regDiners(r).some(function(d){ return !d.meal })) return false;
     return !q || [r.name, r.phone, r.workTitle, r.note].join(' ').toLowerCase().indexOf(q) >= 0;
   });
   if (!regRows().length) return '<div class="empty">還沒有人報名，按右上角「＋ 新增報名」。</div>';
@@ -272,6 +299,7 @@ function regListHtml(){
       '<div style="flex:1 1 260px;font-size:var(--fs-sm);line-height:1.8">' +
       '<div>作品：' + (r.workDone ? ok('已交' + (r.workTitle ? '《' + gcEsc(r.workTitle) + '》' : '')) : no('未交' + (r.workTitle ? '（' + gcEsc(r.workTitle) + '）' : ''))) + '</div>' +
       '<div>餐敘：' + (+r.dinner ? '<b>' + r.dinner + ' 位</b>' + (c ? '（攜伴 ' + c + ' 位）' : '') : '<span class="muted">不參加</span>') + '</div>' +
+      (regMeals().length && +r.dinner ? '<div>主餐：' + regDiners(r).map(function(d){ return (regDiners(r).length > 1 ? gcEsc(d.who) + ' ' : '') + regMealTag(d.meal) }).join('・') + '</div>' : '') +
       (c ? '<div>攜伴 DIY：' + (regDiy(r) ? '<b>' + regDiy(r) + ' 位</b>' : '<span class="muted">不參加</span>') + '</div>' : '') +
       '<div>繳費：' + (r.paid ? ok('$' + (+r.payAmt || 0).toLocaleString() + (r.payWay ? '・' + gcEsc(r.payWay) : '') + (r.paidAt ? '・' + evMd(r.paidAt.slice(0, 10)) : '') + (r.paidBy ? ' ' + gcEsc(r.paidBy) : '')) + (short > 0 ? ' ' + no('還差 $' + short.toLocaleString()) : '') : no('未繳・應收 $' + due.toLocaleString())) + '</div></div>' +
       '<div style="display:flex;flex-direction:column;gap:6px;align-items:stretch"><label class="btn btn-outline btn-sm" style="cursor:pointer;text-align:center">' + (r.workImg ? '換照片' : '📷 上傳照片') + pick + '</label>' +
@@ -290,6 +318,16 @@ function regFormVals(){
   var g = function(id){ return document.getElementById(id) }, on = g('reg-comp-on').checked, c = on ? +g('reg-comp').value || 1 : 0;
   return { companion: c, diy: on && g('reg-diy-on').checked ? Math.min(c, +g('reg-diy').value || c) : 0 };
 }
+/* 每位攜伴一列：名字（選填，座位表上顯示）＋主餐。攜伴人數改了就重畫，已經填的保留 */
+function regCompVals(r){ var cs = Array.isArray(r.comps) ? r.comps : Object.values(r.comps || {}); return cs.map(function(x){ return { n: (x && x.n) || '', m: (x && x.m) || '' } }) }
+function regCompFromForm(){ var out = [], i = 0, n;
+  while ((n = document.getElementById('reg-cn' + i))) { var m = document.getElementById('reg-cm' + i); out.push({ n: n.value.trim(), m: m ? m.value : '' }); i++ }
+  return out }
+function regCompRowsHtml(c, vals){
+  var h = '', sel = 'padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)';
+  for (var i = 0; i < c; i++){ var x = vals[i] || { n:'', m:'' };
+    h += evRow('攜伴 ' + (i + 1), evInp('reg-cn' + i, x.n, 'text', 130, '名字（選填）') + (regMeals().length ? ' <select id="reg-cm' + i + '" style="' + sel + '">' + regMealOpts(x.m) + '</select>' : ''), i ? '' : '名字會顯示在座位表上，空白就顯示「' + (regEdit && regEdit.name ? gcEsc(regEdit.name) : '會員') + '+1」') }
+  return h }
 function regRecalc(){
   var g = function(id){ return document.getElementById(id) }, on = g('reg-comp-on').checked, c = on ? +g('reg-comp').value || 1 : 0, dOn = g('reg-diy-on'), dSel = g('reg-diy');
   g('reg-comp').style.display = on ? '' : 'none';
@@ -299,6 +337,7 @@ function regRecalc(){
   var prev = +dSel.value || 0, all = !prev || prev >= dSel.options.length;
   dSel.innerHTML = regDiyOpts(c, all ? c : Math.min(prev, c));
   dSel.style.display = dOn.checked && c > 1 ? '' : 'none';
+  var cr = g('reg-comp-rows'); if (cr) cr.innerHTML = regCompRowsHtml(c, regCompFromForm());
   var r = regFormVals();
   g('reg-amt').value = regDue(r);
   g('reg-due').textContent = regDueText(r);
@@ -322,13 +361,15 @@ function regFormHtml(){
     evRow('電話', evInp('reg-phone', r.phone, 'tel', 220, '09xxxxxxxx'), '同一支電話重複報名會先提醒') +
     evRow('作品', '<label style="' + chk + '"><input type="checkbox" id="reg-work" ' + (r.workDone ? 'checked' : '') + '> 作品已繳交</label>') +
     evRow('作品名稱', evInp('reg-wtitle', r.workTitle, 'text', 260, '例：盛開的向日葵')) +
-    evRow('餐敘', '<label style="' + chk + '"><input type="checkbox" id="reg-din" ' + (self ? 'checked' : '') + '> 本人參加餐敘</label>', '只交作品不吃飯才取消打勾') + '</div>' +
+    evRow('餐敘', '<label style="' + chk + '"><input type="checkbox" id="reg-din" ' + (self ? 'checked' : '') + '> 本人參加餐敘</label>', '只交作品不吃飯才取消打勾') +
+    (regMeals().length ? evRow('主餐', '<select id="reg-meal" style="' + sel + '">' + regMealOpts(r.meal || '') + '</select>') : '') + '</div>' +
     '<div style="' + box + '"><div style="' + boxT + '">② 攜伴　<span class="muted" style="font-weight:400;font-size:var(--fs-sm)">有帶家人朋友才勾，費用另外算</span></div>' +
     evRow('攜伴', '<label style="' + chk + '"><input type="checkbox" id="reg-comp-on" onchange="regRecalc()" ' + (c ? 'checked' : '') + '> 有攜伴</label>' +
       '<select id="reg-comp" onchange="regRecalc()" style="' + sel + (c ? '' : ';display:none') + '">' + comps + '</select>', '每位 $' + REG_COMP_FEE.toLocaleString() + '，含晚餐、藝術家領結（不含 DIY）') +
     '<div id="reg-diy-row"' + (c ? '' : ' style="display:none"') + '>' +
     evRow('攜伴 DIY', '<label style="' + chk + '"><input type="checkbox" id="reg-diy-on" onchange="regRecalc()" ' + (d ? 'checked' : '') + '> 攜伴也要做 DIY</label>' +
-      '<select id="reg-diy" onchange="regRecalc()" style="' + sel + (d && c > 1 ? '' : ';display:none') + '">' + regDiyOpts(c, d || c) + '</select>', '攜伴每位加 $' + REG_DIY_FEE + '（會員本人的 DIY 已經含在裡面，這裡不用勾）') + '</div></div>' +
+      '<select id="reg-diy" onchange="regRecalc()" style="' + sel + (d && c > 1 ? '' : ';display:none') + '">' + regDiyOpts(c, d || c) + '</select>', '攜伴每位加 $' + REG_DIY_FEE + '（會員本人的 DIY 已經含在裡面，這裡不用勾）') + '</div>' +
+    '<div id="reg-comp-rows">' + regCompRowsHtml(c, regCompVals(r)) + '</div></div>' +
     evRow('繳費', '<label style="font-size:var(--fs-sm)"><input type="checkbox" id="reg-paid" ' + (r.paid ? 'checked' : '') + '> 已繳費</label>　金額 $' + evInp('reg-amt', r.payAmt || '', 'number', 100) +
       ' <select id="reg-way" style="' + sel + '">' + ways + '</select><div id="reg-due" style="font-size:var(--fs-sm);margin-top:6px;font-weight:600">' + regDueText(r) + '</div>',
       r.paid && r.paidAt ? '已於 ' + evMd(r.paidAt.slice(0, 10)) + ' 由 ' + gcEsc(r.paidBy || '—') + ' 登記收款' : '') +
@@ -394,8 +435,11 @@ function regClearImg(){
 async function regSave(){
   var v = function(id){ return document.getElementById(id).value.trim() }, fv = regFormVals();
   var r = { rid: regEdit.rid, name: v('reg-name'), phone: v('reg-phone').replace(/\D/g, ''), workDone: document.getElementById('reg-work').checked, workTitle: v('reg-wtitle'),
-    workImg: v('reg-img'), companion: fv.companion, diy: fv.diy, dinner: (document.getElementById('reg-din').checked ? 1 : 0) + fv.companion, paid: document.getElementById('reg-paid').checked, payAmt: +v('reg-amt') || 0, payWay: v('reg-way'), note: v('reg-note') };
+    workImg: v('reg-img'), companion: fv.companion, diy: fv.diy, dinner: (document.getElementById('reg-din').checked ? 1 : 0) + fv.companion, paid: document.getElementById('reg-paid').checked, payAmt: +v('reg-amt') || 0, payWay: v('reg-way'), note: v('reg-note'),
+    meal: document.getElementById('reg-meal') ? v('reg-meal') : (regEdit.meal || ''), comps: regCompFromForm().slice(0, fv.companion) };
   if (!r.name && !r.phone) return alert('請填姓名或電話');
+  if (regMeals().length) { var noM = regDiners(r).filter(function(d){ return !d.meal }).length;
+    if (noM && !confirm('還有 ' + noM + ' 位沒選主餐，確定先存？')) return }
   if (r.phone && !/^09\d{8}$/.test(r.phone)) return alert('電話要 09 開頭 10 碼');
   if (r.paid && !r.payAmt && !confirm('勾了已繳費但金額是 0，確定嗎？')) return;
   var dup = r.phone && regRows().filter(function(x){ return x.phone === r.phone && x.rid !== r.rid })[0];
@@ -410,12 +454,186 @@ async function regDel(){
   try { await staffApi('/staff/events/reg/delete', { id: regEv.id, rid: regEdit.rid }); delete regList[regEdit.rid]; regEdit = null; renderEvents() }
   catch(e) { alert('刪除失敗：' + e.message) }
 }
+/* ══════════════════════════════════════════════════════════
+   🍽️ 餐敘座位表（2026-11-16，大熊給的場地手繪圖）：上面投影、左邊取餐、中間兩排各 5 桌、下面入口；一桌 4 位，預設 10 桌＝40 位。
+   點空位子 → 右邊挑報名的人（整組一起坐，攜伴也各有位子）；點有人的位子 → 右邊顯示他點的主餐、可以換位子／移出。
+   桌名點一下就能改（主桌、親友桌…，像婚禮座位圖）。
+   資料在 f9ef7 events/seat/{活動id}，透過 /staff/events/seat* 一格一格存，兩個人同時排不會互相蓋掉。
+   ══════════════════════════════════════════════════════════ */
+var regView = 'list', seatData = null, seatSel = null, seatMsg = '', seatMap = null;
+async function seatOpen(){
+  regView = 'seat'; seatSel = null; seatMsg = ''; seatData = null; renderEvents();
+  try { seatData = (await staffApi('/staff/events/seat', { id: regEv.id })).seat || {} }
+  catch(e) { alert('讀不到座位表：' + e.message); regView = 'list' }
+  renderEvents();
+}
+function seatN(){ return Math.max(1, Math.min(20, +(seatData && seatData.n) || 10)) }
+function seatAt(){ return (seatData && seatData.at) || {} }
+function seatNames(){ return (seatData && seatData.names) || {} }
+/* 位子上坐的是誰（報名被刪、攜伴變少的話，那格就當空的） */
+function seatWho(k){ var v = seatAt()[k]; return v && seatMap ? seatMap[v] || null : null }
+function seatWhere(){ var w = {}, n = seatN(); Object.keys(seatAt()).forEach(function(k){ if (+k.split('-')[0] < n && seatWho(k)) w[seatAt()[k]] = k }); return w }
+function seatLbl(k){ var a = k.split('-'), nm = seatNames()[a[0]]; return '第 ' + (+a[0] + 1) + ' 桌' + (nm ? '（' + gcEsc(nm) + '）' : '') + '第 ' + (+a[1] + 1) + ' 位' }
+function seatHtml(){
+  var e = regEv, h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">' +
+    '<button class="btn btn-outline btn-sm" onclick="regView=\'list\';renderEvents()">← 報名名單</button><span>🍽️ 餐敘座位表・' + gcEsc(e.title) + '</span>' +
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="seatOpen()">↻ 重新讀取</button></div>';
+  if (!seatData || !regList) return h + '<div class="empty">載入座位表中…</div></div>';
+  seatMap = {}; var all = [];
+  regRows().forEach(function(r){ regDiners(r).forEach(function(d){ seatMap[d.key] = d; all.push(d) }) });
+  var where = seatWhere(), n = seatN(), L = Math.ceil(n / 2), sat = all.filter(function(d){ return where[d.key] }).length;
+  h += '<div class="muted" style="font-size:var(--fs-xs);line-height:1.8;margin-bottom:8px">點<b>空位子</b>安排人（整組一起坐）；點<b>有人的位子</b>看他的主餐、換位子。點桌名可以改成「主桌」「親友桌」這類名字。' +
+    '　桌數 <select onchange="seatSave({},null,this.value)" style="padding:2px 4px;border:1px solid var(--border);border-radius:5px">' +
+    [6,7,8,9,10,11,12,13,14,15,16].map(function(i){ return '<option' + (i === n ? ' selected' : '') + '>' + i + '</option>' }).join('') + '</select> 桌（一桌 4 位，共 ' + n * 4 + ' 位）</div>';
+  /* 場地：上投影、左取餐、兩排桌子、下入口 */
+  var room = '<div style="border:2px solid #4a4a6a;border-radius:6px;padding:8px 8px 4px;background:#fbfaf6">' +
+    '<div style="width:50%;margin:0 auto 10px;text-align:center;font-size:12px;letter-spacing:4px;background:#4a4a6a;color:#fff;border-radius:3px;padding:3px 0">投影</div>' +
+    '<div style="display:grid;grid-template-columns:24px 1fr 1fr;gap:8px">' +
+    '<div style="grid-row:1/' + (L + 1) + ';background:#efe6d2;border:1px solid #cdbb94;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#7a6440;writing-mode:vertical-rl;letter-spacing:6px;margin:30px 0">取餐</div>';
+  for (var row = 0; row < L; row++){
+    room += '<div style="grid-column:2">' + seatTableHtml(row) + '</div><div style="grid-column:3">' + (row + L < n ? seatTableHtml(row + L) : '') + '</div>';
+  }
+  room += '</div><div style="text-align:center;margin-top:6px;font-size:12px;color:#7a7a7a">🚪 入口</div></div>';
+  h += '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start"><div style="flex:1 1 330px;max-width:560px;min-width:0">' + room + '</div>' +
+    '<div id="seat-side" style="flex:1 1 250px;min-width:0">' + seatSideHtml(all, where, sat) + '</div></div>';
+  return h + '</div>';
+}
+function seatTableHtml(t){
+  var nm = seatNames()[t] || '', cnt = {}, cell = function(si, col, row){
+    var k = t + '-' + si, d = seatWho(k), on = seatSel && (seatSel.k === k || seatSel.from === k), mv = seatSel && seatSel.mode === 'move';
+    return '<div onclick="seatClick(\'' + k + '\')" style="grid-column:' + col + ';grid-row:' + row + ';cursor:pointer;min-width:0;min-height:38px;border-radius:7px;padding:3px 4px;font-size:12px;line-height:1.3;' +
+      (on ? 'outline:2px solid #c9a24a;outline-offset:1px;' : '') +
+      (d ? 'background:#fff;border:1px solid ' + regMealCol(d.meal) + '"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + gcEsc(d.short) + '</div>' +
+        '<div style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:' + (d.meal ? regMealCol(d.meal) : '#c0392b') + '">' + (d.meal ? gcEsc(d.meal) : (regMeals().length ? '未選主餐' : '')) + '</div>'
+        : 'border:1px dashed ' + (mv ? '#c9a24a;background:#fff8e6' : '#c8c8c8') + ';color:#b0b0b0;display:flex;align-items:center;justify-content:center">＋') + '</div>';
+  };
+  for (var i = 0; i < 4; i++){ var d = seatWho(t + '-' + i); if (d && d.meal) cnt[d.meal] = (cnt[d.meal] || 0) + 1 }
+  return '<div style="border:1px solid #ddd6c4;border-radius:10px;padding:4px;background:#fff;margin-bottom:2px">' +
+    '<div onclick="seatRename(' + t + ')" title="點我改桌名" style="text-align:center;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px">' +
+    (t + 1) + '・' + (nm ? gcEsc(nm) : '<span style="color:#b0b0b0;font-weight:400">取桌名 ✏️</span>') + '</div>' +
+    '<div style="display:grid;grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr);gap:3px">' + cell(0, 1, 1) + '<div style="grid-column:2;grid-row:1/3;background:#d9c9a3;border-radius:3px"></div>' + cell(1, 3, 1) + cell(2, 1, 2) + cell(3, 3, 2) + '</div>' +
+    (Object.keys(cnt).length ? '<div style="text-align:center;font-size:10px;margin-top:2px">' + regMeals().filter(function(m){ return cnt[m] }).map(function(m){ return '<span style="color:' + regMealCol(m) + '">●' + cnt[m] + '</span>' }).join(' ') + '</div>' : '') + '</div>';
+}
+function seatSideHtml(all, where, sat){
+  var box = 'border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:var(--fs-sm);line-height:1.8';
+  var h = seatMsg ? '<div style="' + box + ';background:#fff8e6">' + seatMsg + '</div>' : '';
+  var sel = seatSel, d = sel && sel.k ? seatWho(sel.k) : null;
+  if (sel && sel.mode === 'move') {
+    var md = seatWho(sel.from);
+    h += '<div style="' + box + '"><b>換位子：' + gcEsc(md ? md.name : '') + '</b><br>點另一個位子換過去（手機請往上滑回座位圖）；那個位子有人的話，兩個人會互換。<br>' +
+      '<button class="btn btn-outline btn-sm" onclick="seatSel=null;renderEvents()">取消</button></div>';
+  } else if (sel && d) {
+    var r = regList[d.rid] || {}, grp = regDiners(r);
+    h += '<div style="' + box + '"><div class="muted" style="font-size:var(--fs-xs)">' + seatLbl(sel.k) + '</div>' +
+      '<div style="font-size:18px;font-weight:600">' + gcEsc(d.name) + ' <span class="muted" style="font-size:var(--fs-sm);font-weight:400">' + gcEsc(d.who === '本人' ? '會員本人' : d.who + '・' + r.name + '帶來的') + '</span></div>' +
+      (r.phone ? '<div class="muted">' + gcEsc(r.phone) + '</div>' : '') +
+      (regMeals().length ? '<div style="margin:6px 0;font-size:16px">主餐：' + regMealTag(d.meal) + '</div>' +
+        '<div>改主餐 <select onchange="seatSetMeal(\'' + d.key + '\',this.value)" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px">' + regMealOpts(d.meal) + '</select></div>' : '') +
+      (grp.length > 1 ? '<div style="margin-top:6px;border-top:1px dashed var(--border);padding-top:6px"><b>同一組 ' + grp.length + ' 位</b><br>' + grp.map(function(g){
+        return gcEsc(g.name) + '　' + (regMeals().length ? regMealTag(g.meal) + '　' : '') + '<span class="muted">' + (where[g.key] ? '第 ' + (+where[g.key].split('-')[0] + 1) + ' 桌' : '還沒排') + '</span>' }).join('<br>') + '</div>' : '') +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" onclick="seatSel={mode:\'move\',from:\'' + sel.k + '\'};renderEvents()">換位子</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="seatClear([\'' + d.key + '\'])">移出座位</button>' +
+      (grp.length > 1 ? '<button class="btn btn-outline btn-sm" onclick="seatClear(' + gcEsc(JSON.stringify(grp.map(function(g){ return g.key }))).replace(/"/g, "'") + ')">整組移出</button>' : '') +
+      '<button class="btn btn-outline btn-sm" onclick="seatSel=null;renderEvents()">關閉</button></div></div>';
+  } else if (sel && sel.mode === 'pick') {
+    var groups = regRows().map(function(r){ return regDiners(r).filter(function(x){ return !where[x.key] }) }).filter(function(g){ return g.length });
+    h += '<div style="' + box + '"><b>' + seatLbl(sel.k) + '要坐誰？</b>　<button class="btn btn-outline btn-sm" onclick="seatSel=null;renderEvents()">取消</button>' +
+      (groups.length ? '<div class="muted" style="font-size:var(--fs-xs)">按「整組入座」會從這個位子開始，把同一組的人排在同一桌</div>' + groups.map(function(g){
+        var keys = g.map(function(x){ return x.key });
+        return '<div style="border-top:1px dashed var(--border);padding-top:6px;margin-top:6px"><b>' + gcEsc(regList[g[0].rid].name) + '</b> <span class="muted">' + g.length + ' 位還沒排</span>' +
+          (g.length > 1 ? ' <button class="btn btn-gold btn-sm" onclick="seatPlace(\'' + sel.k + '\',' + gcEsc(JSON.stringify(keys)).replace(/"/g, "'") + ')">整組入座</button>' : '') +
+          '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">' + g.map(function(x){
+            return '<button class="btn btn-outline btn-sm" onclick="seatPlace(\'' + sel.k + '\',[\'' + x.key + '\'])">' + gcEsc(x.name) + (regMeals().length ? '・' + (x.meal ? gcEsc(x.meal) : '未選') : '') + '</button>' }).join('') + '</div></div>' }).join('')
+        : '<div class="muted">報名用餐的人都排好了。</div>') + '</div>';
+  }
+  var left = all.filter(function(x){ return !where[x.key] });
+  h += '<div style="' + box + '"><div>已入座 <b>' + sat + '</b> / 用餐 <b>' + all.length + '</b> 位' + (all.length > seatN() * 4 ? '　<span style="color:#c0392b">位子不夠，要加桌</span>' : '') + '</div>' +
+    (regMeals().length ? '<div>' + regMeals().map(function(m){ return regMealTag(m) + ' <b>' + all.filter(function(x){ return x.meal === m }).length + '</b>' }).join('　') +
+      (all.some(function(x){ return !x.meal }) ? '　<span style="color:#c0392b">未選 ' + all.filter(function(x){ return !x.meal }).length + '</span>' : '') + '</div>' : '') +
+    (left.length ? '<div style="margin-top:4px"><b>還沒排位子（' + left.length + '）</b><br><span class="muted">' + left.map(function(x){ return gcEsc(x.short) }).join('、') + '</span></div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="seatAuto()">⚡ 剩下的人自動排</button>' : '') + '</div>';
+  return h;
+}
+function seatClick(k){
+  seatMsg = '';
+  if (seatSel && seatSel.mode === 'move') {
+    var from = seatSel.from; seatSel = null;
+    if (from === k) return renderEvents();
+    var a = seatAt()[from], b = seatWho(k) ? seatAt()[k] : null, p = {};
+    p[from] = b; p[k] = a;
+    return seatSave(p);
+  }
+  seatSel = seatWho(k) ? { mode: 'info', k: k } : { mode: 'pick', k: k };
+  renderEvents();
+  /* 手機上右邊那欄掉到座位圖下面，點了位子自動捲過去 */
+  var sd = document.getElementById('seat-side');
+  if (sd && sd.getBoundingClientRect().top > innerHeight - 80) sd.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+/* 從點的位子開始、同一桌的空位依序坐；這桌不夠就提醒，剩下的人留在「還沒排」 */
+function seatPlace(k, keys){
+  var a = k.split('-'), t = +a[0], s0 = +a[1], free = [];
+  for (var i = 0; i < 4; i++){ var kk = t + '-' + ((s0 + i) % 4); if (!seatWho(kk)) free.push(kk) }
+  var p = {}; keys.slice(0, free.length).forEach(function(x, i){ p[free[i]] = x });
+  seatMsg = keys.length > free.length ? '⚠️ 這桌只剩 ' + free.length + ' 個空位，還有 ' + (keys.length - free.length) + ' 位沒排到，請點別桌的空位子繼續排。' : '';
+  seatSel = null; seatSave(p);
+}
+function seatClear(keys){
+  var p = {}, at = seatAt();
+  Object.keys(at).forEach(function(k){ if (keys.indexOf(at[k]) >= 0) p[k] = null });
+  seatSel = null; seatSave(p);
+}
+/* 還沒排的人照報名順序自動排：整組優先找坐得下的那一桌，都坐不下才拆開 */
+function seatAuto(){
+  var where = seatWhere(), n = seatN(), free = {}, p = {}, miss = 0;
+  for (var t = 0; t < n; t++){ free[t] = []; for (var i = 0; i < 4; i++) if (!seatWho(t + '-' + i)) free[t].push(t + '-' + i) }
+  var groups = regRows().map(function(r){ return regDiners(r).filter(function(x){ return !where[x.key] }).map(function(x){ return x.key }) }).filter(function(g){ return g.length });
+  if (!groups.length) return;
+  if (!confirm('把還沒排位子的 ' + groups.reduce(function(s, g){ return s + g.length }, 0) + ' 位照報名順序自動排進空位？（已經排好的人不會動）')) return;
+  groups.forEach(function(g){
+    var t = -1; for (var i = 0; i < n; i++) if (free[i].length >= g.length) { t = i; break }
+    g.forEach(function(x){
+      var tt = t >= 0 && free[t].length ? t : -1;
+      if (tt < 0) for (var j = 0; j < n; j++) if (free[j].length) { tt = j; break }
+      if (tt < 0) { miss++; return }
+      p[free[tt].shift()] = x;
+    });
+  });
+  seatMsg = miss ? '⚠️ 位子不夠，還有 ' + miss + ' 位沒排到，請加桌數。' : '';
+  seatSel = null; seatSave(p);
+}
+function seatRename(t){
+  var v = prompt('第 ' + (t + 1) + ' 桌的桌名（例：主桌、親友桌、老師桌；空白＝不取名）', seatNames()[t] || '');
+  if (v == null) return;
+  var nm = {}; nm[t] = v.trim(); seatSave({}, nm);
+}
+async function seatSave(at, names, n){
+  /* 先畫上去，存失敗再重讀 */
+  seatData.at = seatData.at || {}; Object.keys(at || {}).forEach(function(k){ if (at[k]) seatData.at[k] = at[k]; else delete seatData.at[k] });
+  if (names) { seatData.names = seatData.names || {}; Object.keys(names).forEach(function(k){ seatData.names[k] = names[k] }) }
+  if (n != null) seatData.n = +n;
+  renderEvents();
+  try { seatData = (await staffApi('/staff/events/seat/save', { id: regEv.id, at: at || {}, names: names || {}, n: n == null ? null : +n })).seat || {}; renderEvents() }
+  catch(e) { alert('座位存檔失敗：' + e.message + '\n會重新讀一次座位表'); seatOpen() }
+}
+/* 座位表上直接改主餐：重抓這筆最新的再存，免得蓋掉別人剛改的繳費 */
+async function seatSetMeal(key, m){
+  var a = key.split('.'), rid = a[0], who = a[1], evId = regEv.id;
+  try {
+    var cur = ((await staffApi('/staff/events/reg', { id: evId })).reg || {})[rid];
+    if (!cur) throw new Error('這筆報名已經被刪掉了');
+    if (who === 's') cur.meal = m;
+    else { var cs = regCompVals(cur), i = +who.slice(1) - 1; while (cs.length <= i) cs.push({ n:'', m:'' }); cs[i].m = m; cur.comps = cs }
+    var j = await staffApi('/staff/events/reg/save', { id: evId, r: cur });
+    regList[rid] = j.r; renderEvents();
+  } catch(e) { alert('主餐存檔失敗：' + e.message) }
+}
+
 /* 下載名單（Excel 打得開的 CSV，前面加 BOM 中文才不會亂碼） */
 function regCsv(){
   var cell = function(x){ x = String(x == null ? '' : x); return /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x };
-  var lines = [['#', '姓名', '電話', '作品已交', '作品名稱', '作品照片', '餐敘人數', '攜伴人數', '攜伴DIY人數', '應收', '已繳費', '金額', '方式', '收款日', '備註'].join(',')];
+  var lines = [['#', '姓名', '電話', '作品已交', '作品名稱', '作品照片', '餐敘人數', '攜伴人數', '攜伴DIY人數', '主餐', '應收', '已繳費', '金額', '方式', '收款日', '備註'].join(',')];
   regRows().forEach(function(r, i){
-    lines.push([i + 1, r.name, r.phone ? "'" + r.phone : '', r.workDone ? '是' : '否', r.workTitle, r.workImg, +r.dinner || 0, regComp(r), regDiy(r), regDue(r), r.paid ? '是' : '否', r.paid ? r.payAmt : '', r.payWay, (r.paidAt || '').slice(0, 10), r.note].map(cell).join(','));
+    lines.push([i + 1, r.name, r.phone ? "'" + r.phone : '', r.workDone ? '是' : '否', r.workTitle, r.workImg, +r.dinner || 0, regComp(r), regDiy(r), regDiners(r).map(function(d){ return d.name + '：' + (d.meal || '未選') }).join('；'), regDue(r), r.paid ? '是' : '否', r.paid ? r.payAmt : '', r.payWay, (r.paidAt || '').slice(0, 10), r.note].map(cell).join(','));
   });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
