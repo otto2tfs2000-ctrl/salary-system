@@ -3687,6 +3687,13 @@ function mbTktBatchHtml(){
   return h;
 }
 
+/* 2026-11-16 大熊：票券使用規範（照種類／名稱自動帶出，已經發出去的票也一樣顯示） */
+function mbTktRule(t){
+  var nm = String((t && t.name) || '');
+  if (t && t.kind === 'cash' || /折抵|折價券/.test(nm)) return '限原價課程使用；或單次消費累積滿 $1,800 可用 $50、滿 $2,600 可用 $100';
+  if (/升級券/.test(nm)) return '需預約繪畫課程才可使用';
+  return '';
+}
 /* ── 會員明細頁上的票券卡 ── */
 function mbTktCardHtml(m){
   var ts = (m && Array.isArray(m.tickets)) ? m.tickets : [];
@@ -3709,6 +3716,7 @@ function mbTktCardHtml(m){
         ? '<span style="font-size:var(--fs-xs);margin-left:8px;color:' + (ex ? 'var(--red)' : 'var(--muted,#948e83)') + '">' +
           (ex ? '已於 ' + t.expiry + ' 過期' : '到期 ' + t.expiry) + '</span>'
         : '') +
+      (mbTktRule(t) ? '<div style="font-size:var(--fs-xs);color:#A6741F;line-height:1.5">使用規範：' + mbEsc(mbTktRule(t)) + '</div>' : '') +
       '</div>';
   });
   h += '<div class="muted" style="font-size:var(--fs-xs);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);line-height:1.7">' +
