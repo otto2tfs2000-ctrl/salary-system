@@ -149,7 +149,8 @@ function shFormHtml(){
       '<div style="margin-top:6px">或貼圖片網址：' + shInp('sh-img', p.img, 'text', 300, 'https://…') + '</div>', '照片會自動縮小、傳到 Cloudinary。正方形的圖最好看。') +
     shRow('說明', shInp('sh-desc', p.desc, 'text', 320, '（選填，短短一句）')) +
     shRow('現金售價', shInp('sh-cash', p.cash || '', 'number', 90) + ' 元 <span id="sh-cashn" class="muted" style="font-size:var(--fs-xs)"></span>',
-      '輸入這項商品的現金價格，下面的兌換點數會自動算出來（目前公式：每 <b>' + shRate().y + '</b> 元 = 1 點，進位到 ' + shRate().s + ' 的倍數；到「分類與臺詞」可以改）。') +
+      '輸入這項商品的現金價格，下面的兌換點數會自動算出來（目前公式：每 <b>' + shRate().y + '</b> 元 = 1 點，進位到 ' + shRate().s + ' 的倍數；到「分類與臺詞」可以改）。' +
+      '<br><b>紅利規則：</b>只有會員能兌換；會員期限到期，紅利一併結束。非會員紅利保留 3 個月，有上課從上課日起再延 2 個月，到期自動收回。') +
     shRow('兌換點數', shInp('sh-price', p.price, 'number', 90) + ' 點', '客人實際要付的紅利點數。自動算出來後想調整可以直接改數字。') +
     shRow('限時優惠', '優惠現金價 ' + shInp('sh-sc', sl.cash || '', 'number', 80) + ' 元 → 優惠點數 ' + shInp('sh-sp', sl.price == null ? '' : sl.price, 'number', 80) + ' 點 <span id="sh-scn" class="muted" style="font-size:var(--fs-xs)"></span><br>從 ' + shInp('sh-sf', sl.from || '', 'date', 150) + ' 到 ' + shInp('sh-st2', sl.to || '', 'date', 150),
       '三格都填才會生效；期間過了自動恢復原價。不要優惠就全部留空。') +
