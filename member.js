@@ -2498,6 +2498,13 @@ async function mbAdjSave(phone){
   var why = ((document.getElementById('mb-a-why') || {}).value || '').trim();
   if (!why) { err.textContent = '請填原因，這筆會留在明細上給之後的人看。'; return }
 
+  /* 2026-11-17 大熊：紅利只有會員能兌換使用。非會員（沒點數、沒堂數、沒有非扭蛋的有效票券）扣紅利先提醒 */
+  if (c.type === 'bonus' && c.delta < 0) {
+    var s0 = mbSum(m.ledger), td = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    var tk = Array.isArray(m.tickets) ? m.tickets : [];
+    var isMem = (+s0.points > 0) || (+s0.sessions > 0) || tk.some(function(t){ return t && t.src !== 'gacha' && +t.qty > 0 && !(t.expiry && String(t.expiry).replace(/\//g, '-') < td) });
+    if (!isMem && !confirm('這位目前是非會員：紅利限會員兌換使用。\n\n（如果是紅利到期收回、或修正錯誤，可以按確定繼續）\n\n確定要扣他的紅利嗎？')) return;
+  }
   /* 金額大的多問一次，避免手滑多打一個零 */
   var big = (c.type === 'points' || c.type === 'voucher') ? 3000 : 10;
   if (Math.abs(c.delta) >= big){
