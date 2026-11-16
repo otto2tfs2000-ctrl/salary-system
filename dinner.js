@@ -48,27 +48,38 @@ async function renderCatchChars(keep){
   list.forEach(function(x){ nd += (x.draws || []).length });
   var h = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><div style="font-weight:600;font-size:17px;flex:1">🎨 大家畫的接火雞角色</div>' +
     '<button class="btn btn-outline btn-sm" style="flex:none" onclick="renderCatchChars()">↻ 重新讀取</button></div>' +
-    '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:12px">每個人畫過的角色都在這裡（同一張圖重玩不會重複）。框起來的那張是「會跑進別人遊戲送金火雞」的角色（他單局帶回最多那局畫的）。看到不適合的，按「藏起來」就不會再跑進別人的遊戲。<br>共 <b>' + list.length + '</b> 位玩家、<b>' + nd + '</b> 張角色；會跑進別人遊戲的有 <b>' + on + '</b> 位。（11/15 晚上以前只存了刷新紀錄那張）</div>';
+    '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:12px">每個人畫過的角色都在這裡（同一張圖重玩不會重複）。框起來的那張是「會跑進別人遊戲送金火雞」的角色（他單局帶回最多那局畫的）。看到不適合的，按那張圖下面的「藏起來」，只藏那一張；框起來那張藏了，會自動改用他其他沒藏的圖。<br>共 <b>' + list.length + '</b> 位玩家、<b>' + nd + '</b> 張角色；會跑進別人遊戲的有 <b>' + on + '</b> 位。（11/15 晚上以前只存了刷新紀錄那張）</div>';
   if (!list.length) { el.innerHTML = h + '<div class="empty">還沒有人畫角色。</div>'; return }
+  /* 11/16 大熊：藏起來要一張一張藏，不是整個人藏 → 每張圖下面各自一顆「藏起來／放回來」。
+     框起來那張藏了，別人遊戲裡就自動改用他其他沒藏、帶回最多的那張；全部藏光才不會出現。 */
+  function ccBtn(k, h, hide){
+    return '<button class="btn btn-sm ' + (hide ? '' : 'btn-outline') + '" style="margin-top:4px;padding:2px 10px;font-size:var(--fs-xs)" onclick="ccToggle(\'' + dnEsc(k) + '\',' + (hide ? 'false' : 'true') + ',\'' + dnEsc(h || '') + '\')">' + (hide ? '放回來' : '藏起來') + '</button>';
+  }
+  function ccPic(src, hide, label, framed, btn){
+    return '<div style="flex:none;text-align:center;border-radius:10px;padding:4px;background:#f3e3c3;' + (framed ? 'border:3px solid #e2711d;' : '') + (hide ? 'opacity:.45;' : '') + '">' +
+      '<img src="' + dnEsc(src) + '" alt="" style="height:120px;max-width:140px;object-fit:contain" loading="lazy">' +
+      (hide ? '<div style="font-size:var(--fs-xs);color:#c0392b;font-weight:600">已藏起來</div>' : '') + label + '<div>' + btn + '</div></div>';
+  }
   list.forEach(function(x){
-    var pics = '';
-    if (x.ch) pics += '<div style="flex:none;text-align:center;border:3px solid #e2711d;border-radius:10px;padding:4px;background:#f3e3c3"><img src="' + dnEsc(x.ch) + '" alt="" style="height:120px;max-width:140px;object-fit:contain" loading="lazy"><div style="font-size:var(--fs-xs);color:#c0501a;font-weight:600">跑進別人遊戲的</div></div>';
-    (x.draws || []).forEach(function(d){
-      pics += '<div style="flex:none;text-align:center;border-radius:10px;padding:4px;background:#f3e3c3"><img src="' + dnEsc(d.ch) + '" alt="" style="height:120px;max-width:140px;object-fit:contain" loading="lazy"><div class="muted" style="font-size:var(--fs-xs)">' + dnTime(d.at) + '<br>玩 ' + d.n + ' 局・最多帶回 ' + d.s + ' 隻</div></div>';
+    var pics = '', hidN = 0, ds = x.draws || [];
+    var mainInDraws = ds.some(function(d){ return d.main });
+    if (x.ch && !mainInDraws) pics += ccPic(x.ch, x.hide, '<div style="font-size:var(--fs-xs);color:#c0501a;font-weight:600">跑進別人遊戲的</div>', true, ccBtn(x.k, '', x.hide));
+    ds.forEach(function(d){
+      if (d.hide) hidN++;
+      pics += ccPic(d.ch, d.hide, (d.main ? '<div style="font-size:var(--fs-xs);color:#c0501a;font-weight:600">跑進別人遊戲的</div>' : '') + '<div class="muted" style="font-size:var(--fs-xs)">' + dnTime(d.at) + '<br>玩 ' + d.n + ' 局・最多帶回 ' + d.s + ' 隻</div>', d.main, ccBtn(x.k, d.h, d.hide));
     });
-    h += '<div class="card" style="margin:0 0 10px;padding:10px;' + (x.hide ? 'opacity:.55' : '') + '">' +
+    if (x.hide && !mainInDraws) hidN++;
+    h += '<div class="card" style="margin:0 0 10px;padding:10px">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><div style="flex:1;min-width:160px"><b>' + dnEsc(x.nm || x.n || '（沒名字）') + '</b>' + (x.staff ? ' <span class="muted" style="font-size:var(--fs-xs)">員工</span>' : '') +
-      ' <span class="muted" style="font-size:var(--fs-xs)">' + dnEsc(x.ph || '沒綁電話') + (x.plays ? '・玩了 ' + x.plays + ' 局' : '') + '</span>' + (x.hide ? ' <span style="color:#c0392b;font-size:var(--fs-xs);font-weight:600">已藏起來</span>' : '') + '</div>' +
-      (x.ch ? '<button class="btn btn-sm ' + (x.hide ? 'btn-outline' : '') + '" style="flex:none" onclick="ccToggle(\'' + dnEsc(x.k) + '\',' + (x.hide ? 'false' : 'true') + ')">' + (x.hide ? '放回來' : '藏起來') + '</button>' : '') + '</div>' +
+      ' <span class="muted" style="font-size:var(--fs-xs)">' + dnEsc(x.ph || '沒綁電話') + (x.plays ? '・玩了 ' + x.plays + ' 局' : '') + '</span>' + (hidN ? ' <span style="color:#c0392b;font-size:var(--fs-xs);font-weight:600">藏了 ' + hidN + ' 張</span>' : '') + '</div></div>' +
       '<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">' + (pics || '<span class="muted">（還沒有圖）</span>') + '</div></div>';
   });
   el.innerHTML = h;
 }
-async function ccToggle(k, hide){
+async function ccToggle(k, hide, h){
   try {
-    await staffApi('/staff/catch-chars/hide', { k: k, hide: hide });
-    (ccData.list || []).forEach(function(x){ if (x.k === k) x.hide = hide });
-    renderCatchChars(true);
+    await staffApi('/staff/catch-chars/hide', h ? { k: k, hide: hide, h: h } : { k: k, hide: hide });
+    renderCatchChars();   // 重新讀：框起來那張被藏時，伺服器會一起改，畫面以伺服器為準
   } catch(e) { alert('沒改成功：' + e.message) }
 }
 async function dnToggle(id, hide){
