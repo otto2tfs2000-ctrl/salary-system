@@ -477,7 +477,8 @@ function seatLbl(k){ var a = k.split('-'), nm = seatNames()[a[0]]; return '第 '
 function seatHtml(){
   var e = regEv, h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">' +
     '<button class="btn btn-outline btn-sm" onclick="regView=\'list\';renderEvents()">← 報名名單</button><span>🍽️ 餐敘座位表・' + gcEsc(e.title) + '</span>' +
-    '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="seatOpen()">↻ 重新讀取</button></div>';
+    '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="seatOpen()">↻ 重新讀取</button>' +
+    '<button class="btn btn-gold btn-sm" onclick="seatPoster(false)">🖨️ 座位海報</button><button class="btn btn-outline btn-sm" onclick="seatPoster(true)">🍽️ 廚房版（含主餐）</button></div>';
   if (!seatData || !regList) return h + '<div class="empty">載入座位表中…</div></div>';
   seatMap = {}; var all = [];
   regRows().forEach(function(r){ regDiners(r).forEach(function(d){ seatMap[d.key] = d; all.push(d) }) });
@@ -517,6 +518,13 @@ function seatTableHtml(t){
 function seatSideHtml(all, where, sat){
   var box = 'border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:var(--fs-sm);line-height:1.8';
   var h = seatMsg ? '<div style="' + box + ';background:#fff8e6">' + seatMsg + '</div>' : '';
+  if (!regMeals().length || seatMenuEdit) {
+    var ms = regMeals();
+    h += '<div style="' + box + ';background:#fff8e6"><b>這場餐敘的主餐選項</b>' + (ms.length ? '' : '　<span class="muted" style="font-size:var(--fs-xs)">先把菜單打好（只要打一次），排位子時就能直接點每個人的主餐</span>') +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0">' + [0,1,2,3,4,5].map(function(i){
+        return '<input id="seat-meal' + i + '" value="' + gcEsc(ms[i] || '') + '" placeholder="' + (i < 4 ? '主餐 ' + (i + 1) : '（選填）') + '" style="min-width:0;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:var(--fs-sm)">' }).join('') + '</div>' +
+      '<button class="btn btn-gold btn-sm" onclick="seatSaveMenu()">存主餐選項</button>' + (ms.length ? ' <button class="btn btn-outline btn-sm" onclick="seatMenuEdit=false;renderEvents()">取消</button>' : '') + '</div>';
+  } else h += '<div style="text-align:right;margin:-4px 0 6px"><button class="btn btn-outline btn-sm" onclick="seatMenuEdit=true;renderEvents()">✏️ 改主餐選項</button></div>';
   var sel = seatSel, d = sel && sel.k ? seatWho(sel.k) : null;
   if (sel && sel.mode === 'move') {
     var md = seatWho(sel.from);
@@ -527,10 +535,10 @@ function seatSideHtml(all, where, sat){
     h += '<div style="' + box + '"><div class="muted" style="font-size:var(--fs-xs)">' + seatLbl(sel.k) + '</div>' +
       '<div style="font-size:18px;font-weight:600">' + gcEsc(d.name) + ' <span class="muted" style="font-size:var(--fs-sm);font-weight:400">' + gcEsc(d.who === '本人' ? '會員本人' : d.who + '・' + r.name + '帶來的') + '</span></div>' +
       (r.phone ? '<div class="muted">' + gcEsc(r.phone) + '</div>' : '') +
-      (regMeals().length ? '<div style="margin:6px 0;font-size:16px">主餐：' + regMealTag(d.meal) + '</div>' +
-        '<div>改主餐 <select onchange="seatSetMeal(\'' + d.key + '\',this.value)" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px">' + regMealOpts(d.meal) + '</select></div>' : '') +
-      (grp.length > 1 ? '<div style="margin-top:6px;border-top:1px dashed var(--border);padding-top:6px"><b>同一組 ' + grp.length + ' 位</b><br>' + grp.map(function(g){
-        return gcEsc(g.name) + '　' + (regMeals().length ? regMealTag(g.meal) + '　' : '') + '<span class="muted">' + (where[g.key] ? '第 ' + (+where[g.key].split('-')[0] + 1) + ' 桌' : '還沒排') + '</span>' }).join('<br>') + '</div>' : '') +
+      (regMeals().length ? '<div style="margin:6px 0 2px;font-size:16px">主餐：' + regMealTag(d.meal) + '</div>' + seatMealBtns(d.key, d.meal, 'seatSetMeal') : '') +
+      (grp.length > 1 ? '<div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:6px"><b>同一組 ' + grp.length + ' 位</b>' + (regMeals().length ? '<span class="muted" style="font-size:var(--fs-xs)">（直接點每個人要的主餐）</span>' : '') + grp.filter(function(g){ return g.key !== d.key }).map(function(g){
+        return '<div style="margin-top:6px"><b>' + gcEsc(g.name) + '</b> <span class="muted">' + (where[g.key] ? '第 ' + (+where[g.key].split('-')[0] + 1) + ' 桌' : '還沒排') + '</span>' +
+          (regMeals().length ? seatMealBtns(g.key, g.meal, 'seatSetMeal') : '') + '</div>' }).join('') + '</div>' : '') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-gold btn-sm" onclick="seatSel={mode:\'move\',from:\'' + sel.k + '\'};renderEvents()">換位子</button>' +
       '<button class="btn btn-outline btn-sm" onclick="seatClear([\'' + d.key + '\'])">移出座位</button>' +
       (grp.length > 1 ? '<button class="btn btn-outline btn-sm" onclick="seatClear(' + gcEsc(JSON.stringify(grp.map(function(g){ return g.key }))).replace(/"/g, "'") + ')">整組移出</button>' : '') +
@@ -538,12 +546,14 @@ function seatSideHtml(all, where, sat){
   } else if (sel && sel.mode === 'pick') {
     var groups = regRows().map(function(r){ return regDiners(r).filter(function(x){ return !where[x.key] }) }).filter(function(g){ return g.length });
     h += '<div style="' + box + '"><b>' + seatLbl(sel.k) + '要坐誰？</b>　<button class="btn btn-outline btn-sm" onclick="seatSel=null;renderEvents()">取消</button>' +
-      (groups.length ? '<div class="muted" style="font-size:var(--fs-xs)">按「整組入座」會從這個位子開始，把同一組的人排在同一桌</div>' + groups.map(function(g){
+      (groups.length ? '<div class="muted" style="font-size:var(--fs-xs)">' + (regMeals().length ? '在名字旁邊<b>直接點主餐</b>，就坐進這個位子、主餐也一起記好。' : '') + '整組一起來的按「整組入座」，坐好後再點每個人的主餐。</div>' + groups.map(function(g){
         var keys = g.map(function(x){ return x.key });
         return '<div style="border-top:1px dashed var(--border);padding-top:6px;margin-top:6px"><b>' + gcEsc(regList[g[0].rid].name) + '</b> <span class="muted">' + g.length + ' 位還沒排</span>' +
           (g.length > 1 ? ' <button class="btn btn-gold btn-sm" onclick="seatPlace(\'' + sel.k + '\',' + gcEsc(JSON.stringify(keys)).replace(/"/g, "'") + ')">整組入座</button>' : '') +
-          '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">' + g.map(function(x){
-            return '<button class="btn btn-outline btn-sm" onclick="seatPlace(\'' + sel.k + '\',[\'' + x.key + '\'])">' + gcEsc(x.name) + (regMeals().length ? '・' + (x.meal ? gcEsc(x.meal) : '未選') : '') + '</button>' }).join('') + '</div></div>' }).join('')
+          g.map(function(x){
+            return '<div style="margin-top:4px">' + (regMeals().length ? '<span style="font-weight:600">' + gcEsc(x.name) + '</span>' + seatMealBtns(x.key, x.meal, 'seatPickMeal') +
+              '<button class="btn btn-outline btn-sm" style="margin-top:2px" onclick="seatPlace(\'' + sel.k + '\',[\'' + x.key + '\'])">先入座，主餐等一下再點</button>'
+              : '<button class="btn btn-outline btn-sm" onclick="seatPlace(\'' + sel.k + '\',[\'' + x.key + '\'])">' + gcEsc(x.name) + '</button>') + '</div>' }).join('') + '</div>' }).join('')
         : '<div class="muted">報名用餐的人都排好了。</div>') + '</div>';
   }
   var left = all.filter(function(x){ return !where[x.key] });
@@ -616,7 +626,88 @@ async function seatSave(at, names, n){
   catch(e) { alert('座位存檔失敗：' + e.message + '\n會重新讀一次座位表'); seatOpen() }
 }
 /* 座位表上直接改主餐：重抓這筆最新的再存，免得蓋掉別人剛改的繳費 */
-async function seatSetMeal(key, m){
+var seatMenuEdit = false, seatMealQ = Promise.resolve();
+/* 🖨️ 座位海報（2026-11-16）：開新視窗排成 A3 直式（297×420mm），上面用活動海報的上半部（標題＋花），
+   下面是場地圖＋每桌桌名與名字。按「列印／存成 PDF」→ 印刷店可以等比放大成 A1（同比例）。
+   withMeal＝廚房／外場上菜用，名字旁邊加主餐；貼公布欄用的不放主餐。 */
+function seatPoster(withMeal){
+  if (!seatData || !regList) return;
+  seatMap = {}; regRows().forEach(function(r){ regDiners(r).forEach(function(d){ seatMap[d.key] = d }) });
+  var e = regEv, n = seatN(), L = Math.ceil(n / 2), BLUE = '#2bc4fd', img = e.poster || '';
+  var dt = String(e.date || '').replace(/-/g, '.');
+  var seat = function(t, i){
+    var d = seatWho(t + '-' + i);
+    return '<div class="st">' + (d ? '<div class="nm">' + gcEsc(d.short) + '</div>' + (withMeal && d.meal ? '<div class="ml" style="color:' + regMealCol(d.meal) + '">' + gcEsc(d.meal) + '</div>' : '') : '') + '</div>';
+  };
+  var table = function(t){
+    var nm = seatNames()[t] || '';
+    return '<div class="tb"><div class="th"><span class="no">' + (t + 1) + '</span>' + (nm ? '<span class="tn">' + gcEsc(nm) + '</span>' : '') + '</div>' +
+      '<div class="tg">' + seat(t, 0) + '<div class="tt"></div>' + seat(t, 1) + seat(t, 2) + seat(t, 3) + '</div></div>';
+  };
+  var rows = ''; for (var r = 0; r < L; r++) rows += '<div class="c2">' + table(r) + '</div><div class="c3">' + (r + L < n ? table(r + L) : '') + '</div>';
+  var legend = withMeal ? '<div class="lg">' + regMeals().map(function(m){ return '<span style="color:' + regMealCol(m) + '">● ' + gcEsc(m) + '</span>' }).join('') + '</div>' : '';
+  var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + gcEsc(e.title) + '・座位表</title>' +
+    '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">' +
+    '<style>@page{size:297mm 420mm;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    'html,body{margin:0;background:#cfd8dc;font-family:"Noto Sans TC",sans-serif}' +
+    '.bar{position:sticky;top:0;z-index:5;background:#263238;color:#fff;padding:10px 14px;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}' +
+    '.bar button{font-size:15px;padding:8px 14px;border:0;border-radius:8px;background:#f6c343;color:#222;font-weight:700;cursor:pointer}' +
+    '.wrap{overflow:hidden;margin:12px auto}.sheet{width:297mm;height:420mm;background:' + BLUE + ';position:relative;overflow:hidden;transform-origin:top left;color:#fff}' +
+    '.hd{height:' + (withMeal ? 128 : 160) + 'mm;position:relative;' + (img ? "background:url('" + img.replace(/'/g, '%27') + "') top center/100% auto no-repeat" : '') + '}' +
+    '.hd:after{content:"";position:absolute;left:0;right:0;bottom:0;height:8mm;background:linear-gradient(rgba(43,196,253,0),' + BLUE + ')}' +
+    '.ttl{text-align:center;margin-top:-2mm;position:relative;z-index:2}' +
+    '.ttl .t1{font-family:"Noto Serif TC",serif;font-weight:900;font-size:' + (img ? '16mm' : '30mm') + ';letter-spacing:3mm;text-shadow:0 .6mm 2mm rgba(0,60,110,.35)}' +
+    '.ttl .t2{font-size:6.5mm;font-weight:700;letter-spacing:1mm;margin-top:1mm}' +
+    '.fl{margin:4mm 13mm 0;border:.8mm solid rgba(255,255,255,.9);border-radius:4mm;padding:4mm 5mm 3mm;position:relative}' +
+    '.pj{width:46%;margin:0 auto 4mm;text-align:center;background:#fff;color:#1f7fb0;font-weight:900;font-size:5mm;letter-spacing:3mm;border-radius:1.5mm;padding:1mm 0}' +
+    '.gr{display:grid;grid-template-columns:11mm 1fr 1fr;gap:3.2mm 5mm}' +
+    '.bf{grid-column:1;grid-row:1/' + (L + 1) + ';background:rgba(255,255,255,.22);border:.5mm dashed #fff;border-radius:2mm;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;font-size:5.5mm;font-weight:900;letter-spacing:4mm;margin:10mm 0}' +
+    '.c2{grid-column:2}.c3{grid-column:3}' +
+    '.tb{background:rgba(255,255,255,.96);color:#14425c;border-radius:3mm;padding:2mm 2.4mm 2.4mm;box-shadow:0 .8mm 2mm rgba(0,60,110,.18)}' +
+    '.th{display:flex;align-items:center;gap:2mm;margin-bottom:1.6mm;min-height:7mm}' +
+    '.no{flex:none;width:7mm;height:7mm;border-radius:50%;background:#ff6f4e;color:#fff;font-weight:900;font-size:4.2mm;display:flex;align-items:center;justify-content:center}' +
+    '.tn{font-family:"Noto Serif TC",serif;font-weight:900;font-size:5mm;color:#e2553a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.tg{display:grid;grid-template-columns:1fr 5mm 1fr;grid-template-rows:auto auto;gap:1.4mm}' +
+    '.tt{grid-column:2;grid-row:1/3;background:#bfe9fb;border-radius:1mm}' +
+    '.st{min-height:' + (withMeal ? '11mm' : '9mm') + ';border-bottom:.35mm solid #cfe7f3;display:flex;flex-direction:column;justify-content:center;text-align:center;min-width:0}' +
+    '.nm{font-size:' + (withMeal ? '4.4mm' : '5mm') + ';font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.ml{font-size:3.2mm;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.dr{text-align:center;font-size:4.2mm;font-weight:700;margin-top:2.5mm;letter-spacing:1mm}' +
+    '.lg{display:flex;justify-content:center;gap:6mm;margin:3mm 13mm 0;font-size:4.2mm;font-weight:900;background:#fff;border-radius:2mm;padding:1.4mm 0}' +
+    '.ft{position:absolute;left:13mm;right:13mm;bottom:7mm;display:flex;justify-content:space-between;font-size:3.6mm;font-weight:500;border-top:.4mm solid rgba(255,255,255,.8);padding-top:2.5mm}' +
+    '@media print{html,body{background:none}.bar{display:none}.wrap{margin:0;width:auto!important;height:auto!important}.sheet{transform:none!important}}</style></head><body>' +
+    '<div class="bar"><button onclick="print()">🖨️ 列印／存成 PDF</button><span>紙張選 <b>A3 直式</b>、邊界選「無」、勾「背景圖形」。要印 A1 就把 PDF 給印刷店等比放大（同比例）。</span></div>' +
+    '<div class="wrap"><div class="sheet"><div class="hd"' + (img ? '' : ' style="height:40mm"') + '></div><div class="ttl">' + (img ? '' : '<div class="t1">' + gcEsc(e.title) + '</div>') +
+    '<div class="t1" style="font-size:12mm">' + (withMeal ? '座位表・主餐' : '餐敘座位表') + '</div><div class="t2">' + gcEsc(dt) + (e.time ? '　' + gcEsc(e.time) : '') + '　找到你的名字，就坐下吧</div></div>' +
+    '<div class="fl"><div class="pj">投影</div><div class="gr"><div class="bf">取餐區</div>' + rows + '</div><div class="dr">▼ 入口 ▼</div></div>' + legend +
+    '<div class="ft"><span>Otto2 ARTCLUB 藝術工作室</span><span>' + gcEsc(e.sub || '') + '</span></div></div></div>' +
+    '<script>function fit(){var w=document.querySelector(".wrap"),s=document.querySelector(".sheet"),k=Math.min(1,(innerWidth-24)/s.offsetWidth);s.style.transform="scale("+k+")";w.style.width=s.offsetWidth*k+"px";w.style.height=s.offsetHeight*k+"px"}addEventListener("resize",fit);fit();<\/script></body></html>';
+  var w = window.open('', '_blank');
+  if (!w) return alert('瀏覽器擋住了新視窗，請允許彈出視窗後再按一次');
+  w.document.open(); w.document.write(html); w.document.close();
+}
+/* 主餐按鈕：目前選的那款實心，其他空心；fn＝seatSetMeal（只改主餐）或 seatPickMeal（坐進點的位子＋記主餐） */
+function seatMealBtns(key, cur, fn){
+  return '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">' + regMeals().map(function(m){
+    var c = regMealCol(m), on = m === cur;
+    return '<button type="button" onclick="' + fn + '(\'' + key + '\',\'' + gcEsc(m).replace(/'/g, '&#39;') + '\')" style="cursor:pointer;padding:5px 9px;border-radius:14px;font-size:13px;border:1.5px solid ' + c + ';background:' + (on ? c : '#fff') + ';color:' + (on ? '#fff' : c) + ';font-weight:600">' + (on ? '✓ ' : '') + gcEsc(m) + '</button>' }).join('') + '</div>';
+}
+function seatPickMeal(key, m){ var k = seatSel && seatSel.k; if (!k) return; seatSetMeal(key, m); seatPlace(k, [key]); seatSel = { mode: 'info', k: k }; renderEvents() }
+async function seatSaveMenu(){
+  var meals = [0,1,2,3,4,5].map(function(i){ return document.getElementById('seat-meal' + i).value.trim() }).filter(Boolean);
+  if (!meals.length) return alert('至少填一款主餐');
+  var ev = JSON.parse(JSON.stringify(evData.list[regEv.id])); ev.meals = meals;
+  try { var j = await staffApi('/staff/events/save', { ev: ev }); evData.list[regEv.id] = j.ev; regEv = j.ev; seatMenuEdit = false; renderEvents() }
+  catch(e) { alert('主餐選項存檔失敗：' + e.message) }
+}
+/* 改主餐：畫面先變，存檔排隊一筆一筆來（同一組連點好幾個人時，才不會後存的蓋掉前一個） */
+function seatSetMeal(key, m){
+  var a = key.split('.'), rid = a[0], who = a[1], loc = regList[rid];
+  if (loc) { if (who === 's') loc.meal = m; else { var lc = regCompVals(loc), li = +who.slice(1) - 1; while (lc.length <= li) lc.push({ n:'', m:'' }); lc[li].m = m; loc.comps = lc } }
+  renderEvents();
+  seatMealQ = seatMealQ.then(function(){ return seatSetMealNow(key, m) });
+}
+async function seatSetMealNow(key, m){
   var a = key.split('.'), rid = a[0], who = a[1], evId = regEv.id;
   try {
     var cur = ((await staffApi('/staff/events/reg', { id: evId })).reg || {})[rid];
@@ -624,8 +715,8 @@ async function seatSetMeal(key, m){
     if (who === 's') cur.meal = m;
     else { var cs = regCompVals(cur), i = +who.slice(1) - 1; while (cs.length <= i) cs.push({ n:'', m:'' }); cs[i].m = m; cur.comps = cs }
     var j = await staffApi('/staff/events/reg/save', { id: evId, r: cur });
-    regList[rid] = j.r; renderEvents();
-  } catch(e) { alert('主餐存檔失敗：' + e.message) }
+    if (regEv && regEv.id === evId) { regList[rid] = j.r; renderEvents() }
+  } catch(e) { alert('主餐存檔失敗：' + e.message + '\n會重新讀一次名單'); regReload() }
 }
 
 /* 下載名單（Excel 打得開的 CSV，前面加 BOM 中文才不會亂碼） */
