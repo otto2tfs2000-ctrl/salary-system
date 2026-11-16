@@ -628,7 +628,7 @@ async function seatSave(at, names, n){
 /* 座位表上直接改主餐：重抓這筆最新的再存，免得蓋掉別人剛改的繳費 */
 var seatMenuEdit = false, seatMealQ = Promise.resolve();
 /* 🖨️ 座位海報（2026-11-16）：開新視窗排成 A3 直式（297×420mm），上面用活動海報的上半部（標題＋花），
-   下面是場地圖＋每桌桌名與名字。按「列印／存成 PDF」→ 印刷店可以等比放大成 A1（同比例）。
+   下面是場地圖＋每桌桌名與名字。按「列印／存成 PDF」→ 印刷店等比放大成 A2（2026-11-16 大熊選 A2，海報圖只有 1055px，A1 會糊）。
    withMeal＝廚房／外場上菜用，名字旁邊加主餐；貼公布欄用的不放主餐。 */
 function seatPoster(withMeal){
   if (!seatData || !regList) return;
@@ -676,7 +676,7 @@ function seatPoster(withMeal){
     '.lg{display:flex;justify-content:center;gap:6mm;margin:3mm 13mm 0;font-size:4.2mm;font-weight:900;background:#fff;border-radius:2mm;padding:1.4mm 0}' +
     '.ft{position:absolute;left:13mm;right:13mm;bottom:7mm;display:flex;justify-content:space-between;font-size:3.6mm;font-weight:500;border-top:.4mm solid rgba(255,255,255,.8);padding-top:2.5mm}' +
     '@media print{html,body{background:none}.bar{display:none}.wrap{margin:0;width:auto!important;height:auto!important}.sheet{transform:none!important}}</style></head><body>' +
-    '<div class="bar"><button onclick="print()">🖨️ 列印／存成 PDF</button><span>紙張選 <b>A3 直式</b>、邊界選「無」、勾「背景圖形」。要印 A1 就把 PDF 給印刷店等比放大（同比例）。</span></div>' +
+    '<div class="bar"><button onclick="print()">🖨️ 列印／存成 PDF</button><span>紙張選 <b>A3 直式</b>、邊界選「無」、勾「背景圖形」。要印 A2 就把這個 PDF 給印刷店說「等比放大到 A2」（同比例，字和線條都會很清楚）。</span></div>' +
     '<div class="wrap"><div class="sheet"><div class="hd"' + (img ? '' : ' style="height:40mm"') + '></div><div class="ttl">' + (img ? '' : '<div class="t1">' + gcEsc(e.title) + '</div>') +
     '<div class="t1" style="font-size:12mm">' + (withMeal ? '座位表・主餐' : '餐敘座位表') + '</div><div class="t2">' + gcEsc(dt) + (e.time ? '　' + gcEsc(e.time) : '') + '　找到你的名字，就坐下吧</div></div>' +
     '<div class="fl"><div class="pj">投影</div><div class="gr"><div class="bf">取餐區</div>' + rows + '</div><div class="dr">▼ 入口 ▼</div></div>' + legend +
