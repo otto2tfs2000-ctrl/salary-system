@@ -358,7 +358,7 @@ function mbLastMonth(){
 function mbStats(){
   var s = { total: 0, withBal: 0, liability: 0, sessionsLeft: 0,
             newThis: 0, newLast: 0, saleThis: 0, saleLast: 0,
-            sleeping: [], sleepAmt: 0, nearlyEmpty: [], expiring: [] };
+            sleeping: [], sleepAmt: 0, nearlyEmpty: [], expiring: [], noExp: [], noExpPts: 0 };
   if (!mbList) return s;
   var tm = mbThisMonth(), lm = mbLastMonth();
   /* 一堂課抓 800，餘額低於這個數字代表下次來就得續購 */
@@ -393,6 +393,9 @@ function mbStats(){
       if (ee.date){
         var left = mbExpLeft(ee.date);
         if (left >= 0 && left <= 30) s.expiring.push({ m: m, expiry: ee.date, left: left });
+      } else if ((+m.bonus || 0) > 0){
+        /* 2026-11-17 大熊：會員紅利跟著會員期限結束，沒填期限的紅利永遠不會到期 → 列出來補填 */
+        s.noExp.push({ m: m, bonus: +m.bonus || 0 }); s.noExpPts += +m.bonus || 0;
       }
     }
 
@@ -406,6 +409,7 @@ function mbStats(){
   s.sleeping.sort(function(a, b){ return b.days - a.days });
   s.nearlyEmpty.sort(function(a, b){ return a.days - b.days });
   s.expiring.sort(function(a, b){ return a.left - b.left });
+  s.noExp.sort(function(a, b){ return b.bonus - a.bonus });
   return s;
 }
 
@@ -483,6 +487,9 @@ function mbMembersHtml(){
   h += mbTodoRow('餘額剩不到一堂課',
         '下次來上課就是續購的時機', s.nearlyEmpty.length, 'nearly',
         s.nearlyEmpty.length ? 'var(--gold2)' : 'var(--text3)');
+  h += mbTodoRow('有紅利但沒填會員期限',
+        (s.noExpPts ? '紅利共 ' + s.noExpPts.toLocaleString() + ' 點，' : '') + '沒期限紅利就不會到期，請補填會員期限', s.noExp.length, 'noexp',
+        s.noExp.length ? 'var(--gold2)' : 'var(--text3)');
   h += '</div>';
 
   return h;
@@ -509,6 +516,9 @@ function mbShowList(kind){
   } else if (kind === 'expiring'){
     rows = s.expiring; title = '點數 30 天內到期';
     note = '依到期日排序。到期日＝會員期限（手動填的，或賣方案時寫入的效期）。';
+  } else if (kind === 'noexp'){
+    rows = s.noExp; title = '有紅利但沒填會員期限';
+    note = '依紅利多到少排序。會員期限到期時紅利一併結束；沒填期限就永遠不會到期。點「明細」→「編輯資料」補填會員期限。';
   } else {
     rows = s.nearlyEmpty; title = '餘額剩不到一堂課';
     note = '依最近來過排序。這些人下次進門就是開口續購的時機。';
@@ -517,12 +527,13 @@ function mbShowList(kind){
   h += '<div class="muted" style="font-size:var(--fs-sm);margin-bottom:14px">' + note + '</div>';
   h += '<table><thead><tr><th>姓名</th><th style="width:112px">電話</th>' +
        '<th style="width:78px">點數</th><th style="width:56px">堂數</th>' +
-       '<th style="width:96px">' + (kind === 'expiring' ? '到期日' : '最後活動') + '</th>' +
+       '<th style="width:96px">' + (kind === 'expiring' ? '到期日' : kind === 'noexp' ? '紅利' : '最後活動') + '</th>' +
        '<th style="width:66px"></th></tr></thead><tbody>';
   rows.slice(0, 200).forEach(function(r){
     var m = r.m;
     var right = (kind === 'expiring')
       ? '<span style="color:' + (r.left <= 7 ? 'var(--red2)' : 'var(--text2)') + '">' + r.expiry + '<br><span class="muted" style="font-size:var(--fs-xs)">剩 ' + r.left + ' 天</span></span>'
+      : kind === 'noexp' ? '<b>' + r.bonus.toLocaleString() + '</b> 點'
       : '<span class="muted">' + (r.days >= 9999 ? '無紀錄' : r.days + ' 天前') + '</span>';
     h += '<tr>' +
       '<td>' + mbEsc(m.name || '（未填姓名）') + mbStateChips(m) + '</td>' +
@@ -545,7 +556,7 @@ function mbShowList(kind){
 /* 電話一次複製起來，貼到 LINE 群發或簡訊都好用 */
 function mbCopyList(kind){
   var s = mbStats();
-  var rows = kind === 'sleeping' ? s.sleeping : (kind === 'expiring' ? s.expiring : s.nearlyEmpty);
+  var rows = kind === 'sleeping' ? s.sleeping : (kind === 'expiring' ? s.expiring : kind === 'noexp' ? s.noExp : s.nearlyEmpty);
   var txt = rows.map(function(r){ return r.m.phone + ' ' + (r.m.name || '') }).join('\n');
   if (navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(txt).then(function(){ alert('已複製 ' + rows.length + ' 筆') },
