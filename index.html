@@ -201,7 +201,11 @@
     <button class="store-btn" onclick="switchStore('consumables','guotu',this)">國圖</button>
     <button class="store-btn" onclick="switchStore('consumables','hq',this)">總部</button>
     <button class="store-btn" onclick="switchStore('consumables','camp',this)" style="border-color:var(--green);color:var(--green)">🏕️ 營隊支出</button>
+    <button class="store-btn" onclick="switchStore('consumables','event',this)" style="border-color:var(--gold);color:var(--gold2)">🎪 活動支出</button>
   </div>
+
+  <div id="ef-area" style="display:none"></div>
+  <div id="cm-normal">
 
   <!-- AI 照片辨識區塊 -->
   <div class="card" id="cm-ai-card">
@@ -300,6 +304,7 @@
     <div id="cm-debug" style="display:none;margin-bottom:10px;padding:6px 8px;background:var(--bg3);border-radius:6px"></div>
     <div id="cm-list-area"></div>
   </div>
+</div>
 </div>
 
 <div id="tab-inventory" class="page">
@@ -535,7 +540,8 @@
 
 <script src="auth.js?v=20261111b"></script>
 <script src="app.js?v=20261114a"></script>
-<script src="consumables.js?v=20261112a"></script>
+<script src="consumables.js?v=20261119a"></script>
+<script src="eventfund.js?v=20261119a"></script>
 <script src="inventory.js?v=20261110a"></script>
 <script src="booking.js?v=20261114a"></script>
 <script src="member.js?v=20261117b"></script>

@@ -384,6 +384,12 @@ function delConsumable(id) {
 
 
 function renderConsumables() {
+  /* 2026-11-19 🎪 活動支出：照活動記帳、用另外提領的經費扣，跟每月零用金分開（eventfund.js） */
+  var efOn = curStore.consumables === 'event';
+  var efA = document.getElementById('ef-area'), cmN = document.getElementById('cm-normal'), cmT = document.getElementById('cm-month-total');
+  if (efA) efA.style.display = efOn ? '' : 'none';
+  if (cmN) cmN.style.display = efOn ? 'none' : '';
+  if (efOn) { if (cmT) cmT.textContent = ''; if (typeof renderEventFund === 'function') renderEventFund(); return; }
   var items = getConsumables();
   var mKey = getCMMonthKey();
   var store = curStore.consumables;
