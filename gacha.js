@@ -703,7 +703,7 @@ function gcgCheckHtml(){
       return all.filter(function(a){ return price > 0 && Math.abs(a - price) <= Math.max(1000, a * 0.1) && a !== price })[0];
     };
     h += '<div style="margin-top:12px;font-weight:600;font-size:var(--fs-sm)">方案設定裡的方案，賣出時會送什麼</div>' +
-      '<div class="muted" style="font-size:var(--fs-xs);margin:2px 0 6px">只要買方案都會送金幣：金額跟等級裡填的一樣就照那級；沒列到的金額（例如 3 萬、6 萬）照比它小的最接近金額那級算，比全部都小就給最低級。</div>' +
+      '<div class="muted" style="font-size:var(--fs-xs);margin:2px 0 6px">金額跟等級裡填的一樣就照那級；沒列到的金額（例如 3 萬、6 萬）照比它小的最接近金額那級算；比最低一級還便宜的（例如 6800 堂數優惠）不送。</div>' +
       (rows.length ? '<table style="border-collapse:collapse;font-size:var(--fs-sm);width:100%;max-width:560px">' + rows.map(function(r){
         var n = '';
         return '<tr style="border-top:1px solid var(--border)"><td style="padding:5px 4px">' + gcEsc(r.nm) + '</td><td style="text-align:right;padding:5px 8px;font-variant-numeric:tabular-nums">$' + r.price.toLocaleString() + '</td>' +
@@ -1048,14 +1048,14 @@ function gcgAuto(){
 function gcgUndo(){
   gcgDraft = JSON.parse(JSON.stringify(gcgData.gold)); gcgFill(); gcgSim = null; renderGacha();
 }
-/* 跟伺服器 gGoldTierFor 同一套：一模一樣優先，否則往下找最接近的登記金額，比全部小就最低級 */
+/* 跟伺服器 gGoldTierFor 同一套：一模一樣優先，否則往下找最接近的登記金額，比全部小就不送 */
 function gcgTierFor(tiers, a){
   if (!tiers || !tiers.length || !(a > 0)) return null;
   var ex = tiers.filter(function(x){ return (x.plans || []).indexOf(a) >= 0 })[0];
   if (ex) return ex;
-  var best = null, ba = -1, low = null, la = Infinity;
-  tiers.forEach(function(t){ (t.plans || []).forEach(function(v){ if (v <= a && v > ba) { best = t; ba = v } if (v < la) { low = t; la = v } }) });
-  return best || low || tiers[0];
+  var best = null, ba = -1;
+  tiers.forEach(function(t){ (t.plans || []).forEach(function(v){ if (v <= a && v > ba) { best = t; ba = v } }) });
+  return best;
 }
 function gcgWhich(){
   var a = Math.round(+document.getElementById('gcg-amt').value || 0), el = document.getElementById('gcg-which');
