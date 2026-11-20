@@ -695,7 +695,7 @@ function gcgCheckHtml(){
     var plans = []; try { plans = mbActivePlans() } catch(e) {}
     var rows = plans.map(function(p){
       var price = Math.round(+p.price || 0);
-      var t = tiers.filter(function(x){ return (x.plans || []).indexOf(price) >= 0 })[0];
+      var t = gcgTierFor(tiers, price);
       return { nm: p.name || '（沒名稱）', price: price, t: t };
     });
     var near = function(price){
@@ -703,9 +703,9 @@ function gcgCheckHtml(){
       return all.filter(function(a){ return price > 0 && Math.abs(a - price) <= Math.max(1000, a * 0.1) && a !== price })[0];
     };
     h += '<div style="margin-top:12px;font-weight:600;font-size:var(--fs-sm)">方案設定裡的方案，賣出時會送什麼</div>' +
-      '<div class="muted" style="font-size:var(--fs-xs);margin:2px 0 6px">金額要跟等級裡填的一模一樣才會發金幣（賣方案時用的是方案設定的「價格」）。沒送金幣的方案如果本來該送，請檢查價格或等級的方案金額。</div>' +
+      '<div class="muted" style="font-size:var(--fs-xs);margin:2px 0 6px">只要買方案都會送金幣：金額跟等級裡填的一樣就照那級；沒列到的金額（例如 3 萬、6 萬）照比它小的最接近金額那級算，比全部都小就給最低級。</div>' +
       (rows.length ? '<table style="border-collapse:collapse;font-size:var(--fs-sm);width:100%;max-width:560px">' + rows.map(function(r){
-        var n = r.t ? '' : near(r.price);
+        var n = '';
         return '<tr style="border-top:1px solid var(--border)"><td style="padding:5px 4px">' + gcEsc(r.nm) + '</td><td style="text-align:right;padding:5px 8px;font-variant-numeric:tabular-nums">$' + r.price.toLocaleString() + '</td>' +
           '<td style="padding:5px 4px;color:' + (r.t ? 'var(--green2)' : 'var(--text3)') + '">' + (r.t ? '🪙 ' + gcEsc(r.t.nm) + '，送 ' + (r.t.coins || 1) + ' 枚' : '不送金幣') +
           (n ? ' <span style="color:var(--red)">（接近 ' + n.toLocaleString() + '，是不是價格差一點？）</span>' : '') + '</td></tr>';
@@ -1048,11 +1048,20 @@ function gcgAuto(){
 function gcgUndo(){
   gcgDraft = JSON.parse(JSON.stringify(gcgData.gold)); gcgFill(); gcgSim = null; renderGacha();
 }
+/* 跟伺服器 gGoldTierFor 同一套：一模一樣優先，否則往下找最接近的登記金額，比全部小就最低級 */
+function gcgTierFor(tiers, a){
+  if (!tiers || !tiers.length || !(a > 0)) return null;
+  var ex = tiers.filter(function(x){ return (x.plans || []).indexOf(a) >= 0 })[0];
+  if (ex) return ex;
+  var best = null, ba = -1, low = null, la = Infinity;
+  tiers.forEach(function(t){ (t.plans || []).forEach(function(v){ if (v <= a && v > ba) { best = t; ba = v } if (v < la) { low = t; la = v } }) });
+  return best || low || tiers[0];
+}
 function gcgWhich(){
   var a = Math.round(+document.getElementById('gcg-amt').value || 0), el = document.getElementById('gcg-which');
   if (!a) { el.textContent = '—'; return }
-  var t = gcgDraft.tiers.filter(function(x){ return (x.plans || []).indexOf(a) >= 0 })[0];
-  el.textContent = t ? t.nm + '，送 ' + t.coins + ' 枚金幣' : '不在任何一級（不送金幣）';
+  var t = gcgTierFor(gcgDraft.tiers, a), ex = t && (t.plans || []).indexOf(a) >= 0;
+  el.textContent = t ? t.nm + '，送 ' + t.coins + ' 枚金幣' + (ex ? '' : '（沒列在等級裡，照最接近的較低金額算）') : '不送金幣';
 }
 function gcgRunSim(){
   var tid = document.getElementById('gcg-simtier').value, n = +document.getElementById('gcg-simn').value || 1000;
