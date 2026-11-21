@@ -648,6 +648,7 @@ function mbDetail(phone){
   h += '</div>';
 
   h += mbTktCardHtml(m);
+  h += mbPrizeCardHtml(m);
   h += '<div class="row" style="gap:6px;margin-bottom:10px">' +
        '<button class="store-btn' + (mbDetailTab === 'rec' ? ' active' : '') + '" id="mbTabRec" onclick="mbDetailSwitch(\'rec\',\'' + phone + '\')">核銷紀錄</button>' +
        '<button class="store-btn' + (mbDetailTab === 'ledger' ? ' active' : '') + '" id="mbTabLedger" onclick="mbDetailSwitch(\'ledger\',\'' + phone + '\')">點數明細</button></div>';
@@ -3712,6 +3713,66 @@ function mbTktRule(t){
   if (/升級券/.test(nm)) return '需預約繪畫課程才可使用';
   return '';
 }
+/* 2026-11-21 大熊：會員抽到獎品，要看得出是哪一場遊戲。
+   伺服器發獎時本來就有記：票券 raw＝「活動名・獎品」、by＝活動名、at＝抽到時間；
+   遊戲紅利寫在 ledger（src:'gacha'），reason＝「活動名・…」。這裡只是把它讀出來。 */
+function mbPrizeSrc(text, by){
+  var s = String(text || '');
+  var i = s.indexOf('・');
+  if (i > 0) return s.slice(0, i);
+  return String(by || '') || '（沒記來源）';
+}
+function mbTktSrcLine(t){
+  if (!t || !(t.src || t.raw || t.by)) return '';
+  if (!t.src && !/・/.test(String(t.raw || ''))) return '';   /* 夯客匯入的舊票券，raw 是原始文字不是遊戲 */
+  var src = mbPrizeSrc(t.raw, t.by);
+  var used = (t.qty === 0 || t.usedAt) ? '　<span style="color:var(--green)">✓ 已領取／已使用' + (t.usedAt ? ' ' + mbFmtAt(t.usedAt).slice(5, 10) : '') + '</span>' : '';
+  return '<div style="font-size:var(--fs-xs);color:var(--muted,#948e83);line-height:1.5">🎮 來自「' + mbEsc(src) + '」' +
+         (t.at ? '・' + mbFmtAt(t.at).slice(0, 10) + ' 拿到' : '') + used + '</div>';
+}
+/* 會員明細：遊戲／活動拿到的所有東西（票券＋紅利），依時間排，可展開 */
+function mbPrizeCardHtml(m){
+  var rows = [];
+  (Array.isArray(m.tickets) ? m.tickets : []).forEach(function(t){
+    if (!t || !t.src) return;
+    rows.push({ at: t.at || '', src: mbPrizeSrc(t.raw, t.by), what: '🎟 ' + (t.name || ''),
+                st: (t.qty === 0 || t.usedAt) ? '已使用' : (mbTktExpired(t) ? '已過期' : '未使用') });
+  });
+  var l = m.ledger || {};
+  Object.keys(l).forEach(function(k){
+    var r = l[k];
+    if (!r || r.type !== 'bonus' || r.src !== 'gacha') return;
+    var d = +r.delta || 0;
+    if (d <= 0) return;   /* 兌換、收回這些扣的不列，點數明細看得到 */
+    /* 扭蛋類（by 扭蛋活動）reason＝「黃金扭蛋・獎品」；走格子（by 聖誕走格子）reason 是細節，
+       例如「雪地跳跳小遊戲」「預約大禮盒」「荷包大補血・雪地跳跳（額外）」，遊戲名就用 by */
+    var rs = String(r.reason || '');
+    var i = rs.indexOf('・');
+    var game, detail;
+    if (r.by && r.by !== '扭蛋活動') { game = r.by; detail = rs; }
+    else { game = mbPrizeSrc(rs, r.by); detail = i > 0 ? rs.slice(i + 1) : rs; }
+    if (/^紅利\s*\d/.test(detail) || detail === game) detail = '';
+    rows.push({ at: r.at || '', src: game, what: '⭐ 紅利 +' + d + ' 點' + (detail ? '（' + detail + '）' : ''), st: '' });
+  });
+  if (!rows.length) return '';
+  rows.sort(function(a, b){ return String(b.at) < String(a.at) ? -1 : 1 });
+  var games = {};
+  rows.forEach(function(r){ games[r.src] = (games[r.src] || 0) + 1 });
+  var gs = Object.keys(games).map(function(g){ return mbEsc(g) + ' ' + games[g] }).join('・');
+  var h = '<details class="card" style="margin-bottom:14px"' + (rows.length <= 6 ? ' open' : '') + '>' +
+    '<summary style="cursor:pointer;font-size:var(--fs-sm);font-weight:600">🎮 遊戲／活動拿到的獎項（' + rows.length + ' 筆）' +
+    '<div class="muted" style="font-size:var(--fs-xs);font-weight:400;margin-top:2px">' + gs + '</div></summary>' +
+    '<div style="max-height:40vh;overflow:auto;margin-top:8px"><table><thead><tr>' +
+    '<th style="width:86px">日期</th><th style="width:110px">哪個遊戲</th><th>拿到什麼</th><th style="width:64px">狀態</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    h += '<tr><td class="muted" style="font-size:var(--fs-xs)">' + mbFmtAt(r.at).slice(0, 10) + '</td>' +
+      '<td style="font-size:var(--fs-sm)">' + mbEsc(r.src) + '</td>' +
+      '<td style="font-size:var(--fs-sm)">' + mbEsc(r.what) + '</td>' +
+      '<td style="font-size:var(--fs-xs);color:' + (r.st === '未使用' ? 'var(--gold2)' : 'var(--muted,#948e83)') + '">' + r.st + '</td></tr>';
+  });
+  h += '</tbody></table></div></details>';
+  return h;
+}
 /* ── 會員明細頁上的票券卡 ── */
 function mbTktCardHtml(m){
   var ts = (m && Array.isArray(m.tickets)) ? m.tickets : [];
@@ -3734,6 +3795,7 @@ function mbTktCardHtml(m){
         ? '<span style="font-size:var(--fs-xs);margin-left:8px;color:' + (ex ? 'var(--red)' : 'var(--muted,#948e83)') + '">' +
           (ex ? '已於 ' + t.expiry + ' 過期' : '到期 ' + t.expiry) + '</span>'
         : '') +
+      mbTktSrcLine(t) +
       (mbTktRule(t) ? '<div style="font-size:var(--fs-xs);color:#A6741F;line-height:1.5">使用規範：' + mbEsc(mbTktRule(t)) + '</div>' : '') +
       '</div>';
   });
