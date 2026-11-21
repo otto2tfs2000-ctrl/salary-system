@@ -648,7 +648,7 @@ function mbDetail(phone){
   h += '</div>';
 
   h += mbTktCardHtml(m);
-  h += mbPrizeCardHtml(m);
+  h += mbPrizeCardHtml(m, phone);
   h += '<div class="row" style="gap:6px;margin-bottom:10px">' +
        '<button class="store-btn' + (mbDetailTab === 'rec' ? ' active' : '') + '" id="mbTabRec" onclick="mbDetailSwitch(\'rec\',\'' + phone + '\')">核銷紀錄</button>' +
        '<button class="store-btn' + (mbDetailTab === 'ledger' ? ' active' : '') + '" id="mbTabLedger" onclick="mbDetailSwitch(\'ledger\',\'' + phone + '\')">點數明細</button></div>';
@@ -1887,6 +1887,9 @@ function mbPlanDelete(idx){
 function mbModal(html){
   var mk = document.getElementById('mb-modal');
   if (!mk) return;
+  /* 2026-11-21：視窗原本在 #tab-member 裡，從今日排課叫出來（看會員明細、賣方案）會被藏起來的分頁一起藏住，
+     搬到 body 最外層，哪個分頁都看得到 */
+  if (mk.parentNode !== document.body) document.body.appendChild(mk);
   document.getElementById('mb-modal-body').innerHTML = html;
   mk.style.display = 'block';
 }
@@ -3726,17 +3729,36 @@ function mbTktSrcLine(t){
   if (!t || !(t.src || t.raw || t.by)) return '';
   if (!t.src && !/・/.test(String(t.raw || ''))) return '';   /* 夯客匯入的舊票券，raw 是原始文字不是遊戲 */
   var src = mbPrizeSrc(t.raw, t.by);
-  var used = (t.qty === 0 || t.usedAt) ? '　<span style="color:var(--green)">✓ 已領取／已使用' + (t.usedAt ? ' ' + mbFmtAt(t.usedAt).slice(5, 10) : '') + '</span>' : '';
+  var used = (t.qty === 0 || t.usedAt) ? '　<span style="color:var(--green)">✓ 已領取／已使用' + (t.usedAt ? ' ' + mbPrizeD(t.usedAt).slice(5, 10) : '') + '</span>' : '';
   return '<div style="font-size:var(--fs-xs);color:var(--muted,#948e83);line-height:1.5">🎮 來自「' + mbEsc(src) + '」' +
-         (t.at ? '・' + mbFmtAt(t.at).slice(0, 10) + ' 拿到' : '') + used + '</div>';
+         (t.at ? '・' + mbPrizeD(t.at).slice(0, 10) + ' 拿到' : '') + used + '</div>';
 }
-/* 會員明細：遊戲／活動拿到的所有東西（票券＋紅利），依時間排，可展開 */
-function mbPrizeCardHtml(m){
+/* 會員明細／今日排課點客人名字：遊戲／活動拿到的所有東西（票券＋紅利）。
+   2026-11-21 大熊：要能在這裡直接核銷兌換的東西（沿用 /staff/gacha/redeem，跟扭蛋活動、選品館的核銷同一份資料）。
+   還沒用的票券排最上面，有沒領的就預設展開。 */
+/* ISO 時間轉成台灣當地「YYYY-MM-DD HH:MM」（伺服器存的是 UTC，直接切字串會差 8 小時） */
+function mbPrizeD(at){
+  var d = new Date(at || '');
+  if (isNaN(d)) return String(at || '').slice(0, 16).replace('T', ' ');
+  var z = function(n){ return (n < 10 ? '0' : '') + n };
+  return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes());
+}
+var mbPrizeMem = {};   /* 電話 → 這份會員資料（核銷完直接改它再重畫） */
+function mbPrizeCardHtml(m, phone){
+  phone = phone || (m && m.phone) || '';
+  if (!m) return '';
+  if (m.tickets && !Array.isArray(m.tickets)) m.tickets = Object.values(m.tickets);
+  mbPrizeMem[phone] = m;
+  return '<div class="mbPrizeWrap" data-ph="' + mbEsc(phone) + '">' + mbPrizeInner(m, phone) + '</div>';
+}
+function mbPrizeInner(m, phone){
   var rows = [];
   (Array.isArray(m.tickets) ? m.tickets : []).forEach(function(t){
     if (!t || !t.src) return;
-    rows.push({ at: t.at || '', src: mbPrizeSrc(t.raw, t.by), what: '🎟 ' + (t.name || ''),
-                st: (t.qty === 0 || t.usedAt) ? '已使用' : (mbTktExpired(t) ? '已過期' : '未使用') });
+    var used = (t.qty === 0 || !!t.usedAt);
+    rows.push({ at: t.at || '', src: mbPrizeSrc(t.raw, t.by), what: '🎟 ' + (t.name || ''), gid: t.gid || '',
+                st: used ? '已使用' : (mbTktExpired(t) ? '已過期' : '未使用'), used: used,
+                usedAt: t.usedAt || '', usedBy: t.usedBy || '', expiry: t.expiry || '' });
   });
   var l = m.ledger || {};
   Object.keys(l).forEach(function(k){
@@ -3752,26 +3774,66 @@ function mbPrizeCardHtml(m){
     if (r.by && r.by !== '扭蛋活動') { game = r.by; detail = rs; }
     else { game = mbPrizeSrc(rs, r.by); detail = i > 0 ? rs.slice(i + 1) : rs; }
     if (/^紅利\s*\d/.test(detail) || detail === game) detail = '';
-    rows.push({ at: r.at || '', src: game, what: '⭐ 紅利 +' + d + ' 點' + (detail ? '（' + detail + '）' : ''), st: '' });
+    rows.push({ at: r.at || '', src: game, what: '⭐ 紅利 +' + d + ' 點' + (detail ? '（' + detail + '）' : ''), st: '已入帳', bonus: true });
   });
   if (!rows.length) return '';
-  rows.sort(function(a, b){ return String(b.at) < String(a.at) ? -1 : 1 });
+  var rank = function(r){ return r.st === '未使用' ? 0 : r.st === '已過期' ? 1 : 2 };
+  rows.sort(function(a, b){ return rank(a) - rank(b) || (String(b.at) < String(a.at) ? -1 : 1) });
+  var waitN = rows.filter(function(r){ return r.st === '未使用' }).length;
   var games = {};
   rows.forEach(function(r){ games[r.src] = (games[r.src] || 0) + 1 });
   var gs = Object.keys(games).map(function(g){ return mbEsc(g) + ' ' + games[g] }).join('・');
-  var h = '<details class="card" style="margin-bottom:14px"' + (rows.length <= 6 ? ' open' : '') + '>' +
-    '<summary style="cursor:pointer;font-size:var(--fs-sm);font-weight:600">🎮 遊戲／活動拿到的獎項（' + rows.length + ' 筆）' +
-    '<div class="muted" style="font-size:var(--fs-xs);font-weight:400;margin-top:2px">' + gs + '</div></summary>' +
-    '<div style="max-height:40vh;overflow:auto;margin-top:8px"><table><thead><tr>' +
-    '<th style="width:86px">日期</th><th style="width:110px">哪個遊戲</th><th>拿到什麼</th><th style="width:64px">狀態</th></tr></thead><tbody>';
+  var h = '<details class="card" style="margin-bottom:14px;text-align:left"' + (waitN || rows.length <= 6 ? ' open' : '') + '>' +
+    '<summary style="cursor:pointer;font-size:14px;font-weight:600">🎮 遊戲／活動拿到的獎項（' + rows.length + ' 筆）' +
+    (waitN ? '　<span style="background:#C0392B;color:#fff;font-size:12px;padding:1px 8px;border-radius:99px">' + waitN + ' 張還沒兌換</span>' : '') +
+    '<div style="font-size:12px;font-weight:400;color:#948e83;margin-top:2px">' + gs + '</div></summary>' +
+    '<div style="max-height:46vh;overflow:auto;margin-top:8px">';
   rows.forEach(function(r){
-    h += '<tr><td class="muted" style="font-size:var(--fs-xs)">' + mbFmtAt(r.at).slice(0, 10) + '</td>' +
-      '<td style="font-size:var(--fs-sm)">' + mbEsc(r.src) + '</td>' +
-      '<td style="font-size:var(--fs-sm)">' + mbEsc(r.what) + '</td>' +
-      '<td style="font-size:var(--fs-xs);color:' + (r.st === '未使用' ? 'var(--gold2)' : 'var(--muted,#948e83)') + '">' + r.st + '</td></tr>';
+    var btn = '';
+    if (r.gid && !r.bonus) {
+      btn = r.used
+        ? '<button type="button" style="font-size:12px;padding:4px 10px;border:1px solid #ccc;background:#fff;color:#666;border-radius:8px;cursor:pointer" ' +
+          'onclick="mbPrizeRedeem(this,\'' + mbEsc(phone) + '\',\'' + mbEsc(r.gid) + '\',true)">復原</button>'
+        : '<button type="button" style="font-size:13px;padding:6px 14px;border:0;background:#2E7D4F;color:#fff;border-radius:8px;font-weight:600;cursor:pointer" ' +
+          'onclick="mbPrizeRedeem(this,\'' + mbEsc(phone) + '\',\'' + mbEsc(r.gid) + '\',false)">核銷兌換</button>';
+    }
+    var stCol = r.st === '未使用' ? '#B07A12' : r.st === '已過期' ? '#C0392B' : '#948e83';
+    h += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #E6E1D6' + (r.used || r.bonus ? ';opacity:.75' : '') + '">' +
+      '<div style="flex:1;min-width:0;line-height:1.5">' +
+        '<div style="font-size:14px">' + mbEsc(r.what) + '</div>' +
+        '<div style="font-size:12px;color:#948e83">' + mbEsc(r.src) + '・' + mbPrizeD(r.at).slice(0, 10) + ' 拿到' +
+          (r.expiry && !r.used ? '・' + r.expiry + ' 到期' : '') + '</div>' +
+        '<div style="font-size:12px;color:' + stCol + '">' + r.st +
+          (r.used && r.usedAt ? '　' + mbPrizeD(r.usedAt).slice(5, 16) + (r.usedBy ? '・' + mbEsc(r.usedBy) : '') : '') + '</div>' +
+      '</div>' + (btn ? '<div style="flex:none">' + btn + '</div>' : '') + '</div>';
   });
-  h += '</tbody></table></div></details>';
+  h += '</div></details>';
   return h;
+}
+async function mbPrizeRedeem(btn, phone, gid, undo){
+  var m = mbPrizeMem[phone];
+  var t = m && (m.tickets || []).find(function(x){ return x && x.gid === gid && (undo ? (x.qty === 0 || x.usedAt) : !(x.qty === 0 || x.usedAt)) });
+  var nm = t ? t.name : '這張券';
+  if (!confirm(undo ? '要把「' + nm + '」改回還沒兌換嗎？' : '客人現在要兌換「' + nm + '」？\n\n按確定就標成已使用（之後可以按「復原」）。')) return;
+  btn.disabled = true; btn.textContent = '處理中…';
+  try {
+    var j = await staffApi('/staff/gacha/redeem', { phone: phone, gid: gid, undo: !!undo });
+    if (t && j && j.ticket) { Object.assign(t, j.ticket); if (undo) { delete t.usedAt; delete t.usedBy } }
+    /* 會員分頁那份清單也一起改，不用重整 */
+    var ml = (typeof mbList !== 'undefined' && mbList) ? mbList.find(function(x){ return x.phone === phone }) : null;
+    if (ml && ml !== m && Array.isArray(ml.tickets)) {
+      var t2 = ml.tickets.find(function(x){ return x && x.gid === gid && x.at === (t && t.at) });
+      if (t2 && j.ticket) { Object.assign(t2, j.ticket); if (undo) { delete t2.usedAt; delete t2.usedBy } }
+    }
+    var det = document.getElementById('mbPaneRec');
+    if (det && ml && ml === m && document.getElementById('mb-modal').style.display !== 'none') { mbDetail(phone); return; }
+    document.querySelectorAll('.mbPrizeWrap').forEach(function(w){
+      if (w.getAttribute('data-ph') === phone) w.innerHTML = mbPrizeInner(m, phone);
+    });
+  } catch(e) {
+    alert('核銷失敗：' + e.message);
+    btn.disabled = false; btn.textContent = undo ? '復原' : '核銷兌換';
+  }
 }
 /* ── 會員明細頁上的票券卡 ── */
 function mbTktCardHtml(m){

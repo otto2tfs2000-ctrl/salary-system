@@ -2146,11 +2146,25 @@ async function bkShowBalance(phone,name,b){
       '<div><b>'+(+c.sessions||0)+'</b><span>堂數</span></div>'+
       '<div><b>'+(+c.bonus||0).toLocaleString()+'</b><span>紅利</span></div>'+
     '</div>'+
+    /* 2026-11-21 大熊：遊戲抽到的獎項在這裡就看得到、直接核銷兌換（member.js mbPrizeCardHtml） */
+    (typeof mbPrizeCardHtml==="function"?mbPrizeCardHtml(m,phone):"")+
     bkRecBox()+
     '<div class="bk-act">'+
       (bkCan("sellPlan")?'<button class="bk-save" id="bkBalSell">賣方案</button>':'')+
+      (typeof mbDetail==="function"?'<button class="bk-cancel" id="bkBalDet">會員明細</button>':'')+
       '<button class="bk-cancel" id="bkBalX">關閉</button></div>');
   document.getElementById("bkBalX").onclick=bkClose;
+  var detBtn=document.getElementById("bkBalDet");
+  if(detBtn)detBtn.onclick=async function(){
+    detBtn.disabled=true; detBtn.textContent="開啟中…";
+    var p=(typeof mbNorm==="function")?mbNorm(phone):phone;
+    if(typeof mbList==="undefined"||!mbList||!mbList.some(function(x){return x.phone===p})){
+      if(typeof mbLoad==="function")await mbLoad();
+    }
+    if(!mbList.some(function(x){return x.phone===p})){ alert("會員清單裡找不到 "+p+"，請到會員分頁搜尋看看。"); detBtn.disabled=false; detBtn.textContent="會員明細"; return }
+    bkClose();
+    mbDetail(p);
+  };
   bkRecFill(phone,m.name||name,b);
   var sellBtn=document.getElementById("bkBalSell");
   if(sellBtn)sellBtn.onclick=async function(){ await bkSellPlanFor(phone) };
