@@ -813,6 +813,7 @@ function doSwitchTab(tab) {
   if (tab==='fun' && window.renderFun) renderFun();
   if (tab==='events' && window.renderEvents) renderEvents();
   if (tab==='preorder' && window.renderPreorder) renderPreorder();
+  if (tab==='onlinecourse' && window.renderOnlineCourse) renderOnlineCourse();
   if (tab==='gacha' && window.renderGacha) renderGacha();
   if (tab==='xmas' && window.renderXmas) renderXmas();
   if (tab==='pets' && window.renderPets) renderPets();
