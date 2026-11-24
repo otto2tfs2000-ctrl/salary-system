@@ -812,6 +812,7 @@ function doSwitchTab(tab) {
   if (window.mnApply) mnApply();   /* 剛離開的那頁如果是自己藏起來的，收回去 */
   if (tab==='fun' && window.renderFun) renderFun();
   if (tab==='events' && window.renderEvents) renderEvents();
+  if (tab==='preorder' && window.renderPreorder) renderPreorder();
   if (tab==='gacha' && window.renderGacha) renderGacha();
   if (tab==='xmas' && window.renderXmas) renderXmas();
   if (tab==='pets' && window.renderPets) renderPets();

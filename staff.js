@@ -29,6 +29,7 @@ var STAFF_TABS = [
   { k:"sched",       n:"班表設定" },
   { k:"daily",       n:"每日填寫" },
   { k:"member",      n:"會員" },
+  { k:"preorder",    n:"商品預購" },
   { k:"gacha",       n:"扭蛋活動" },
   { k:"xmas",        n:"聖誕走格子" },
   { k:"shop",        n:"選品館" },
@@ -61,7 +62,7 @@ var STAFF_ACTS = [
 var STAFF_ROLES = {
   teacher: { n:"老師",   tabs:["today","monthly","recipe"], acts:[] },
   admin:   { n:"行政／業務",
-             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe","baoban","fun","events"],   /* 行政本來就一律看得到小活動，預設勾起來 */
+             tabs:["today","sched","daily","member","monthly","consumables","inventory","recipe","baoban","fun","events","preorder"],   /* 行政本來就一律看得到小活動，預設勾起來 */
              acts:["checkout","void","sellPlan"] },
   owner:   { n:"管理員", tabs:STAFF_TABS.map(function(t){ return t.k }),
              acts:STAFF_ACTS.map(function(a){ return a.k }) }
