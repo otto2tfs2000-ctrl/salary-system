@@ -6,6 +6,8 @@
    ══════════════════════════════════════════════════════════ */
 var poP = 'xmas-mini', poData = null, poView = 'list', poEditing = null, poFilter = 'all', poQ = '', poCfgDraft = null;
 var PO_LINK_BASE = 'https://otto2tfs2000-ctrl.github.io/otto2artclub-booking/preorder.html?p=';
+/* 給客人的短網址（TinyURL，11/24 建；導到上面那串＋商品代號）。新商品沒有短網址就給長的 */
+var PO_SHORT = { 'xmas-mini': 'https://tinyurl.com/otto2xmas' };
 var PO_ST = {
   new:     { n:'待確認付款', c:'#c98a2c' },
   paid:    { n:'已付款・待寄', c:'#2f7d5b' },
@@ -40,7 +42,7 @@ function poListHtml(){
   /* 加贈要準備幾份：從每筆的「木盤材料包 ×2」把數字加起來 */
   var gifts = {}; live.forEach(function(o){ if (!o.gift) return; var m = String(o.gift).match(/^(.*?)\s*[×x]\s*(\d+)$/);
     var k = m ? m[1] : o.gift; gifts[k] = (gifts[k] || 0) + (m ? +m[2] : 1) });
-  var link = PO_LINK_BASE + encodeURIComponent(poP);
+  var link = PO_SHORT[poP] || (PO_LINK_BASE + encodeURIComponent(poP));
   var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🛍️ 商品預購' +
     ((poData.products || []).length > 1 ? '<select onchange="poP=this.value;poData=null;renderPreorder()" style="margin-left:6px">' +
       poData.products.map(function(x){ return '<option value="' + poEsc(x.p) + '"' + (x.p === poP ? ' selected' : '') + '>' + poEsc(x.title) + '</option>' }).join('') + '</select>' : '') +
