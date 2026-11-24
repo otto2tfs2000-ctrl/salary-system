@@ -8,7 +8,7 @@
    客人第一次在 LINE 打開會把這支電話綁到他的 LINE；換 LINE 帳號要在這裡按「解除綁定」。
    資料一律透過伺服器 /staff/oc/*（otto2-booking-f9ef7 onlineCourses/，不公開）。
    ══════════════════════════════════════════════════════════ */
-var ocData = null, ocView = 'list', ocEdit = null, ocUp = {};
+var ocData = null, ocView = 'list', ocEdit = null, ocUp = {}, ocCodes = null, ocCodeQ = '';
 function ocEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c] }) }
 function ocMd(iso){ if (!iso) return ''; var d = new Date(iso); return (d.getMonth() + 1) + '/' + d.getDate() }
 function ocVid(uid){ return (ocData.videos || []).filter(function(v){ return v.uid === uid })[0] }
@@ -18,6 +18,7 @@ async function renderOnlineCourse(){
   if (!ocData) {
     el.innerHTML = '<div class="empty">載入線上課程中…</div>';
     try { ocData = await staffApi('/staff/oc/list', {}) } catch(e) { el.innerHTML = '<div class="empty">讀不到線上課程：' + ocEsc(e.message) + '</div>'; return }
+    try { ocCodes = (await staffApi('/staff/oc/codes', {})).codes || {} } catch(e) { ocCodes = null }
   }
   el.innerHTML = ocView === 'edit' ? ocEditHtml() : ocListHtml();
 }
@@ -30,11 +31,12 @@ function ocListHtml(){
     '<button class="btn btn-outline btn-sm" onclick="ocReload()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="ocOpenEdit()">＋ 新增一套課程</button></div>' +
     '<div class="muted" style="font-size:var(--fs-xs);line-height:1.7">買材料包的客人在這裡用電話開通，他從官方 LINE 預約頁的「🎬 我的線上課程」就能看。' +
-    '影片上會飄著客人的名字和電話末三碼，被錄下來外流也看得出是誰的。</div></div>';
+    '影片上會飄著客人的名字和電話末三碼，被錄下來外流也看得出是誰的。<br>填預購單的電話會自動開通；收禮的人用每盒附的「開通碼貼紙」自己開通（見下面🎟 開通碼）。</div></div>';
   if (ocData.cfErr) h += '<div class="card" style="border-color:#e0a0a0;color:#a33">⚠️ 連不到 Cloudflare：' + ocEsc(ocData.cfErr) + '</div>';
   var cs = ocData.courses || [];
   if (!cs.length) h += '<div class="card"><div class="empty">還沒有課程。先在下面「影片庫」確認影片都傳上去了，再按「＋ 新增一套課程」。</div></div>';
   cs.forEach(function(c){ h += ocCourseCard(c) });
+  h += ocCodesHtml();
   h += ocVideosHtml();
   return h;
 }
@@ -188,4 +190,81 @@ async function ocDel(btn){
   if (!confirm('刪除「' + ocEdit.title + '」？影片本身不會刪，已開通的學員會看不到這堂課。')) return;
   btn.disabled = true;
   try { await staffApi('/staff/oc/course/del', { id: ocEdit.id }); ocView = 'list'; ocReload() } catch(e) { alert(e.message); btn.disabled = false }
+}
+
+
+/* ══ 🎟 開通碼（11/24）：每盒材料包貼一張，收禮的人輸入碼＋自己的姓名電話就能看。
+   每組只能用一次；碼由伺服器隨機產生（XMAS- 加 5 碼、沒有 0 O 1 I L）。
+   貼紙：A4 65 格（5×13，每格 38.1×21.2mm），可以微調上/左位置、跳過已經用掉的格子。 ══ */
+function ocCodeList(cid){ var o = ocCodes || {}; return Object.keys(o).filter(function(k){ return o[k] && (!cid || o[k].cid === cid) }).map(function(k){ return Object.assign({ code: k }, o[k]) }) }
+function ocCodesHtml(){
+  var h = '<div class="card"><div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">🎟 開通碼（貼在每盒材料包）</div>';
+  if (!ocCodes) return h + '<div class="empty">讀不到開通碼（伺服器可能還沒更新）</div></div>';
+  var cs = ocData.courses || [];
+  cs.forEach(function(c){
+    var all = ocCodeList(c.id); if (!all.length && c.on === false) return;
+    var used = all.filter(function(x){ return x.used });
+    h += '<div style="background:var(--bg2,#faf7f0);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>' + ocEsc(c.title) + '</b>' +
+      '<span class="muted" style="font-size:13px">共 ' + all.length + ' 組・已用 <b style="color:#2f7d5b">' + used.length + '</b>・還沒用 ' + (all.length - used.length) + '</span>' +
+      '<span style="margin-left:auto"></span>' +
+      '<button class="btn btn-gold btn-sm" onclick="ocPrint(\'' + c.id + '\')"' + (all.length - used.length ? '' : ' disabled') + '>🖨 印貼紙</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="ocCsv(\'' + c.id + '\')"' + (all.length ? '' : ' disabled') + '>⬇ CSV</button>' +
+      '<input id="oc-gn-' + c.id + '" type="number" min="1" max="1000" value="65" style="width:70px" title="要再產生幾組">' +
+      '<button class="btn btn-outline btn-sm" onclick="ocGen(\'' + c.id + '\',this)">＋ 再產生</button></div>';
+    if (used.length) {
+      used.sort(function(a, b){ return String(b.usedAt).localeCompare(String(a.usedAt)) });
+      h += '<table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px"><tr class="muted" style="text-align:left"><th>開通碼</th><th>誰用的</th><th>電話</th><th>時間</th></tr>' +
+        used.map(function(x){ return '<tr style="border-top:1px solid var(--border)"><td style="font-family:monospace">' + ocEsc(x.code) + '</td><td>' + ocEsc(x.name || '—') + '</td><td>' + ocEsc(x.phone || '') + '</td><td>' + ocMd(x.usedAt) + ' ' + (x.usedAt ? new Date(x.usedAt).toTimeString().slice(0, 5) : '') + '</td></tr>' }).join('') + '</table>';
+    } else h += '<div class="muted" style="font-size:13px;margin-top:6px">還沒有人用開通碼開通。</div>';
+    h += '</div>';
+  });
+  /* 查一組碼 */
+  var q = ocCodeQ.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^XMAS/, ''), hit = q ? (ocCodes['XMAS-' + q] ? Object.assign({ code: 'XMAS-' + q }, ocCodes['XMAS-' + q]) : null) : null;
+  h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="oc-cq" placeholder="查一組碼，例 XMAS-7K3PQ" value="' + ocEsc(ocCodeQ) + '" style="width:200px" onkeydown="if(event.key===\'Enter\')ocCodeFind()">' +
+    '<button class="btn btn-outline btn-sm" onclick="ocCodeFind()">查詢</button>' +
+    (q ? '<span style="font-size:13px">' + (!hit ? '❌ 沒有這組碼' : hit.used ? '✅ 已用：' + ocEsc(hit.name || '') + ' ' + ocEsc(hit.phone || '') + '（' + ocMd(hit.usedAt) + '）' : '🟡 還沒用（' + ocEsc(hit.batch || '') + '）') + '</span>' : '') + '</div>';
+  return h + '</div>';
+}
+function ocCodeFind(){ var el = document.getElementById('oc-cq'); ocCodeQ = el ? el.value.trim() : ''; renderOnlineCourse() }
+async function ocGen(cid, btn){
+  var n = Math.floor(Number((document.getElementById('oc-gn-' + cid) || {}).value) || 0);
+  if (!(n >= 1 && n <= 1000)) { alert('一次 1～1000 組'); return }
+  if (!confirm('要再產生 ' + n + ' 組開通碼嗎？')) return;
+  btn.disabled = true;
+  try { ocCodes = (await staffApi('/staff/oc/codes', { gen: true, cid: cid, n: n })).codes || {}; renderOnlineCourse() } catch(e) { alert('產生失敗：' + e.message); btn.disabled = false }
+}
+function ocCsv(cid){
+  var c = (ocData.courses || []).filter(function(x){ return x.id === cid })[0] || {};
+  var rows = [['開通碼', '課程', '批次', '狀態', '使用時間', '使用人', '電話']].concat(ocCodeList(cid).sort(function(a, b){ return a.code < b.code ? -1 : 1 }).map(function(x){
+    return [x.code, c.title || cid, x.batch || '', x.used ? '已用' : '未用', x.usedAt ? new Date(x.usedAt).toLocaleString('zh-TW') : '', x.name || '', x.phone || ''] }));
+  var csv = '﻿' + rows.map(function(r){ return r.map(function(v){ v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v }).join(',') }).join('\r\n');
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = '開通碼_' + (c.title || cid) + '_' + new Date().toISOString().slice(0, 10) + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+/* 印貼紙：開一個新視窗，A4 一張 65 格；上面有微調欄位（不會印出來） */
+function ocPrint(cid){
+  var codes = ocCodeList(cid).filter(function(x){ return !x.used }).map(function(x){ return x.code }).sort();
+  var w = window.open('', '_blank'); if (!w) { alert('瀏覽器擋了新視窗，請允許彈出視窗'); return }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>開通碼貼紙</title><style>' +
+    '@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;font-family:"PingFang TC","Microsoft JhengHei",sans-serif}' +
+    '.tool{position:sticky;top:0;background:#fff8e6;border-bottom:1px solid #e0c98a;padding:8px 12px;font-size:13px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;z-index:2}' +
+    '.tool input{width:56px}.tool button{font-size:14px;padding:5px 14px}' +
+    '.page{width:210mm;height:297mm;position:relative;overflow:hidden;page-break-after:always;background:#fff;margin:0 auto}' +
+    '.lb{position:absolute;width:38.1mm;height:21.2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}' +
+    '.lb i{font-style:normal;font-size:7.5pt;letter-spacing:1px;color:#555}.lb b{font-family:Menlo,Consolas,"Courier New",monospace;font-size:12.5pt;letter-spacing:.5px;margin-top:1mm;color:#111}' +
+    'body.grid .lb{outline:.2mm dashed #bbb}' +
+    '@media screen{body{background:#ccc}.page{margin:10px auto;box-shadow:0 2px 8px rgba(0,0,0,.2)}}@media print{.tool{display:none}}' +
+    '</style></head><body class="grid"><div class="tool">' +
+    '共 <b>' + codes.length + '</b> 組還沒用的碼｜上邊界 <input id="t" type="number" step="0.5" value="10.7">mm　左邊界 <input id="l" type="number" step="0.5" value="4.7">mm' +
+    '　左右間距 <input id="g" type="number" step="0.1" value="2.5">mm　跳過前 <input id="sk" type="number" min="0" max="64" value="0"> 格' +
+    '　<label><input id="gr" type="checkbox" checked style="width:auto"> 印格線（對位測試用）</label>' +
+    '<button onclick="window.print()">🖨 列印</button><span style="color:#8a6a30">先印一張一般紙，疊在貼紙上對光看位置；印表機設定選「實際大小／100%」</span></div><div id="pp"></div>' +
+    '<script>var C=' + JSON.stringify(codes) + ';function d(){var t=+T.value||0,l=+L.value||0,g=+G.value||0,sk=Math.max(0,Math.min(64,+SK.value||0)),h="",i=0,n=0;' +
+    'var all=new Array(sk).fill("").concat(C);while(i<all.length){h+="<div class=\\"page\\">";for(var k=0;k<65&&i<all.length;k++,i++){var r=Math.floor(k/5),c=k%5;' +
+    'h+="<div class=\\"lb\\" style=\\"top:"+(t+r*21.2)+"mm;left:"+(l+c*(38.1+g))+"mm\\">"+(all[i]?"<i>影片開通碼</i><b>"+all[i]+"</b>":"")+"</div>"}h+="</div>"}' +
+    'document.getElementById("pp").innerHTML=h;document.body.className=GR.checked?"grid":""}' +
+    'var T=document.getElementById("t"),L=document.getElementById("l"),G=document.getElementById("g"),SK=document.getElementById("sk"),GR=document.getElementById("gr");' +
+    '[T,L,G,SK,GR].forEach(function(x){x.oninput=d;x.onchange=d});d();<\/script></body></html>');
+  w.document.close();
 }
