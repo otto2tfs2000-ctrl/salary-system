@@ -111,14 +111,62 @@ function poRowsHtml(){
         (o.proofImg ? '・<a href="' + poEsc(o.proofImg) + '" target="_blank">看付款截圖</a>' : '') +
         '・合計 <b>' + poMoney(o.total) + '</b>' + (o.fee ? '<span class="muted">（含運費 ' + poMoney(o.fee) + '）</span>' : '') +
         (o.paidBy ? '<span class="muted">・' + poEsc(o.paidBy) + ' 確認收款</span>' : '') +
+        (o.pointsUsed ? '<br>💎 已從 <b>' + poEsc(o.pointsPhone || o.phone) + '</b> 的儲值點數扣 <b>' + o.pointsUsed + ' 點</b><span class="muted">（' + poEsc(o.pointsBy) + ' ' + poMd(o.pointsAt) + '）</span>' : '') +
+        (o.pointsBackAt ? '<br><span class="muted">💎 點數已退回（' + poEsc(o.pointsBackBy) + ' ' + poMd(o.pointsBackAt) + '）</span>' : '') +
         (o.trackingNo ? '<br>🚚 託運單號 <b>' + poEsc(o.trackingNo) + '</b>' + (o.shippedBy ? '<span class="muted">（' + poEsc(o.shippedBy) + ' ' + poMd(o.shippedAt) + '）</span>' : '') : '') +
         (o.note ? '<br>📝 客人備註：' + poEsc(o.note) : '') +
         (o.staffNote ? '<br>🔒 內部備註：' + poEsc(o.staffNote) : '') + '</div>' +
       '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
         (o.status === 'paid' ? '<button class="btn btn-ok btn-sm" onclick="poShip(\'' + o.oid + '\')">🚚 已寄出（填單號）</button>' : '') +
+        (!o.pointsUsed && o.status !== 'cancel' && (o.status === 'new' || o.payWay === 'points') ? '<button class="btn btn-sm ' + (o.payWay === 'points' ? 'btn-gold' : 'btn-outline') + '" onclick="poPtOpen(\'' + o.oid + '\')">💎 用儲值點數扣</button>' : '') +
+        (o.pointsUsed ? '<button class="btn btn-outline btn-sm" style="color:#c94d4d" onclick="poPtBack(\'' + o.oid + '\',this)">退回點數</button>' : '') +
         '<button class="btn btn-outline btn-sm" onclick="poCopy(\'' + poEsc(poShipText(o)).replace(/'/g, '&#39;') + '\',this)">複製寄件資料</button>' +
-        '<button class="btn btn-outline btn-sm" onclick="poOpenEdit(\'' + o.oid + '\')">編輯</button></div></div>';
+        '<button class="btn btn-outline btn-sm" onclick="poOpenEdit(\'' + o.oid + '\')">編輯</button></div>' +
+        (poPt && poPt.oid === o.oid ? poPtHtml(o) : '') + '</div>';
   }).join('');
+}
+/* 💎 用儲值點數扣（2026-11-25）：先查付款人剩多少點，確認後由伺服器寫進會員明細（跟核銷扣點同一套） */
+var poPt = null;   /* { oid, phone, amt, info:{member,name,points} | 'load' | 'err' , msg } */
+function poPtOpen(oid){
+  var o = poData.orders[oid];
+  poPt = { oid: oid, phone: o.phone, amt: o.total, info: 'load', msg: '' };
+  poDrawRows(); poPtLookup();
+}
+async function poPtLookup(){
+  var p = poPt; p.info = 'load'; poDrawRows();
+  try { var j = await staffApi('/staff/preorder/balance', { phone: p.phone }); if (poPt === p) p.info = j }
+  catch(e) { if (poPt === p) { p.info = 'err'; p.msg = e.message } }
+  if (poPt === p) poDrawRows();
+}
+function poPtHtml(o){
+  var p = poPt, i = p.info, enough = i && i.points != null && i.points >= (+p.amt || 0);
+  var st = i === 'load' ? '<span class="muted">查點數中…</span>' : i === 'err' ? '<span style="color:#c94d4d">' + poEsc(p.msg) + '</span>' :
+    (!i.member ? '<span style="color:#c94d4d">這支電話不是會員，沒有儲值點數</span>' :
+     poEsc(i.name || '') + ' 剩 <b style="color:' + (enough ? '#2f7d5b' : '#c94d4d') + '">' + i.points + ' 點</b>' + (enough ? '' : '・<b style="color:#c94d4d">不夠扣</b>'));
+  return '<div style="margin-top:8px;padding:10px 12px;border:1.5px solid #c99a3c;border-radius:10px;background:#fffaf0;font-size:var(--fs-sm)">' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">付款人電話 <input id="po-pt-ph" value="' + poEsc(p.phone) + '" style="width:130px" inputmode="numeric">' +
+    '<button class="btn btn-outline btn-sm" onclick="poPt.phone=document.getElementById(\'po-pt-ph\').value.trim();poPt.amt=document.getElementById(\'po-pt-amt\').value;poPtLookup()">查點數</button>' +
+    '扣 <input id="po-pt-amt" type="number" value="' + poEsc(p.amt) + '" style="width:90px"> 點</div>' +
+    '<div style="margin:6px 0">' + st + '</div><div class="muted" style="font-size:var(--fs-xs);margin-bottom:6px">1 點＝1 元，扣完會出現在會員明細「預購・…」。要用家人的點數就改上面的電話再按查點數。只扣一部分的話，剩下的錢收到後再自己把狀態改成已付款。</div>' +
+    (p.msg && i !== 'err' ? '<div style="color:#c94d4d;margin-bottom:6px">' + poEsc(p.msg) + '</div>' : '') +
+    '<button class="btn btn-gold btn-sm"' + (i && i.member && enough ? '' : ' disabled') + ' onclick="poPtGo(this)">確定扣點</button> ' +
+    '<button class="btn btn-outline btn-sm" onclick="poPt=null;poDrawRows()">取消</button></div>';
+}
+async function poPtGo(btn){
+  var p = poPt, ph = document.getElementById('po-pt-ph').value.trim(), amt = +document.getElementById('po-pt-amt').value;
+  if (ph !== p.phone) { p.phone = ph; p.amt = amt; return poPtLookup() }   /* 改了電話還沒查，先查 */
+  btn.disabled = true; p.msg = '';
+  try {
+    var j = await staffApi('/staff/preorder/points', { p: poP, oid: p.oid, payer: ph, amt: amt });
+    poData.orders[p.oid] = j.o; poPt = null; renderPreorder();
+  } catch(e) { p.amt = amt; p.msg = '扣點失敗：' + e.message; poDrawRows() }
+}
+async function poPtBack(oid, btn){
+  var o = poData.orders[oid];
+  if (!confirm('把 ' + o.pointsUsed + ' 點退回給 ' + (o.pointsPhone || o.phone) + '？\n會在會員明細加一筆「退回預購點數」。')) return;
+  btn.disabled = true;
+  try { var j = await staffApi('/staff/preorder/points', { p: poP, oid: oid, undo: true }); poData.orders[oid] = j.o; renderPreorder() }
+  catch(e) { alert('退回失敗：' + e.message); btn.disabled = false }
 }
 function poShipText(o){ return o.name + ' ' + o.phone + ' ' + poDest(o) + ' ' + o.qty + '盒' + (o.gift ? '＋' + o.gift : '') }
 function poToday(){ return new Date(Date.now() + 288e5).toISOString().slice(0, 10) }
