@@ -72,10 +72,11 @@ function efCalc(id){
     else if (x.pay !== 'company') fundOut += a;
   });
   var drawn = f.draws.reduce(function(t, x){ return t + (+x.amt || 0) }, 0);
+  var gotAmt = f.draws.reduce(function(t, x){ return t + (x.got ? (+x.amt || 0) : 0) }, 0);
   var pct = (+f.matPct || 0) / 100, tgt = +f.target || 0;
   function caps(rev){ var mc = rev * pct; return { matCap: mc, othCap: rev - mc - tgt, allLeft: rev - tgt - spent } }
   return { ev: ev, f: f, reg: reg, other: other, R: R, Rfull: Rfull, spent: spent, mat: mat, oth: spent - mat,
-    drawn: drawn, fundOut: fundOut, fundLeft: drawn - fundOut, selfOwe: selfOwe, tgt: tgt, pct: pct,
+    drawn: drawn, gotAmt: gotAmt, fundOut: fundOut, fundLeft: drawn - fundOut, selfOwe: selfOwe, tgt: tgt, pct: pct,
     now: caps(R), full: caps(Rfull) };
 }
 
@@ -153,7 +154,7 @@ function efBodyHtml(id){
 
   /* ── 經費 ── */
   h += '<div class="card"><div class="card-title">💰 向公司提領的經費</div><div class="stat-grid">' +
-    efTile('提領合計', efMoney(c.drawn), f.draws.length + ' 次') +
+    efTile('提領合計', efMoney(c.drawn), f.draws.length + ' 次' + (c.drawn - c.gotAmt > 0 ? '<br><span style="color:var(--red)">還沒領 ' + efMoney(c.drawn - c.gotAmt) + '</span>' : (f.draws.length ? '<br>都已領取' : ''))) +
     efTile('從經費付出', efMoney(c.fundOut), '含已還的代墊') +
     efTile('經費還剩', efNeg(c.fundLeft), c.fundLeft < 0 ? '<span style="color:var(--red)">不夠了，要再提領 ' + efMoney(-c.fundLeft) + '</span>' : '活動結束後剩的要繳回', 'hi') +
     efTile('還沒還的代墊', efMoney(c.selfOwe), c.selfOwe ? '要從經費還給先墊的人' : '沒有') +
@@ -188,7 +189,9 @@ function efMiniList(kind, arr, word){
   return '<div style="margin-bottom:12px">' + arr.slice().sort(function(a, b){ return String(a.date).localeCompare(String(b.date)) }).map(function(x){
     return '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
       '<span style="width:86px">' + efEsc(String(x.date || '').replace(/-/g, '/')) + '</span><b style="width:90px">' + efMoney(x.amt) + '</b>' +
-      '<span style="flex:1 1 140px;color:var(--text2)">' + efEsc(x.note || '') + (x.by ? ' <span class="muted">· ' + efEsc(x.by) + '</span>' : '') + '</span>' +
+      '<span style="flex:1 1 140px;color:var(--text2)">' + efEsc(x.note || '') + (x.by ? ' <span class="muted">· ' + efEsc(x.by) + '</span>' : '') +
+        (kind === 'draws' ? ' ' + (x.got ? '<span class="badge b-green">已領取' + (x.gotAt ? ' ' + efEsc(efMd(x.gotAt)) : '') + (x.gotBy ? ' · ' + efEsc(x.gotBy) : '') + '</span>' : '<span class="badge b-red">還沒領</span>') : '') + '</span>' +
+      (kind === 'draws' ? '<button class="btn btn-outline btn-sm" onclick="efGot(\'' + efEsc(x.id) + '\')">' + (x.got ? '改回未領' : '已領取') + '</button>' : '') +
       '<button class="btn btn-outline btn-sm" onclick="efDelMini(\'' + kind + '\',\'' + efEsc(x.id) + '\')">刪除</button></div>';
   }).join('') + '</div>';
 }
@@ -246,6 +249,14 @@ function efAddMini(p){
   if (!(amt > 0)) { alert('請填金額'); return }
   var f = efRec(efId), arr = p === 'draw' ? f.draws : f.incomes;
   arr.push({ id: efNewId(p === 'draw' ? 'd' : 'i'), date: date, amt: amt, note: efVal('ef-' + p + '-note'), by: efMe() });
+  save(); renderEventFund();
+}
+/* 2026-11-26 提領經費「已領取」：向會計申請後，錢真的拿到手再按 */
+function efGot(id){
+  var f = efRec(efId), x = f.draws.find(function(it){ return it.id === id });
+  if (!x) return;
+  x.got = !x.got;
+  if (x.got) { x.gotAt = efToday(); x.gotBy = efMe() } else { x.gotAt = null; x.gotBy = null }
   save(); renderEventFund();
 }
 function efDelMini(kind, id){
@@ -306,7 +317,7 @@ function efExcel(){
   });
   rows.push([], ['各月小計']);
   Object.keys(byM).sort().forEach(function(m){ rows.push([efMonthName(m), byM[m]]) });
-  rows.push([], ['提領紀錄']); f.draws.forEach(function(x){ rows.push([x.date, x.amt, x.note || '']) });
+  rows.push([], ['提領紀錄']); f.draws.forEach(function(x){ rows.push([x.date, x.amt, x.note || '', x.got ? '已領取' + (x.gotAt ? ' ' + x.gotAt : '') : '還沒領']) });
   if (f.incomes.length) { rows.push([], ['其他收入']); f.incomes.forEach(function(x){ rows.push([x.date, x.amt, x.note || '']) }) }
   var ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = [{wch:16},{wch:14},{wch:8},{wch:30},{wch:10},{wch:18},{wch:10},{wch:24}];
   var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '活動收支');
