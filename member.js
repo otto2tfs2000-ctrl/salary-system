@@ -1573,10 +1573,13 @@ async function mbSellSave(phone){
 
   /* 黃金扭蛋金幣：方案金額一模一樣落在「扭蛋活動→黃金扭蛋」某一級，就送那一級的金幣。
      發幣失敗不擋流程（方案已經入好了），跳提醒請行政去手動補發 */
-  var goldN = 0, goldTier = '', goldErr = '', goldOpen = false;
+  /* 2026-11-26 合購（共用方案）：買家＋每位共用的人各一枚「一級」金幣 */
+  var goldN = 0, goldTier = '', goldErr = '', goldOpen = false, goldPeerN = 0;
+  var goldPeers = (split.on && peerBodies.length) ? split.peers.map(function(x){ return x.phone }) : [];
   try {
-    var gr = await staffApi('/staff/gacha/gold/plan-sold', { phone: phone, price: +p.price || 0, planName: p.name, saleKey: 'sell' + stamp });
-    if (gr && gr.issued) { goldN = gr.issued; goldTier = gr.tierNm || ''; goldOpen = !!gr.enabled }
+    var gr = await staffApi('/staff/gacha/gold/plan-sold', { phone: phone, price: +p.price || 0, planName: p.name, saleKey: 'sell' + stamp, peers: goldPeers });
+    if (gr && gr.peerIssued) Object.keys(gr.peerIssued).forEach(function(k){ goldPeerN += (+gr.peerIssued[k] || 0) });
+    if (gr && (gr.issued || goldPeerN)) { goldN = gr.issued || 0; goldTier = gr.tierNm || ''; goldOpen = !!gr.enabled }
   } catch(e) { goldErr = e.message || '連線失敗' }
 
   /* 方案收入記進當天業績，月報看得到 */
@@ -1616,7 +1619,7 @@ async function mbSellSave(phone){
         (depFails.length ? '⚠ 這些訂金沒標成「已抵方案」：' + depFails.join('、') + '\n之後核銷這筆課時訂金還會再扣一次，請截圖告知。\n' : '') +
         (m.name || m.phone) + ' 目前 ' + m.points.toLocaleString() + ' 點・' + m.sessions + ' 堂' +
         (split.on && peerBodies.length ? split.peers.map(function(x, j){ return '\n' + x.name + '（' + x.phone + '）另外分到 ' + alloc.peers[j].toLocaleString() + ' 點' }).join('') : '') +
-        (goldN ? '\n\n🪙 已送黃金扭蛋金幣 ' + goldN + ' 枚（' + goldTier + '）' + (goldOpen ? '' : '\n（黃金扭蛋還沒「開放」，客人暫時看不到金幣，LINE 卡片也沒寫金幣）') : '') +
+        ((goldN || goldPeerN) ? '\n\n🪙 已送黃金扭蛋金幣 ' + (goldPeerN ? '買家＋共用的人各 1 枚，共 ' + (goldN + goldPeerN) : goldN) + ' 枚（' + goldTier + '）' + (goldOpen ? '' : '\n（黃金扭蛋還沒「開放」，客人暫時看不到金幣，LINE 卡片也沒寫金幣）') : '') +
         (goldErr ? '\n\n⚠ 黃金扭蛋金幣沒發成功（' + goldErr + '）。方案已經入好了，請到「扭蛋活動→黃金扭蛋→手動補發金幣」補發。' : '') +
         (notified === true  ? '\n\nLINE 通知已送出。' : '') +
         (notified === false ? '\n\n⚠ LINE 通知沒送出去，方案已經入好了。要補通知請再賣一次是不行的，請直接用 LINE 手動告知客人。' : ''));
