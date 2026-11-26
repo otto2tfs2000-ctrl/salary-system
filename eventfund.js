@@ -108,7 +108,7 @@ function efPickerHtml(list){
   }).join('');
   return '<div class="card"><div class="card-title">🎪 活動支出（向公司另外提領的經費，不算進每月零用金）</div>' +
     '<div class="toolbar"><select id="ef-pick" onchange="efPick(this.value)" style="min-width:260px;max-width:100%">' + opts + '</select>' +
-    (efId ? '<button class="btn btn-outline btn-sm" onclick="efRefresh()">↻ 重新讀取收款</button><button class="btn btn-outline btn-sm" onclick="efExcel()">⬇ 匯出這場的明細</button>' : '') +
+    (efId ? '<button class="btn btn-outline btn-sm" onclick="efRefresh()">↻ 重新讀取收款</button><button class="btn btn-outline btn-sm" onclick="efExcel()">⬇ 匯出這場的明細</button><button class="btn btn-outline btn-sm" onclick="efPettyExcel()">🖨 匯出支出明細表（簽收用）</button>' : '') +
     '</div><div class="muted" style="margin-top:8px">● ＝已經有記帳的活動</div></div>';
 }
 function efPick(id){ efId = id || null; efRegFor = null; try { localStorage.setItem('otto2_ef_id', efId || '') } catch(e) {} renderEventFund() }
@@ -299,6 +299,52 @@ function efEditItem(id){
   cat = cat.trim(); if (EF_CATS.indexOf(cat) < 0) { alert('類別只能是：' + EF_CATS.join('、')); return }
   x.amount = amt; x.name = name.trim(); x.date = date.trim(); x.cat = cat; x.editBy = efMe(); x.editAt = new Date().toISOString();
   save(); renderEventFund();
+}
+
+/* 2026-11-26 跟耗材記帳「⬇ 匯出零用金支出明細表」同一個公司格式（領款人簽名欄＋最下面簽核列），
+   印出來給會計／簽收用。提領經費寫在「撥入金額」欄，支出寫在「支出金額」欄。 */
+function efPettyExcel(){
+  if (!efId) return;
+  if (typeof XLSX === 'undefined') { alert('Excel 工具還沒載入，請稍等再按一次'); return }
+  var c = efCalc(efId), f = c.f, title = c.ev.title || efId;
+  var lines = [];
+  f.draws.forEach(function(x){ lines.push({ date: x.date || '', k: 0, cat: '提領經費', desc: '向公司提領活動經費' + (x.note ? '｜' + x.note : '') + (x.got ? '' : '｜⚠還沒領'), inAmt: +x.amt || 0, out: '', payer: x.by || '' }) });
+  f.items.forEach(function(x){
+    var d = [x.name || ''];
+    if (x.pay === 'self') d.push(x.repaid ? '代墊已還' : '⚠' + (x.buyer || '') + '先墊，尚未還');
+    if (x.pay === 'company') d.push('公司直接付（不動活動經費）');
+    if (x.note) d.push(x.note);
+    lines.push({ date: x.date || '', k: 1, cat: x.cat || '', desc: d.join('｜'), inAmt: '', out: +x.amount || 0, payer: x.buyer || '' });
+  });
+  lines.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)) || a.k - b.k });
+  var dates = lines.map(function(x){ return x.date }).filter(Boolean).sort();
+  function zh(d){ var p = String(d || '').split('-'); return p.length === 3 ? p[0] + '年' + p[1] + '月' + p[2] + '日' : '' }
+  var periodStr = dates.length ? zh(dates[0]) + '　～　' + zh(dates[dates.length - 1]) : '';
+  var rows = [];
+  rows.push(['美林藝術文創(股)公司', '', '', '', '', '', '']);
+  rows.push([periodStr, '', '', '', '', '', '']);
+  rows.push(['活動經費-' + title, '', '', '', '', '', '']);
+  rows.push(['提領經費合計：' + c.drawn.toLocaleString() + '（已領取 ' + c.gotAmt.toLocaleString() + '）', '', '', '經費還剩：' + c.fundLeft.toLocaleString(), '', '', '']);
+  rows.push(['日期', '類別', '品明細項', '撥入金額', '支出金額', '付款人', '領款人簽名']);
+  var r0 = rows.length;
+  lines.forEach(function(x){ rows.push([x.date, x.cat, x.desc, x.inAmt, x.out, x.payer, '']) });
+  rows.push(['', '', '合計', c.drawn, c.spent, '', '']);
+  rows.push(['', '', '', '', '', '', '']);
+  rows.push(['本次申請撥補金額：', '', '', '', '', '', '']);
+  rows.push(['本次撥補金額(會計填)：', '', '', '', '', '', '']);
+  rows.push(['', '', '', '', '', '', '']);
+  rows.push(['執行長：　　　會簽單位：　　　單位主管：　　　會計：　　　申請人：', '', '', '', '', '', '']);
+  var n = rows.length, sign = n - 1, acct = n - 3, apply = n - 4;
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:12},{wch:10},{wch:34},{wch:10},{wch:10},{wch:10},{wch:12}];
+  ws['!merges'] = [
+    {s:{r:0,c:0}, e:{r:0,c:6}}, {s:{r:1,c:0}, e:{r:1,c:6}}, {s:{r:2,c:0}, e:{r:2,c:6}},
+    {s:{r:3,c:0}, e:{r:3,c:2}}, {s:{r:3,c:3}, e:{r:3,c:6}},
+    {s:{r:apply,c:0}, e:{r:apply,c:6}}, {s:{r:acct,c:0}, e:{r:acct,c:6}}, {s:{r:sign,c:0}, e:{r:sign,c:6}}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '活動支出明細表');
+  XLSX.writeFile(wb, 'Otto2_活動支出明細表_' + String(title).replace(/[\\/:*?"<>|]/g, '') + '_' + efToday() + '.xlsx');
 }
 
 function efExcel(){
