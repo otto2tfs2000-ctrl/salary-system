@@ -433,27 +433,42 @@ function bbDayLockLine(r, dateStr){
     (shut.length ? '🔒 已關閉預約：' + bbEsc(shut.join('、')) + (open.length ? '　' : '') : '') +
     (open.length ? '🔓 線上預約還開著：' + bbEsc(open.join('、')) + '，要關的話按下面該時段的「關閉預約」' : '') + '</div>';
 }
-/* ── 今日排課最上面：這一天的包班；看今天的話順便列接下來 7 天 ── */
+/* ── 今日排課最上面：跟「寄送」一樣常駐一條，列出還沒上的包班（旗艦店＋外派，國圖店不放），點標題收合；
+   正在看的那天有包班，另外列詳細（時間、聯絡人、備料、線上預約關了沒）。2026-11-27 ── */
+var bbUpOpen = true;
+function bbToggleUp(){ bbUpOpen = !bbUpOpen; if (window.bkBbApi) window.bkBbApi.render() }
 function bbDayHtml(dateStr, isToday){
   if (!bbData) return '';
   var d = String(dateStr).replace(/\//g, '-'), t = bbToday();
   /* 今日排課是旗艦店的，國圖店的包班不放這裡（到包班分頁看） */
-  var on = bbList().filter(function(r){ return r.status !== 'cancel' && r.date === d && bbPlace(r) !== 'guotu' })
+  var mine = bbList().filter(function(r){ return r.status !== 'cancel' && bbPlace(r) !== 'guotu' });
+  var on = mine.filter(function(r){ return r.date === d })
     .sort(function(a, b){ return String(a.start || '').localeCompare(String(b.start || '')) });
-  var next = isToday ? bbList().filter(function(r){ var x = r.date ? bbDaysTo(r.date) : -1; return r.status !== 'cancel' && bbPlace(r) !== 'guotu' && r.date > t && x <= 7 })
-    .sort(function(a, b){ return String(a.date).localeCompare(String(b.date)) }) : [];
-  if (!on.length && !next.length) return '';
+  var up = mine.filter(function(r){ return (!r.date || r.date >= t) && r.date !== d })
+    .sort(function(a, b){ return String(a.date || '9999').localeCompare(String(b.date || '9999')) || String(a.start || '').localeCompare(String(b.start || '')) });
+  if (!on.length && !up.length) return '';
   /* 彈窗外也會用到，顏色寫死不用 --bk 變數 */
+  var row = 'padding:6px 0;border-top:1px dashed #E2D4AA;cursor:pointer';
   return '<div style="background:#F4EEDD;border:1px solid #D9C48A;border-radius:12px;padding:10px 14px;margin-bottom:10px">' +
     (on.length ? '<div style="font-weight:700;color:#7A5A12;margin-bottom:4px">🏫 這天有包班</div>' + on.map(function(r){
-      return '<div style="padding:6px 0;border-top:1px dashed #E2D4AA;cursor:pointer" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' +
+      return '<div style="' + row + '" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' +
         '<b>' + bbEsc((r.start || '') + (r.end ? '–' + r.end : '')) + ' ' + bbEsc(r.org) + '</b>　' + BB_PLACE[bbPlace(r)] + '・' + bbPpl(r) + ' 人' +
+        (r.status === 'talk' ? '・洽談中' : '') +
         '<div style="font-size:13px;color:#6b665e">' + [r.course, r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? (r.place || r.address) : '',
           r.siteContact ? '現場 ' + r.siteContact + ' ' + (r.sitePhone || '') : (r.contact ? '對接 ' + r.contact + ' ' + (r.phone || '') : ''),
           r.prepMat ? '已備料' : '⚠️ 還沒備料'].filter(Boolean).map(bbEsc).join('・') + '</div>' + bbDayLockLine(r, dateStr) + '</div>';
     }).join('') : '') +
-    (next.length ? '<div style="font-size:13px;color:#7A5A12;margin-top:' + (on.length ? 8 : 0) + 'px"><b>接下來 7 天包班：</b>' + next.map(function(r){
-      return '<span style="cursor:pointer;text-decoration:underline" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' + bbEsc(bbMd(r.date) + ' ' + r.org + ' ' + bbPpl(r) + '人') + '</span>' }).join('、') + '</div>' : '') +
+    (up.length ? '<div style="font-weight:700;color:#7A5A12;cursor:pointer;margin-top:' + (on.length ? 10 : 0) + 'px" onclick="bbToggleUp()">' +
+      (bbUpOpen ? '▼' : '▶') + ' 🏫 接下來的包班：' + up.length + ' 筆</div>' +
+      (!bbUpOpen ? '' : up.map(function(r){
+        var dt = r.date ? bbDaysTo(r.date) : null;
+        var soon = dt == null ? '日期未定' : dt === 0 ? '<b style="color:#B23A30">今天</b>' : dt === 1 ? '<b style="color:#B23A30">明天</b>' : '還有 ' + dt + ' 天';
+        return '<div style="' + row + '" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' +
+          '<b>' + bbEsc(r.date ? bbMd(r.date) : '') + ' ' + bbEsc((r.start || '') + (r.end ? '–' + r.end : '')) + ' ' + bbEsc(r.org) + '</b>　' + soon +
+          '<div style="font-size:13px;color:#6b665e">' + [BB_PLACE[bbPlace(r)], BB_STATUS[r.status] || '', bbPpl(r) ? bbPpl(r) + ' 人' : '', r.course,
+            r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? (r.place || r.address) : ''].filter(Boolean).map(bbEsc).join('・') +
+          (r.status === 'ok' && dt != null && dt <= 7 && !r.prepMat ? '・⚠️ 還沒備料' : '') + '</div></div>';
+      }).join('')) : '') +
     '</div>';
 }
 
