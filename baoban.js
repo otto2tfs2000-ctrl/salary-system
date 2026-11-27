@@ -437,9 +437,10 @@ function bbDayLockLine(r, dateStr){
 function bbDayHtml(dateStr, isToday){
   if (!bbData) return '';
   var d = String(dateStr).replace(/\//g, '-'), t = bbToday();
-  var on = bbList().filter(function(r){ return r.status !== 'cancel' && r.date === d })
+  /* 今日排課是旗艦店的，國圖店的包班不放這裡（到包班分頁看） */
+  var on = bbList().filter(function(r){ return r.status !== 'cancel' && r.date === d && bbPlace(r) !== 'guotu' })
     .sort(function(a, b){ return String(a.start || '').localeCompare(String(b.start || '')) });
-  var next = isToday ? bbList().filter(function(r){ var x = r.date ? bbDaysTo(r.date) : -1; return r.status !== 'cancel' && r.date > t && x <= 7 })
+  var next = isToday ? bbList().filter(function(r){ var x = r.date ? bbDaysTo(r.date) : -1; return r.status !== 'cancel' && bbPlace(r) !== 'guotu' && r.date > t && x <= 7 })
     .sort(function(a, b){ return String(a.date).localeCompare(String(b.date)) }) : [];
   if (!on.length && !next.length) return '';
   /* 彈窗外也會用到，顏色寫死不用 --bk 變數 */
