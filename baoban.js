@@ -24,6 +24,11 @@ function bbArr(x){ return Array.isArray(x) ? x : [] }   // Firebase 不存空陣
 function bbBy(){
   try { var m = window.ME || {}; return (m.staff && (m.staff.name || m.staff.displayName)) || m.displayName || '' } catch (e) { return '' }
 }
+/* 2026-11-27 內場要分旗艦店／國圖店。線上預約只有旗艦店有，所以只有旗艦店內場會關預約、佔教室。
+   舊資料沒有 store 的一律當旗艦店。 */
+function bbPlace(r){ return r.venue === 'out' ? 'out' : (r.store === 'guotu' ? 'guotu' : 'flagship') }
+var BB_PLACE = { flagship:'旗艦店', guotu:'國圖店', out:'外派' };
+function bbInFlag(r){ return r.venue === 'in' && r.store !== 'guotu' }
 function bbPpl(r){ return bbNum(r.adults) + bbNum(r.kids) }
 function bbUnpaid(r){ return Math.max(0, bbNum(r.total) - bbNum(r.paid)) }
 function bbList(){ return Object.keys(bbData || {}).map(function(k){ return bbData[k] }).filter(Boolean) }
@@ -43,7 +48,7 @@ async function bbPut(rec){
 }
 
 /* ── 擋名額 ── */
-function bbWants(r){ return r && r.venue === 'in' && (r.status === 'ok' || r.status === 'done') && r.date && r.date >= bbToday() }
+function bbWants(r){ return r && bbInFlag(r) && (r.status === 'ok' || r.status === 'done') && r.date && r.date >= bbToday() }
 /* closeAsk：yes＝要關、no＝先不關、沒填＝還沒決定。舊資料已經有關掉的時段就當 yes */
 function bbCloseAsk(r){ return r.closeAsk || (bbArr(r.locked).length ? 'yes' : '') }
 function bbWantKeys(r){ return bbWants(r) && bbCloseAsk(r) === 'yes' ? bbArr(r.blockSlots).map(function(sl){ return bbSlash(r.date) + '|' + sl }) : [] }
@@ -76,7 +81,7 @@ function bbAutoSlots(slots, start, end){
 /* 已確認的內場包班才佔教室（外派不在教室，洽談中還沒成） */
 function bbSeatedOn(dateStr){
   var d = String(dateStr).replace(/\//g, '-');
-  return bbList().filter(function(r){ return r.date === d && r.venue === 'in' && (r.status === 'ok' || r.status === 'done') });
+  return bbList().filter(function(r){ return r.date === d && bbInFlag(r) && (r.status === 'ok' || r.status === 'done') });
 }
 /* 今日排課：實際在上課的是哪幾筆（只算上課時間，拖時間多關的那格不算人數） */
 function bbRowsAt(dateStr, sl, slots){
@@ -100,7 +105,7 @@ function bbSlotTag(dateStr, sl, slots, closed){
     out.push('🏫 ' + who + (closed ? '' : bbCloseAsk(r) === 'no' ? '・先不關' : '・要關閉嗎？'));
   });
   bbList().forEach(function(r){
-    if (r.date === d && r.venue === 'in' && r.status === 'talk' && bbSlotsOf(r, slots).indexOf(sl) >= 0) out.push('🏫 洽談中：' + r.org);
+    if (r.date === d && bbInFlag(r) && r.status === 'talk' && bbSlotsOf(r, slots).indexOf(sl) >= 0) out.push('🏫 洽談中：' + r.org);
   });
   return out.join('、');
 }
@@ -193,7 +198,7 @@ function bbCardHtml(r){
   return '<div class="bb-card" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' +
     '<div class="bb-when">' + when + (soon ? '<span class="bb-soon">' + soon + '</span>' : '') + '</div>' +
     '<div class="bb-org">' + bbEsc(r.org || '（未填單位）') + ' ' + tagSt +
-      ' <span class="badge b-gray">' + (r.venue === 'out' ? '外派' : '內場') + '</span>' +
+      ' <span class="badge b-gray">' + BB_PLACE[bbPlace(r)] + '</span>' +
       (r.sessionTotal > 1 ? ' <span class="badge b-gray">第 ' + bbEsc(r.sessionNo || 1) + '／' + bbEsc(r.sessionTotal) + ' 堂</span>' : '') + '</div>' +
     '<div class="bb-sub">' + [bbPpl(r) ? bbPpl(r) + ' 人' : '', r.course, r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? r.place : '', bbNum(r.total) ? bbMoney(r.total) : '']
       .filter(Boolean).map(bbEsc).join('・') + '</div>' +
@@ -212,7 +217,7 @@ function bbListHtml(){
     '<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="bbData=null;renderBaoban()">↻ 重新讀取</button>' +
     '<button class="btn btn-gold btn-sm" onclick="bbNew()">＋ 新增包班</button></div>' +
     '<div class="hint" style="margin-bottom:12px">接到包班就先建一筆，日期、單位、人數、地點填了就能存，其他之後再補。' +
-    '內場包班可以選要不要同步關閉線上預約，已確認才會真的關；今日排課那個時段也看得到、也能關，兩邊同步。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
+    '旗艦店的內場包班可以選要不要同步關閉線上預約，已確認才會真的關；今日排課那個時段也看得到、也能關，兩邊同步。當天會出現在今日排課最上面，早安簡報也會提前提醒。</div>';
   h += '<div class="sec-label">接下來的包班（' + up.length + '）</div>';
   h += up.length ? up.map(bbCardHtml).join('') : '<div class="empty" style="padding:24px">目前沒有排定的包班</div>';
   if (todo.length) h += '<div class="sec-label" style="margin-top:18px;color:var(--red2)">上完了還有事沒做完（' + todo.length + '）</div>' + todo.map(bbCardHtml).join('');
@@ -223,7 +228,7 @@ function bbListHtml(){
 
 /* ── 表單 ── */
 function bbNewRec(o){
-  return Object.assign({ id:'bb' + Date.now().toString(36), _new:true, status:'talk', venue:'in', date:'', start:'', end:'', sessionNo:1, sessionTotal:1,
+  return Object.assign({ id:'bb' + Date.now().toString(36), _new:true, status:'talk', venue:'in', store:'flagship', date:'', start:'', end:'', sessionNo:1, sessionTotal:1,
     org:'', contact:'', phone:'', contactLine:'', contactEmail:'', siteContact:'', sitePhone:'',
     place:'', address:'', parking:'', equip:'',
     adults:'', kids:'', ages:'', finalBy:'', finalDone:false,
@@ -265,7 +270,7 @@ function bbSec(title, body, open){ return '<details class="tools-box"' + (open ?
 function bbFormHtml(){
   var e = bbEdit;
   var st = Object.keys(BB_STATUS).map(function(k){ return '<button type="button" class="store-btn' + (e.status === k ? ' active' : '') + '" data-st="' + k + '">' + BB_STATUS[k] + '</button>' }).join('');
-  var vn = [['in', '內場（在教室）'], ['out', '外派（去對方那裡）']].map(function(x){ return '<button type="button" class="store-btn' + (e.venue === x[0] ? ' active' : '') + '" data-vn="' + x[0] + '">' + x[1] + '</button>' }).join('');
+  var vn = [['flagship', '旗艦店'], ['guotu', '國圖店'], ['out', '外派（去對方那裡）']].map(function(x){ return '<button type="button" class="store-btn' + (bbPlace(e) === x[0] ? ' active' : '') + '" data-vn="' + x[0] + '">' + x[1] + '</button>' }).join('');
   return '<div class="card"><div class="card-title">' + (e._new ? '新增包班' : '編輯包班：' + bbEsc(e.org)) + '</div>' +
     '<div class="sec-label">狀態</div><div class="store-tabs" id="bb-st">' + st + '</div>' +
     '<div class="sec-label">上課地點</div><div class="store-tabs" id="bb-vn">' + vn + '</div>' +
@@ -315,6 +320,7 @@ var bbSlotsTouched = false;
 async function bbDrawSlots(){
   var box = document.getElementById('bb-slots'); if (!box) return;
   var e = bbEdit;
+  if (e.venue === 'in' && e.store === 'guotu'){ box.innerHTML = '<div class="hint" style="margin:6px 0 10px">國圖店沒有線上預約，不用關時段。</div>'; return }
   if (e.venue !== 'in' || !e.date || !window.bkBbApi){ box.innerHTML = ''; return }
   var d = bbSlash(e.date), slots = await window.bkBbApi.slotsOn(d);
   if (!bbEdit || bbEdit !== e) return;
@@ -339,7 +345,9 @@ function bbBindForm(){
   function tabs(id, attr, key){
     document.getElementById(id).onclick = function(ev){
       var b = ev.target.closest('button'); if (!b) return;
-      bbReadForm(); bbEdit[key] = b.dataset[attr];
+      bbReadForm();
+      if (key === 'venue'){ var p = b.dataset[attr]; bbEdit.venue = p === 'out' ? 'out' : 'in'; if (p !== 'out') bbEdit.store = p }
+      else bbEdit[key] = b.dataset[attr];
       this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active', x === b) });
       bbDrawSlots();
     };
@@ -394,7 +402,7 @@ async function bbSave(){
     await bbPut(e);
     bbEdit = null; renderBaoban();
     if (window.bkBbApi) window.bkBbApi.render();
-    if (e.venue === 'in' && e.status === 'talk' && e.date) msgs.push('現在是「洽談中」，時段還沒關。談定後改成「已確認」存檔才能關閉線上預約。');
+    if (bbInFlag(e) && e.status === 'talk' && e.date) msgs.push('現在是「洽談中」，時段還沒關。談定後改成「已確認」存檔才能關閉線上預約。');
     if (msgs.length) alert('已儲存。\n\n' + msgs.join('\n'));
   } catch (x) {
     alert('儲存失敗：' + x.message + '\n請檢查網路後再按一次。');
@@ -418,7 +426,7 @@ async function bbDelete(){
 /* 當天橫幅：這筆包班的線上預約現在到底關了沒 */
 function bbDayLockLine(r, dateStr){
   var api = window.bkBbApi;
-  if (!api || r.venue !== 'in' || (r.status !== 'ok' && r.status !== 'done')) return '';
+  if (!api || !bbInFlag(r) || (r.status !== 'ok' && r.status !== 'done')) return '';
   var use = bbSlotsOf(r, api.slotsNow(dateStr)); if (!use.length) return '';
   var shut = use.filter(function(s){ return api.isClosed(dateStr, s) }), open = use.filter(function(s){ return shut.indexOf(s) < 0 });
   return '<div style="font-size:13px;font-weight:700;color:' + (open.length ? '#B23A30' : '#1F7A4D') + '">' +
@@ -438,7 +446,7 @@ function bbDayHtml(dateStr, isToday){
   return '<div style="background:#F4EEDD;border:1px solid #D9C48A;border-radius:12px;padding:10px 14px;margin-bottom:10px">' +
     (on.length ? '<div style="font-weight:700;color:#7A5A12;margin-bottom:4px">🏫 這天有包班</div>' + on.map(function(r){
       return '<div style="padding:6px 0;border-top:1px dashed #E2D4AA;cursor:pointer" onclick="bbOpen(\'' + bbEsc(r.id) + '\')">' +
-        '<b>' + bbEsc((r.start || '') + (r.end ? '–' + r.end : '')) + ' ' + bbEsc(r.org) + '</b>　' + (r.venue === 'out' ? '外派' : '內場') + '・' + bbPpl(r) + ' 人' +
+        '<b>' + bbEsc((r.start || '') + (r.end ? '–' + r.end : '')) + ' ' + bbEsc(r.org) + '</b>　' + BB_PLACE[bbPlace(r)] + '・' + bbPpl(r) + ' 人' +
         '<div style="font-size:13px;color:#6b665e">' + [r.course, r.teacher ? '老師 ' + r.teacher : '', r.venue === 'out' ? (r.place || r.address) : '',
           r.siteContact ? '現場 ' + r.siteContact + ' ' + (r.sitePhone || '') : (r.contact ? '對接 ' + r.contact + ' ' + (r.phone || '') : ''),
           r.prepMat ? '已備料' : '⚠️ 還沒備料'].filter(Boolean).map(bbEsc).join('・') + '</div>' + bbDayLockLine(r, dateStr) + '</div>';
