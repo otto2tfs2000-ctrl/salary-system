@@ -1218,12 +1218,28 @@ function bkShipBind(root){
   } });
 }
 
-/* ══ 作品備忘（2026-11-11）══════════════════════════════
+/* ══ 作品備忘（2026-11-11）→ 作品紀錄（2026-11-28）═══════════════
    學生畫到一半的作品、或在 LINE 說下次想畫什麼：拍照／截圖＋一句話，掛在這位學生（電話）身上。
-   下次不管約哪天、哪位老師，卡片上都看得到；按「已完成」連照片一起刪掉。
+   下次不管約哪天、哪位老師，卡片上都看得到。
    資料跟照片都走伺服器（/staff/memos，照片放 Cloudinary），不直接讀寫資料庫。
-   整包很小，一分鐘最多問一次；問不到就留著上次的，不要讓備忘整塊消失。 */
-var bkMemos={}, bkMemoAt=0, bkMemoCld=true;
+   整包很小，一分鐘最多問一次；問不到就留著上次的，不要讓備忘整塊消失。
+
+   11/28 改成「作品紀錄」：課後拍照時選狀態，紀錄留著變成這位學生的作品履歷。
+   ・done 完成帶走：只進履歷
+   ・wip  未完成：卡片上一直標著，到「處理好了」為止
+   ・keep 留在教室（水晶花、聖誕樹要晾乾）：進今日排課上方的「待取作品」，到「已取走」為止
+   ・note 舊備忘（沒有 kind 的）：跟 wip 一樣當待辦
+   以前「已完成」會連照片刪掉；現在只標處理好了，真的要刪（拍錯人）到履歷裡按「刪除」。 */
+var bkMemos={}, bkMemoAt=0, bkMemoCld=true, bkPickOpen=true;
+var MEMO_KINDS=[
+  {k:"done",n:"完成帶走",ic:"✅",ph:"例如：海邊夕陽，已經帶回家"},
+  {k:"wip", n:"未完成",  ic:"✏️",ph:"例如：畫到一半，背景還沒上色"},
+  {k:"keep",n:"留在教室晾乾",ic:"🕐",ph:"例如：水晶花兩盆，放在窗邊第二層"}
+];
+var MEMO_KEEP_DAYS=2;   /* 留在教室的作品，預設上課日加幾天可以來拿 */
+var MEMO_LATE_DAYS=7;   /* 可以拿之後放超過幾天標紅 */
+function memoKindName(k){ if(k==="note")return "備忘"; var x=MEMO_KINDS.filter(function(v){ return v.k===k })[0]; return x?x.n:"備忘" }
+function memoKindIc(k){ if(k==="note")return "📌"; var x=MEMO_KINDS.filter(function(v){ return v.k===k })[0]; return x?x.ic:"📌" }
 async function bkLoadMemos(force){
   if(!force&&bkMemoAt&&Date.now()-bkMemoAt<60000)return;
   try{
@@ -1232,54 +1248,183 @@ async function bkLoadMemos(force){
   }catch(e){}
 }
 function bkMemoPhone(b){ return String(bkResolvedPhone(b)||"").replace(/\D/g,"") }
+function bkMemoRec(phone,k,m){
+  m=m||{};
+  return {id:k,phone:phone,url:m.url||"",text:m.text||"",name:m.name||"",at:m.at||"",by:m.by||"",
+    kind:m.kind||"note",date:m.date||"",course:m.course||"",bookingId:m.bookingId||"",readyDate:m.readyDate||"",
+    resolvedAt:m.resolvedAt||"",resolvedBy:m.resolvedBy||"",pickedAt:m.pickedAt||"",pickedBy:m.pickedBy||"",
+    notifiedAt:m.notifiedAt||"",notifiedBy:m.notifiedBy||""};
+}
+/* 排序用的日期：有上課日就用上課日，舊備忘只有建立時間 */
+function isoDay(s){ var d=new Date(s||""); return isNaN(d)?"":ds(d) }
+function memoDay(m){ return m.date||isoDay(m.at) }
 function bkMemoList(phone){
   var o=bkMemos[phone]||{};
-  return Object.keys(o).map(function(k){ var m=o[k]||{}; return {id:k,url:m.url||"",text:m.text||"",name:m.name||"",at:m.at||"",by:m.by||""} })
-    .sort(function(a,c){ return String(c.at).localeCompare(String(a.at)) });
+  return Object.keys(o).map(function(k){ return bkMemoRec(phone,k,o[k]) })
+    .sort(function(a,c){ return (memoDay(c)+c.at).localeCompare(memoDay(a)+a.at) });
+}
+/* 還要人處理的：未完成／舊備忘還沒處理好、留教室還沒取走 */
+function memoOpen(m){
+  if(m.kind==="keep")return !m.pickedAt;
+  if(m.kind==="wip"||m.kind==="note")return !m.resolvedAt;
+  return false;
 }
 function bkMemoThumb(url){ return String(url).replace("/image/upload/f_auto,q_auto/","/image/upload/f_auto,q_auto,w_200,h_200,c_fill/") }
+function memoMD(d){ return String(d||"").slice(5,10).replace("-","/") }
+/* 待取作品現在的狀態字：還沒乾／可以拿了／放太久 */
+function memoReadyText(m){
+  var today=ds(new Date());
+  if(!m.readyDate)return "";
+  if(m.readyDate>today)return '<span class="bk-shwhen">'+esc(memoMD(m.readyDate))+' 可以拿</span>';
+  var d=shipDayDiff(m.readyDate,today);
+  if(d>=MEMO_LATE_DAYS)return '<b class="bk-shred">可以拿了・已經放 '+d+' 天</b>';
+  return '<b class="bk-shtdy">'+(d?'可以拿了（'+d+' 天）':'今天起可以拿')+'</b>';
+}
+function memoImg(m,cls){
+  return m.url?'<img class="'+(cls||"")+'" src="'+esc(bkMemoThumb(m.url))+'" data-mmv="'+esc(m.url)+'" alt="作品照片" loading="lazy">':'';
+}
+
+/* 卡片上：還沒處理的那幾則（黃色框）＋右下角最近一件作品 */
 function bkMemoHtml(b){
   var ph=bkMemoPhone(b); if(!ph)return "";
   var list=bkMemoList(ph); if(!list.length)return "";
-  return '<div class="bk-memo"><div class="bk-memo-h">📌 作品備忘</div>'+list.map(function(m){
-    return '<div class="bk-memo-i">'+
-      (m.url?'<img src="'+esc(bkMemoThumb(m.url))+'" data-mmv="'+esc(m.url)+'" alt="作品備忘照片" loading="lazy">':'')+
-      '<div class="bk-memo-t">'+(m.name?'<b>'+esc(m.name)+'</b>　':'')+esc(m.text||"（只有照片）")+
-        '<span>'+esc(String(m.at).slice(5,10).replace("-","/"))+(m.by?'・'+esc(m.by):'')+'</span></div>'+
-      '<button class="bk-memo-x" data-mmd="'+esc(ph)+'|'+esc(m.id)+'">已完成</button></div>' }).join("")+'</div>';
+  var open=list.filter(memoOpen);
+  var h="";
+  if(open.length){
+    h+='<div class="bk-memo"><div class="bk-memo-h">📌 作品紀錄・還沒處理</div>'+open.map(function(m){
+      var keep=m.kind==="keep";
+      return '<div class="bk-memo-i">'+memoImg(m)+
+        '<div class="bk-memo-t"><b>'+memoKindIc(m.kind)+' '+esc(keep?"有作品要帶走":memoKindName(m.kind))+'</b>　'+
+          (m.course?esc(m.course)+'　':'')+esc(m.text||(m.url?"":"（沒有說明）"))+
+          '<span>'+esc(memoMD(memoDay(m)))+(m.name?'・'+esc(m.name):'')+(m.by?'・'+esc(m.by):'')+
+            (keep&&m.readyDate?'・'+memoReadyText(m):'')+'</span></div>'+
+        '<button class="bk-memo-x" data-mmu="'+esc(ph)+'|'+esc(m.id)+'|'+(keep?"pickup":"resolve")+'">'+(keep?"已取走":"處理好了")+'</button></div>';
+    }).join("")+'</div>';
+  }
+  var last=list[0];
+  h+='<div class="bk-last" data-mmh="'+esc(ph)+'">'+
+    (last.url?'<img src="'+esc(bkMemoThumb(last.url))+'" alt="">':'<i>'+memoKindIc(last.kind)+'</i>')+
+    '<span><b>'+(memoDay(last)<(b.date||"")?"上次作品":"最近作品")+'</b> '+esc(memoMD(memoDay(last)))+'・'+esc(memoKindName(last.kind))+
+      (last.course?'・'+esc(last.course):'')+'<small>看全部 '+list.length+' 件 ›</small></span></div>';
+  return h;
+}
+
+/* 今日排課最上面：所有還留在教室、還沒取走的作品（不管看哪一天都顯示） */
+function bkPickupList(){
+  var out=[];
+  Object.keys(bkMemos||{}).forEach(function(ph){
+    bkMemoList(ph).forEach(function(m){ if(m.kind==="keep"&&!m.pickedAt)out.push(m) });
+  });
+  return out.sort(function(a,c){ return String(a.readyDate||"9").localeCompare(String(c.readyDate||"9")) });
+}
+function bkPickupBannerHtml(){
+  var list=bkPickupList(); if(!list.length)return "";
+  var today=ds(new Date());
+  var ready=list.filter(function(m){ return m.readyDate&&m.readyDate<=today }).length;
+  var late=list.filter(function(m){ return m.readyDate&&m.readyDate<=today&&shipDayDiff(m.readyDate,today)>=MEMO_LATE_DAYS }).length;
+  var h='<div class="bk-pkbar"><div class="bk-pkh" data-pkopen="1">'+(bkPickOpen?"▼":"▶")+' 🎁 待取作品：'+list.length+' 件'+
+    '<small>'+(ready?'可以拿 '+ready+' 件':'都還在晾')+(late?'・<b class="bk-shred">放太久 '+late+' 件</b>':'')+'</small></div>';
+  if(bkPickOpen)h+=list.map(function(m){
+    return '<div class="bk-pkrow">'+memoImg(m)+
+      '<span><b>'+esc(m.name||"學生")+'</b>　'+memoReadyText(m)+
+      '<small>'+esc(memoMD(memoDay(m)))+' 做的'+(m.course?'・'+esc(m.course):'')+(m.text?'・'+esc(m.text):'')+
+        '・'+esc(m.phone)+(m.by?'・'+esc(m.by)+' 登記':'')+
+        (m.notifiedAt?'・已通知 '+esc(memoMD(isoDay(m.notifiedAt)))+(m.notifiedBy?' '+esc(m.notifiedBy):''):'・<b class="bk-shred">還沒通知</b>')+
+      '</small></span>'+
+      (m.notifiedAt?'':'<button class="bk-shedit" data-mmu="'+esc(m.phone)+'|'+esc(m.id)+'|notified">已通知</button>')+
+      '<button class="bk-shgo" data-mmu="'+esc(m.phone)+'|'+esc(m.id)+'|pickup">已取走</button></div>';
+  }).join("");
+  return h+'</div>';
+}
+
+function bkMemoView(url){
+  bkSheet('<h3>作品照片</h3><img src="'+esc(url)+'" alt="作品照片" style="width:100%;border-radius:10px;display:block">'+
+    '<div class="bk-act"><button class="bk-cancel" id="mmVX">關閉</button></div>');
+  document.getElementById("mmVX").onclick=bkClose;
+}
+async function bkMemoUpdate(el){
+  var a=el.dataset.mmu.split("|");
+  var ask={pickup:"作品已經被拿走了嗎？",resolve:"這則已經處理好了嗎？\n紀錄跟照片會留在作品履歷裡。"}[a[2]];
+  if(ask&&!confirm(ask))return;
+  var old=el.textContent; el.disabled=true; el.textContent="處理中…";
+  try{
+    var j=await staffApi("/staff/memos/update",{phone:a[0],id:a[1],action:a[2]});
+    if(!j||!j.ok)throw new Error((j&&j.error)||"沒有存成功");
+    if(!bkMemos[a[0]])bkMemos[a[0]]={};
+    bkMemos[a[0]][a[1]]=j.memo;
+    bkRender(true);
+  }catch(e){ alert("沒有存成功："+e.message); el.disabled=false; el.textContent=old }
 }
 function bkMemoBind(root){
   root.querySelectorAll("[data-mm]").forEach(function(el){ el.onclick=function(){ bkMemoSheet(el.dataset.mm) } });
-  root.querySelectorAll("[data-mmv]").forEach(function(el){ el.onclick=function(){
-    bkSheet('<h3>作品備忘</h3><img src="'+esc(el.dataset.mmv)+'" alt="作品備忘照片" style="width:100%;border-radius:10px;display:block">'+
-      '<div class="bk-act"><button class="bk-cancel" id="mmVX">關閉</button></div>');
-    document.getElementById("mmVX").onclick=bkClose;
-  } });
-  root.querySelectorAll("[data-mmd]").forEach(function(el){ el.onclick=async function(){
-    var a=el.dataset.mmd.split("|");
-    if(!confirm("這則備忘已經處理完了嗎？\n按確定會連照片一起刪掉，不能復原。"))return;
-    el.disabled=true; el.textContent="處理中…";
+  root.querySelectorAll("[data-mmv]").forEach(function(el){ el.onclick=function(e){ e.stopPropagation(); bkMemoView(el.dataset.mmv) } });
+  root.querySelectorAll("[data-mmu]").forEach(function(el){ el.onclick=function(){ bkMemoUpdate(el) } });
+  root.querySelectorAll("[data-mmh]").forEach(function(el){ el.onclick=function(){ bkMemoHist(el.dataset.mmh) } });
+  root.querySelectorAll("[data-pkopen]").forEach(function(el){ el.onclick=function(){ bkPickOpen=!bkPickOpen; bkRender(true) } });
+}
+
+/* 作品履歷：這位學生所有的作品紀錄，新的在上面 */
+function bkMemoHist(phone){
+  var list=bkMemoList(phone);
+  var who=(list.filter(function(m){ return m.name })[0]||{}).name||"";
+  bkSheet('<h3>作品履歷</h3><div class="bk-sh2">'+esc(who)+'　共 '+list.length+' 件，點照片可以放大</div>'+
+    '<div class="bk-hist">'+(list.length?list.map(function(m){
+      var st="";
+      if(m.kind==="keep")st=m.pickedAt?'已取走 '+esc(memoMD(isoDay(m.pickedAt)))+(m.pickedBy?' '+esc(m.pickedBy):'')
+        :'還在教室・'+memoReadyText(m);
+      else if(m.kind==="wip"||m.kind==="note")st=m.resolvedAt?'處理好了 '+esc(memoMD(isoDay(m.resolvedAt))):'<b class="bk-shtdy">還沒處理</b>';
+      return '<div class="bk-hrow">'+(m.url?'<img src="'+esc(bkMemoThumb(m.url))+'" data-big="'+esc(m.url)+'" alt="">':'<i>'+memoKindIc(m.kind)+'</i>')+
+        '<div class="bk-memo-t"><b>'+esc(memoMD(memoDay(m)))+'　'+memoKindIc(m.kind)+' '+esc(memoKindName(m.kind))+'</b>'+
+          (m.course?'　'+esc(m.course):'')+(m.text?'<br>'+esc(m.text):'')+
+          '<span>'+(m.by?esc(m.by)+' 登記':'')+(st?'・'+st:'')+
+            '　<a href="#" class="bk-hdel" data-hdel="'+esc(m.id)+'">刪除</a></span></div></div>';
+    }).join(""):'<div class="bk-shmsg">還沒有紀錄</div>')+'</div>'+
+    '<div class="bk-act"><button class="bk-cancel" id="mmHX">關閉</button></div>');
+  document.getElementById("mmHX").onclick=bkClose;
+  var sh=document.getElementById("bkSheet");
+  sh.querySelectorAll("[data-big]").forEach(function(el){ el.onclick=function(){ el.classList.toggle("big");
+    if(el.classList.contains("big"))el.src=el.dataset.big; } });
+  sh.querySelectorAll("[data-hdel]").forEach(function(el){ el.onclick=async function(e){
+    e.preventDefault();
+    if(!confirm("確定要刪掉這筆作品紀錄嗎？\n照片會一起刪掉，不能復原。\n（只在拍錯人、拍錯照片時用；處理好了請按卡片上的按鈕）"))return;
+    el.textContent="刪除中…";
     try{
-      var j=await staffApi("/staff/memos/done",{phone:a[0],id:a[1]});
+      var j=await staffApi("/staff/memos/done",{phone:phone,id:el.dataset.hdel});
       if(!j||!j.ok)throw new Error((j&&j.error)||"沒有刪成功");
-      if(bkMemos[a[0]])delete bkMemos[a[0]][a[1]];
-      bkRender(true);
-    }catch(e){ alert("備忘沒有刪成功："+e.message); el.disabled=false; el.textContent="已完成" }
+      if(bkMemos[phone])delete bkMemos[phone][el.dataset.hdel];
+      bkRender(true); bkMemoHist(phone);
+    }catch(err){ alert("沒有刪成功："+err.message); el.textContent="刪除" }
   } });
 }
+
+/* 課後登記作品：選狀態＋拍照＋一句話 */
 function bkMemoSheet(bid){
   var b=bkList.filter(function(x){ return x.id===bid })[0]; if(!b)return;
   var ph=bkMemoPhone(b);
-  if(!ph){ alert("這筆預約沒有電話，備忘沒辦法掛到學生身上。\n請先按「修改」補上電話。"); return }
+  if(!ph){ alert("這筆預約沒有電話，作品紀錄沒辦法掛到學生身上。\n請先按「修改」補上電話。"); return }
   var who=(b.customer&&(b.customer.childName||b.customer.name))||"";
-  var data="";
-  bkSheet('<h3>作品備忘</h3><div class="bk-sh2">'+esc(who)+'　下次來上課時，卡片上會看到這則備忘</div>'+
+  var course=(b.items||[]).filter(Boolean).map(function(i){ return i.name||"" }).filter(Boolean).join("、");
+  var day=b.date||ds(new Date());
+  var rd=(function(){ var p=String(day).split("/"); var d=new Date(+p[0],+p[1]-1,+p[2]); d.setDate(d.getDate()+MEMO_KEEP_DAYS); return ds(d) })();
+  var data="", kind="";
+  bkSheet('<h3>作品紀錄</h3><div class="bk-sh2">'+esc(who)+'　'+esc(day)+(course?'・'+esc(course):'')+'<br>下次來上課，卡片上會看到這次的作品</div>'+
+    '<div class="bk-mk">'+MEMO_KINDS.map(function(k){
+      return '<button type="button" data-mk="'+k.k+'">'+k.ic+'<br>'+esc(k.n)+'</button>' }).join("")+'</div>'+
+    '<div id="mmKeep" class="bk-mkeep" style="display:none">可以來拿的日期 <input type="date" id="mmReady" value="'+esc(rd.replace(/\//g,"-"))+'">'+
+      '<small>會出現在今日排課上方的「待取作品」，取走前一直提醒</small></div>'+
     (bkMemoCld?'<label class="bk-memo-pick" id="mmPick"><input type="file" id="mmFile" accept="image/*" style="display:none">'+
-      '<span id="mmPickT">📷 拍照或選一張圖（作品照、LINE 對話截圖都可以）</span></label>'
+      '<span id="mmPickT">📷 拍作品照（或 LINE 對話截圖）</span></label>'
       :'<div class="bk-memo-warn">伺服器還沒設定圖片空間，暫時只能存文字。</div>')+
-    '<textarea id="mmText" class="bk-memo-ta" rows="3" maxlength="300" placeholder="例如：畫到一半，背景還沒上色／下次想畫自家的貓"></textarea>'+
-    '<div class="bk-act"><button class="bk-cancel" id="mmX">取消</button><button class="bk-save" id="mmOK">存備忘</button></div>');
+    '<textarea id="mmText" class="bk-memo-ta" rows="3" maxlength="300" placeholder="先選上面的狀態"></textarea>'+
+    '<div class="bk-act"><button class="bk-cancel" id="mmX">取消</button><button class="bk-save" id="mmOK">存紀錄</button></div>');
   document.getElementById("mmX").onclick=bkClose;
+  document.querySelectorAll("#bkSheet [data-mk]").forEach(function(el){ el.onclick=function(){
+    kind=el.dataset.mk;
+    document.querySelectorAll("#bkSheet [data-mk]").forEach(function(x){ x.classList.toggle("on",x===el) });
+    document.getElementById("mmKeep").style.display=kind==="keep"?"":"none";
+    var k=MEMO_KINDS.filter(function(v){ return v.k===kind })[0];
+    document.getElementById("mmText").placeholder=k?k.ph:"";
+  } });
   var f=document.getElementById("mmFile");
   if(f)f.onchange=async function(){
     if(!f.files||!f.files[0])return;
@@ -1291,15 +1436,22 @@ function bkMemoSheet(bid){
   };
   document.getElementById("mmOK").onclick=async function(){
     var btn=this, text=document.getElementById("mmText").value.trim();
+    if(!kind){ alert("請先選：完成帶走／未完成／留在教室晾乾"); return }
     if(!data&&!text){ alert("照片和文字至少要有一樣"); return }
+    var ready="";
+    if(kind==="keep"){
+      ready=String(document.getElementById("mmReady").value||"").replace(/-/g,"/");
+      if(!/^\d{4}\/\d{2}\/\d{2}$/.test(ready)){ alert("請選可以來拿的日期"); return }
+    }
     btn.disabled=true; btn.textContent="上傳中…";
     try{
-      var j=await staffApi("/staff/memos/add",{phone:ph,name:who,text:text,dataUrl:data||undefined});
+      var j=await staffApi("/staff/memos/add",{phone:ph,name:who,text:text,dataUrl:data||undefined,
+        kind:kind,date:day,course:course,bookingId:b.id,readyDate:ready||undefined});
       if(!j||!j.ok)throw new Error((j&&j.error)||"沒有存成功");
       if(!bkMemos[ph])bkMemos[ph]={};
       bkMemos[ph][j.id]=j.memo;
       bkClose(); bkRender(true);
-    }catch(e){ alert("備忘沒有存成功："+e.message); btn.disabled=false; btn.textContent="存備忘" }
+    }catch(e){ alert("紀錄沒有存成功："+e.message); btn.disabled=false; btn.textContent="存紀錄" }
   };
 }
 
@@ -2503,6 +2655,7 @@ async function bkRender(noReload){
    bkHoldBannerHtml()+
    (window.bbDayHtml?bbDayHtml(dsNow,today):"")+
    bkShipBannerHtml()+
+   bkPickupBannerHtml()+
    '<div class="bk-bar">'+
      '<button class="bk-nav" id="bkPrev">‹</button>'+
      '<div class="bk-date" id="bkDatePick" style="cursor:pointer" title="點一下開整個月"><b>'+ds(d)+'</b>'+
@@ -3097,7 +3250,7 @@ function bkCard(b){
         return '<button class="bk-b shp'+(sh?" on":"")+'" data-sh="'+b.id+'">'+
           (!sh?"寄送":(sh.status==="pending"?"📦 待寄":(sh.status==="done"?"寄送 ✓":"🚚 已寄")))+'</button>' })()+
       /* 畫到一半的作品、下次想畫什麼：拍照或截圖留給下次的老師看 */
-      '<button class="bk-b mm" data-mm="'+b.id+'">作品備忘</button>'+
+      '<button class="bk-b mm" data-mm="'+b.id+'">📸 作品紀錄</button>'+
       '<button class="bk-b cx" data-cx="'+b.id+'">取消</button>'+
     '</div></div>';
 }
@@ -5527,6 +5680,30 @@ css.textContent=
 ".bk-memo-pick{display:block;border:1.5px dashed #d0c9ba;border-radius:10px;padding:16px 12px;text-align:center;font-size:14.5px;color:#6b665e;cursor:pointer;margin-bottom:12px}"+
 ".bk-memo-ta{width:100%;box-sizing:border-box;border:1px solid #d0c9ba;border-radius:8px;padding:11px 12px;font:inherit;font-size:16px;color:#2b2926;resize:vertical}"+
 ".bk-memo-warn{background:#FBF6E8;border:1px solid #EBDDB0;border-radius:8px;padding:10px 12px;font-size:13.5px;color:#7A5A12;margin-bottom:12px}"+
+/* 作品紀錄（2026-11-28）：卡片右下角最近作品、狀態三選一、作品履歷、待取作品 */
+".bk-last{display:flex;align-items:center;gap:8px;margin:8px 0 0 auto;width:fit-content;max-width:100%;background:#F6F3EC;border:1px solid #E3DCCB;border-radius:10px;padding:5px 10px 5px 5px;cursor:pointer;font-size:13px;color:#4a463f}"+
+".bk-last img,.bk-last i{width:40px;height:40px;object-fit:cover;border-radius:7px;flex:none;background:#ebe5d8;font-style:normal;display:flex;align-items:center;justify-content:center;font-size:18px}"+
+".bk-last small{display:block;color:#8a8479;font-size:12px}"+
+".bk-mk{display:flex;gap:8px;margin:4px 0 12px}"+
+".bk-mk button{flex:1;background:#fff;border:1.5px solid #d0c9ba;border-radius:10px;padding:10px 4px;font:inherit;font-size:14px;color:#4a463f;cursor:pointer;line-height:1.5}"+
+".bk-mk button.on{border-color:#B7791F;background:#FFF4DC;color:#7A4B00;font-weight:700}"+
+".bk-mkeep{background:#FFF4DC;border:1px solid #EBD3A0;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:14px;color:#7A4B00}"+
+".bk-mkeep input{font:inherit;font-size:16px;padding:4px 6px;border:1px solid #d0c9ba;border-radius:6px;margin-left:6px}"+
+".bk-mkeep small{display:block;margin-top:4px;color:#9a7a3c;font-size:12px}"+
+".bk-hist{max-height:60vh;overflow:auto;margin-bottom:8px}"+
+".bk-hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px dashed #E3DCCB}"+
+".bk-hrow:first-child{border-top:0}"+
+".bk-hrow img,.bk-hrow i{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none;background:#f0ece2;cursor:pointer;font-style:normal;display:flex;align-items:center;justify-content:center;font-size:22px}"+
+".bk-hrow img.big{width:100%;height:auto;max-height:70vh;object-fit:contain}"+
+".bk-hrow:has(img.big){flex-direction:column}"+
+".bk-hdel{color:#C9453B;font-size:12px;margin-left:4px}"+
+".bk-pkbar{background:#FFF4DC;border:1.5px solid #E2BE73;border-radius:12px;padding:12px 15px;margin-bottom:12px;color:#5c4512}"+
+".bk-pkh{font-weight:700;cursor:pointer}"+
+".bk-pkh small{font-weight:400;font-size:12.5px;margin-left:8px;color:#8a6a2a}"+
+".bk-pkrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed #EBD3A0;margin-top:6px}"+
+".bk-pkrow img{width:44px;height:44px;object-fit:cover;border-radius:7px;flex:none;cursor:pointer}"+
+".bk-pkrow span{flex:1;min-width:0}"+
+".bk-pkrow small{display:block;color:#8a6a2a;font-size:12px}"+
 ".bk-shocr{display:block;text-align:center;padding:11px;border:1.5px dashed #9CC9C1;border-radius:10px;"+
   "color:#2F6B63;background:#F4FAF9;cursor:pointer;font-size:14.5px;margin-bottom:6px}"+
 ".bk-shmsg{font-size:12.5px;color:#948e83;min-height:4px;margin-bottom:10px}"+
